@@ -1,0 +1,35 @@
+{
+  "name": "succra",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Succra — Solana-native mission continuity layer (Phase 0 repository foundation, no product logic).",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=9"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "vitest run",
+    "dev": "node -e \"console.log('Succra Phase 0: no dev server yet. Web (Next.js) and runtime scaffolds land in later phases per IMPLEMENTATION_PLAN.md.')\"",
+    "clean": "node -e \"console.log('Succra Phase 0: nothing to clean yet (no build output).')\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  }
+}

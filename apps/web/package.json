@@ -1,0 +1,14 @@
+{
+  "name": "@succra/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Succra web app placeholder (Phase 0, no product logic). Next.js App Router scaffold lands in a later phase per IMPLEMENTATION_PLAN.md.",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

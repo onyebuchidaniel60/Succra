@@ -1,0 +1,12 @@
+[package]
+name = "succra"
+version = "0.0.0"
+edition = "2021"
+description = "Succra Solana program placeholder (Phase 0, no instructions). Program foundation lands in Phase 1 per IMPLEMENTATION_PLAN.md."
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "succra"
+
+[dependencies]
+anchor-lang = "0.32.1"

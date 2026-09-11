@@ -1,0 +1,14 @@
+{
+  "name": "@succra/program-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Succra program client placeholder (Phase 0, no product logic). On-chain client lands with the Solana program in a later phase per IMPLEMENTATION_PLAN.md.",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

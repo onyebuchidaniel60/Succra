@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+# Solana / Anchor / Rust
+target/
+.anchor/
+.test-ledger/
+
+# Env files — never commit real secrets.
+# `.env.example` is the only env template tracked by git.
+.env
+.env.*
+!.env.example
+
+# Vercel / Railway / editors
+.vercel/
+.railway/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store/
+*.log

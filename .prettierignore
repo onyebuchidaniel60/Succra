@@ -1,0 +1,21 @@
+node_modules
+dist
+build
+.next
+out
+coverage
+.turbo
+*.tsbuildinfo
+target
+.anchor
+.vercel
+.DS_Store
+pnpm-lock.yaml
+# Source-of-truth spec documents are human-owned; do not reformat.
+PROJECT_SPEC.md
+ARCHITECTURE.md
+IMPLEMENTATION_PLAN.md
+AGENTS.md
+AI_HANDOFF.md
+SUCCRA_BLUEPRINT.md
+README.md

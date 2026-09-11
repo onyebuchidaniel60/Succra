@@ -1,0 +1,14 @@
+{
+  "name": "@succra/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Succra runtime placeholder (Phase 0, no product logic). Guardian/monitor orchestration lands in a later phase per IMPLEMENTATION_PLAN.md.",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
