@@ -10,6 +10,8 @@ Mission/vault accounts with create/fund/cancel verify clean: `cargo build`,
 `cargo test` (12/12), `anchor build` (SBF), validator integration suite
 (13/13: create, fund, cancel/refund, FR-01 negatives, non-owner rejection).
 No Phase 2+ logic implemented.
+Note: fund is exact-match (== budget) and single-use in Phase 1; revisit if a later phase requires partial or multi-deposit funding.
+Note: Anchor events for create/fund/cancel are not emitted in Phase 1; schedule with the phase that introduces on-chain audit anchoring.
 Prior checkpoint: Phase 0 complete (`cc179916019484157c153f13ff825a0b2e4b83d9`).
 Next assigned task: **Phase 2 — Secure action execution**, not yet authorized.
 
