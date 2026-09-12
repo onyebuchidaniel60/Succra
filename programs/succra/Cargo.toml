@@ -1,12 +1,16 @@
 [package]
 name = "succra"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
-description = "Succra Solana program placeholder (Phase 0, no instructions). Program foundation lands in Phase 1 per IMPLEMENTATION_PLAN.md."
+description = "Succra mission continuity program: mission/vault accounts with create/fund/cancel (Phase 1)."
 
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "succra"
+
+[features]
+default = []
+idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = "0.32.1"

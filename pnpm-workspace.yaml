@@ -5,4 +5,6 @@ packages:
 # pnpm 10+ requires explicit approval for postinstall build scripts.
 # esbuild's postinstall validates its platform binary (needed by vitest/vite).
 allowBuilds:
+  bufferutil: true
   esbuild: true
+  utf-8-validate: true
