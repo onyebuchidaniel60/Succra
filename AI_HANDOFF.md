@@ -4,7 +4,11 @@
 Succra — autonomous mission continuity and authority succession on Solana.
 
 ## Current status
-**Pre-implementation.** Product and architecture are designed. No application code has been authorized yet.
+**Phase 0 — Repository Foundation: complete** (commit `cc179916019484157c153f13ff825a0b2e4b83d9`).
+
+Workspace, configs, lint/typecheck/test/build commands, documentation structure,
+and `.env.example` exist and verify clean. No product logic implemented.
+Next assigned task: **Phase 1 — Solana program foundation**, not yet authorized.
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
