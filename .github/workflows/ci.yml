@@ -194,7 +194,8 @@ jobs:
           curl -sSfL https://release.anza.xyz/v2.3.0/install -o /tmp/solana-install.sh
           test -s /tmp/solana-install.sh
           sh /tmp/solana-install.sh
-          echo "$HOME/.local/share/solana/active_release/bin" >> "$GITHUB_PATH"
+          # Agave installs versioned releases under install/active_release.
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
       - name: Install Anchor 0.32.1 via avm
         run: |
           # Anchor lives at otter-sec/anchor now (coral-xyz redirects there);
