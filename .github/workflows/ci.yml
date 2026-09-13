@@ -188,7 +188,12 @@ jobs:
             solana-2.3.0-anchor-0.32.1-tools-1.48-${{ runner.os }}-
       - name: Install Solana 2.3.0 (Agave)
         run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v2.3.0/install)"
+          # NOTE: release.solana.com is dead for 2.x installers (curl fails
+          # and `sh -c ""` would silently succeed). Agave lives at
+          # release.anza.xyz; download-then-verify so a bad fetch fails loud.
+          curl -sSfL https://release.anza.xyz/v2.3.0/install -o /tmp/solana-install.sh
+          test -s /tmp/solana-install.sh
+          sh /tmp/solana-install.sh
           echo "$HOME/.local/share/solana/active_release/bin" >> "$GITHUB_PATH"
       - name: Install Anchor 0.32.1 via avm
         run: |
