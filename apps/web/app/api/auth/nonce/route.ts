@@ -5,7 +5,7 @@
 // Errors:   400 INVALID_BODY (envelope).
 //
 // The nonce is bound to the wallet address at issuance and stored
-// server-side (in-memory, single-use, TTL). The exact `message` bytes must
+// server-side (DB-backed auth_nonces table, single-use, TTL). The exact `message` bytes must
 // be signed by the wallet and returned to POST /api/auth/verify.
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';

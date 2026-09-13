@@ -4,33 +4,29 @@
 Succra — autonomous mission continuity and authority succession on Solana.
 
 ## Current status
-**Phase 2 — Secure action execution: complete** (see Phase 2 checkpoint commit).
+**Phase 3 — Web auth + database: complete. Phase 3.1: complete. Phase 3.2: complete (CI split; required jobs await green on phase-3-ci).**
 
-Mission/vault accounts with create/fund/cancel verify clean: `cargo build`,
-`cargo test` (12/12), `anchor build` (SBF), validator integration suite
-(13/13: create, fund, cancel/refund, FR-01 negatives, non-owner rejection).
+Phase 2 complete (`979e6d4`): mission/vault accounts with create/fund/cancel; `current_agent: Pubkey` + `agent_nonce: u64`; `execute_action` (TRANSFER_SOL via System, TRANSFER_SPL via Token, vault-PDA-signed); `fund_spl` (exact-match, single-use); SPL-aware `cancel`; `ActionExecuted` event; FR-03 checks in pure `validation.rs`. Verified locally: `cargo test` (25/25), validator integration suite 27/27 runnable (2 expiry E2E skipped on the Windows sandbox — bank-clock lag — unit coverage for expiry rejection passes).
 
-Phase 2 delivered: `current_agent: Pubkey` + `agent_nonce: u64` on Mission;
-`execute_action` instruction (TRANSFER_SOL via System, TRANSFER_SPL via
-Token, vault-PDA-signed); `fund_spl` instruction (SPL deposit into the
-program-owned spl-vault, exact-match, single-use); SPL-aware `cancel`;
-`ActionExecuted` event; 13 new program errors (6008–6020); FR-03 checks in
-pure `validation.rs` (`validate_execute_policy`). Verified: `cargo test`
-(25/25), integration suite 27/27 runnable, `pnpm`
-lint/typecheck/test/build/format all pass.
-Amendment note: cancel semantics were extended to be SPL-aware as a
-necessary consequence of Phase 2's SPL support (`fund_spl` creates an SPL
-vault; cancel must be able to close it). Authority model unchanged.
-Known environment-blocked verification: two expiry E2E tests are skipped
-on this Windows sandbox (bank-clock lag with `--ticks-per-slot 1024`,
-required because the sandbox lacks symlink privilege and the validator
-dies packaging its slot-100 snapshot). Unit coverage for expiry rejection
-passes. These should be run on a Linux host before mainnet.
-Note: the `anchor deploy` IDL-write loop does not converge on slow
-validators; `solana program deploy` is the working path. No test depends
-on the on-chain IDL.
-Prior checkpoint: Phase 1 complete (`d9811bb`).
-Next assigned task: **Phase 3 — Web auth + database**, not yet authorized.
+Phase 3 complete: Supabase schema (`profiles`, `agents`, `missions`, `mission_agents`, `mission_policies`) per ARCHITECTURE.md §7 with owner RLS on all tables; wallet-auth flow (POST /api/auth/nonce → wallet signs message → POST /api/auth/verify → Supabase session); dashboard read path; DRAFT mission creation. Verified on CI (web + supabase jobs green on phase-3-ci).
+
+Phase 3.1 complete: nonce storage migrated from in-memory Map to the `auth_nonces` table (single-use enforced atomically via UPDATE … WHERE `consumed_at` IS NULL … RETURNING; RLS enabled with no policies, service-role only); GitHub Actions CI added (web, supabase with live RLS/auth suite, solana); Phase 2's 2 expiry E2E tests un-skipped for Linux CI.
+
+Phase 3.2: `solana` CI job split into `solana-cargo` (required: Rust stable, `cargo build` + `cargo test` only, no Anchor/Solana CLI/platform-tools) and `solana-e2e` (non-blocking via job-level `continue-on-error`: full Solana 2.3.0 + Anchor 0.32.1 toolchain, `anchor build`, IDL, validator, deploy, mocha). No 11th Anchor-install fix attempted; the install steps are left as-is.
+
+Design decisions recorded:
+- Next 15 pinned (not 16) for stable middleware conventions.
+- zod v3 pinned.
+- `@solana/kit` codecs throw internally in this toolchain; the auth path uses local Ed25519 decode with fixture tests, and kit only for `address()` validation.
+- Rate limiting (ARCHITECTURE.md §10) still deferred, not in Phase 3 scope.
+
+Known open items:
+- `solana-e2e` not green; a pinned Docker image shipping Rust + Solana 2.3.0 + Anchor 0.32.1 is the fix path, scheduled before Phase 5.
+- Phase 2 expiry E2E tests still unverified on Linux CI until `solana-e2e` goes green (not claimed as passing).
+
+Previous checkpoint: Phase 2 (`979e6d4`).
+Next assigned task: **Phase 4 — not yet authorized.**
+CI: phase-3-ci runs at https://github.com/onyebuchidaniel60/Succra/actions?query=branch%3Aphase-3-ci (run 11 for `78b08a1`: https://github.com/onyebuchidaniel60/Succra/actions/runs/34778044318 — web + supabase green, solana red at Anchor install, motivating the 3.2 split).
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
