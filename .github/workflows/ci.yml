@@ -196,17 +196,8 @@ jobs:
           sh /tmp/solana-install.sh
           # Agave installs versioned releases under install/active_release.
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-      - name: Install Anchor 0.32.1
-        run: |
-          # avm's shims do not resolve reliably across CI steps, so fetch
-          # the official 0.32.1 release binary directly (same artifact avm
-          # would install, minus the version manager).
-          mkdir -p "$HOME/.anchor-0.32.1/bin"
-          curl -sSfL https://github.com/otter-sec/anchor/releases/download/v0.32.1/anchor-0.32.1-x86_64-unknown-linux-gnu -o "$HOME/.anchor-0.32.1/bin/anchor"
-          test -s "$HOME/.anchor-0.32.1/bin/anchor"
-          chmod +x "$HOME/.anchor-0.32.1/bin/anchor"
-          echo "$HOME/.anchor-0.32.1/bin" >> "$GITHUB_PATH"
-          anchor --version
+      - name: Install Anchor CLI 0.32.1
+        run: cargo install anchor-cli --version 0.32.1 --locked --force
       - name: Verify Rust toolchain
         run: |
           rustc --version
