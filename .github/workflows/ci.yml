@@ -200,13 +200,21 @@ jobs:
           avm install 0.32.1
           avm use 0.32.1
           anchor --version
+      - name: Verify Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+          rustup toolchain list
+          rustup show active-toolchain
+      - name: Verify Solana install
+        run: |
+          solana --version
+          cargo build-sbf --version
       - name: Install platform-tools v1.48
         # Agave 2.3.0's cargo-build-sbf has no --install-only flag; running
-        # it with --force-tools-install in the program dir installs the
-        # pinned tools and compiles the program as a side effect (anchor
-        # reuses both incrementally afterwards).
-        working-directory: programs/succra
-        run: cargo build-sbf --tools-version v1.48 --force-tools-install
+        # it with --force-tools-install installs the pinned tools (anchor
+        # reuses both the tools and this build incrementally afterwards).
+        run: cargo build-sbf --tools-version v1.48 --force-tools-install --manifest-path programs/succra/Cargo.toml
       - name: cargo build
         run: cargo build --manifest-path programs/succra/Cargo.toml
       - name: cargo test
