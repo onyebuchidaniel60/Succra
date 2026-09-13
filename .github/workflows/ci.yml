@@ -225,6 +225,10 @@ jobs:
         run: cargo build --manifest-path programs/succra/Cargo.toml
       - name: cargo test
         run: cargo test --manifest-path programs/succra/Cargo.toml
+      - name: Assert pinned Anchor version is active
+        # avm use must persist across steps; a nightly/default shim would
+        # fail the Anchor.toml anchor_version match inside anchor build.
+        run: anchor --version | grep -q '0.32.1'
       - name: anchor build
         run: anchor build --no-idl
       - name: anchor idl build
