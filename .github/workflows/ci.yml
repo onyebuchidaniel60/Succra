@@ -201,11 +201,14 @@ jobs:
           # Anchor lives at otter-sec/anchor now (coral-xyz redirects there);
           # use the official prebuilt-avm installer (no cargo compile).
           curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
-          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.avm/bin:$HOME/.cargo/bin:$PATH"
           avm install 0.32.1
           avm use 0.32.1
           anchor --version
+          # Prepend (not append): the installer also links an anchor binary
+          # into ~/.cargo/bin, which would otherwise shadow the avm-managed
+          # pinned version for the rest of the job.
+          echo "PATH=$HOME/.avm/bin:$PATH" >> "$GITHUB_ENV"
       - name: Verify Rust toolchain
         run: |
           rustc --version
