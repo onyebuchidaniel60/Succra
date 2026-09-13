@@ -54,7 +54,45 @@ jobs:
       - name: Lint database
         run: npx -y supabase db lint
       - name: Export local Supabase env
-        run: npx -y supabase status -o env | sed 's/^export //' | grep -E '^(SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY)=' >> "$GITHUB_ENV"
+        run: |
+          npx -y supabase status -o env | tee /tmp/supabase-env.txt
+          python3 - <<'PYEOF'
+          import re
+          import sys
+          found = {}
+          for line in open('/tmp/supabase-env.txt'):
+              line = line.strip()
+              if line.startswith('export '):
+                  line = line[len('export ') :]
+              match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
+              if match:
+                  found[match.group(1)] = match.group(2).strip().strip('"').strip("'")
+          print('status keys:', sorted(found))
+          mapping = {
+              'SUPABASE_URL': ['SUPABASE_URL'],
+              'SUPABASE_ANON_KEY': ['SUPABASE_ANON_KEY', 'ANON_KEY'],
+              'SUPABASE_SERVICE_ROLE_KEY': [
+                  'SUPABASE_SERVICE_ROLE_KEY',
+                  'SERVICE_ROLE_KEY',
+                  'SERVICE_KEY',
+              ],
+          }
+          missing = []
+          with open('/tmp/succra-supabase.env', 'w') as out:
+              for target, candidates in mapping.items():
+                  value = next((found[name] for name in candidates if found.get(name)), None)
+                  if value is None:
+                      missing.append(target)
+                  else:
+                      out.write(f'{target}={value}\n')
+          if missing:
+              print(f'MISSING REQUIRED KEYS: {missing}', file=sys.stderr)
+              sys.exit(1)
+          PYEOF
+          while IFS='=' read -r key value; do
+            if [ -n "$key" ]; then echo "$key=$value" >> "$GITHUB_ENV"; fi
+          done < /tmp/succra-supabase.env
+          echo 'exported SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY'
       - name: Build web app
         run: pnpm --filter @succra/web build
         env:
@@ -87,7 +125,7 @@ jobs:
           APP_URL: http://127.0.0.1:3100
       - name: Show web app log on failure
         if: failure()
-        run: tail -n 200 /tmp/succra-web.log
+        run: tail -n 200 /tmp/succra-web.log || true
       - name: Stop web app
         if: always()
         run: pkill -f "next-server" || true
@@ -130,8 +168,11 @@ jobs:
           echo "$HOME/.local/share/solana/active_release/bin" >> "$GITHUB_PATH"
       - name: Install Anchor 0.32.1 via avm
         run: |
-          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          # Anchor lives at otter-sec/anchor now (coral-xyz redirects there);
+          # use the official prebuilt-avm installer (no cargo compile).
+          curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.avm/bin:$HOME/.cargo/bin:$PATH"
           avm install 0.32.1
           avm use 0.32.1
           anchor --version
@@ -169,7 +210,7 @@ jobs:
           ANCHOR_WALLET: ~/.config/solana/id.json
       - name: Show validator log on failure
         if: failure()
-        run: tail -n 200 /tmp/validator.log
+        run: tail -n 200 /tmp/validator.log || true
       - name: Stop validator
         if: always()
         run: pkill -f solana-test-validator || true
