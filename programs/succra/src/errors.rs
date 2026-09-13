@@ -18,4 +18,31 @@ pub enum SuccraError {
     ExpiryNotInFuture,
     #[msg("Mission is not in a state that permits this instruction.")]
     InvalidMissionStatus,
+    // Phase 2: execute_action policy errors (PROJECT_SPEC.md FR-03).
+    #[msg("Signer is not the mission's current agent.")]
+    NotCurrentAgent,
+    #[msg("Mission has expired.")]
+    MissionExpired,
+    #[msg("Action type is not in the mission allowlist.")]
+    ActionTypeNotAllowed,
+    #[msg("Recipient is not in the mission allowlist.")]
+    RecipientNotAllowed,
+    #[msg("Amount exceeds the mission per-action maximum.")]
+    AmountExceedsMaxAction,
+    #[msg("Amount exceeds the mission remaining budget.")]
+    InsufficientBudget,
+    #[msg("Action nonce is not strictly greater than the mission nonce.")]
+    StaleNonce,
+    #[msg("Asset type does not match the mission mint (SOL vs SPL).")]
+    AssetMismatch,
+    #[msg("SPL mission vault token account was not provided.")]
+    MissingSplVault,
+    #[msg("Required counterpart token account was not provided.")]
+    MissingTokenAccount,
+    #[msg("SPL vault token account does not belong to this mission.")]
+    InvalidSplVault,
+    #[msg("Token account mint does not match the mission mint.")]
+    InvalidMint,
+    #[msg("Token account owner is not the expected party.")]
+    InvalidTokenAccountOwner,
 }

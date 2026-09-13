@@ -11,7 +11,8 @@ pub const MAX_ALLOWED_RECIPIENTS: usize = 16;
 /// (AGENTS.md invariant #4). Derived from ARCHITECTURE.md §7 `missions`
 /// + `mission_policies`, minus DB-side fields (UUIDs, owner_id FK,
 /// timestamps, PDA/vault address strings, policy version/hash mirrors).
-/// Agent-related fields (current agent, successor set) arrive in Phase 2+.
+/// Agent identity (`current_agent`, `agent_nonce`) arrived in Phase 2;
+/// successor/guardian fields arrive with Phases 5/6.
 #[account]
 pub struct Mission {
     /// Wallet that created the mission; sole authority for fund/cancel.
@@ -20,17 +21,18 @@ pub struct Mission {
     pub mission_id: u64,
     /// Bump of the program-controlled vault PDA.
     pub vault_bump: u8,
-    /// SPL mint for the mission (missions.mint_address). Recorded at
-    /// creation; SPL movement arrives with transfer execution later.
+    /// SPL mint for the mission (missions.mint_address). `Pubkey::default()`
+    /// denotes a native-SOL mission; any other value denotes an SPL mission
+    /// whose value lives in the `spl-vault` token account.
     pub mint: Pubkey,
     /// Total mission budget in lamports / base units.
     pub budget: u64,
-    /// Spendable remainder. 0 in DRAFT; set to `budget` by `fund`.
+    /// Spendable remainder. 0 in DRAFT; set to `budget` by funding.
     pub remaining_budget: u64,
     /// Per-action ceiling (mission_policies.max_action_atomic).
     pub max_action: u64,
     /// Successor per-action ceiling (recovery_max_action_atomic).
-    /// Enforced now (FR-01: recovery max <= primary max); applied in Phase 6.
+    /// Validated at creation (FR-01); enforced in Phase 6, not Phase 2.
     pub recovery_max_action: u64,
     /// MVP action types (mission_policies.allowed_action_types).
     pub allowed_action_types: Vec<ActionType>,
@@ -42,8 +44,19 @@ pub struct Mission {
     pub violation_threshold: u8,
     /// Violation window in seconds (DB default 900). Applied in Phase 5.
     pub violation_window_seconds: u64,
-    /// Lifecycle state. Phase 1 subset of the PROJECT_SPEC.md §6 machine.
+    /// Lifecycle state. Draft/Active/Cancelled subset of the
+    /// PROJECT_SPEC.md §6 machine; later phases extend transitions.
     pub status: MissionStatus,
+    /// Agent currently authorized to execute mission actions (FR-01
+    /// "primary agent" input; ARCHITECTURE.md §7 `current_agent_public_key`).
+    /// Set at creation. Only this key may sign `execute_action`.
+    pub current_agent: Pubkey,
+    /// Strictly increasing action counter (ARCHITECTURE.md §11: program
+    /// rejects stale/non-sequential action nonces). Starts at 0; each
+    /// `execute_action` must carry a strictly greater nonce, which becomes
+    /// the new value. This is the on-chain replay/idempotency mechanism
+    /// (DB idempotency keys arrive in Phase 4).
+    pub agent_nonce: u64,
 }
 
 impl Mission {
@@ -61,7 +74,9 @@ impl Mission {
         + 8 // expires_at
         + 1 // violation_threshold
         + 8 // violation_window_seconds
-        + 1; // status
+        + 1 // status
+        + 32 // current_agent (Phase 2)
+        + 8; // agent_nonce (Phase 2)
 }
 
 /// MVP action adapters (PROJECT_SPEC.md FR-03, AGENTS.md invariant #8).
@@ -73,24 +88,40 @@ pub enum ActionType {
     TransferSpl,
 }
 
-/// Phase 1 subset of the PROJECT_SPEC.md §6 mission state machine.
-/// Later phases extend this enum as their transitions land.
+/// Draft/Active/Cancelled subset of the PROJECT_SPEC.md §6 mission state
+/// machine. Later phases extend this enum as their transitions land.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum MissionStatus {
-    /// Created, not yet funded. Only `fund` or `cancel` may follow.
+    /// Created, not yet funded. Only funding or `cancel` may follow.
     Draft,
-    /// Funded. Only `cancel` may follow in Phase 1.
+    /// Funded and executable. `execute_action` and `cancel` may follow.
     Active,
     /// Terminal. Vault closed, assets returned to owner.
     Cancelled,
 }
 
-/// Program-controlled vault PDA (ARCHITECTURE.md §8, §18). Holds native
-/// SOL in Phase 1. No private key exists; only the program can move
-/// funds, via `close` on cancel (later: constrained transfers).
-#[account]
+/// Program-controlled vault PDA (ARCHITECTURE.md §8, §18). A native
+/// system account with no data, so it can send SOL via the System Program.
+/// Holds native SOL for SOL missions (and the rent reserve plus token
+/// authority for SPL missions). No private key exists; only the program
+/// can move funds, via `invoke_signed`.
+///
+/// NOTE: the vault is deliberately NOT an Anchor data account. The System
+/// Program rejects transfers whose source carries data, so a
+/// program-owned data account could never send SOL. Client code treats
+/// the vault as a plain system PDA (`SystemAccount` on the client).
 pub struct Vault {}
 
-impl Vault {
-    pub const LEN: usize = 8;
+/// Emitted after every successful `execute_action`. This is the Phase 2
+/// on-chain proof of execution; richer audit anchoring arrives with the
+/// phase that introduces on-chain audit events.
+#[event]
+pub struct ActionExecuted {
+    pub mission_id: u64,
+    pub agent: Pubkey,
+    pub action_type: ActionType,
+    pub recipient: Pubkey,
+    pub amount: u64,
+    pub new_nonce: u64,
+    pub remaining_budget_after: u64,
 }

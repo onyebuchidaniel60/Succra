@@ -4,16 +4,33 @@
 Succra — autonomous mission continuity and authority succession on Solana.
 
 ## Current status
-**Phase 1 — Solana program foundation: complete** (see Phase 1 checkpoint commit).
+**Phase 2 — Secure action execution: complete** (see Phase 2 checkpoint commit).
 
 Mission/vault accounts with create/fund/cancel verify clean: `cargo build`,
 `cargo test` (12/12), `anchor build` (SBF), validator integration suite
 (13/13: create, fund, cancel/refund, FR-01 negatives, non-owner rejection).
-No Phase 2+ logic implemented.
-Note: fund is exact-match (== budget) and single-use in Phase 1; revisit if a later phase requires partial or multi-deposit funding.
-Note: Anchor events for create/fund/cancel are not emitted in Phase 1; schedule with the phase that introduces on-chain audit anchoring.
-Prior checkpoint: Phase 0 complete (`cc179916019484157c153f13ff825a0b2e4b83d9`).
-Next assigned task: **Phase 2 — Secure action execution**, not yet authorized.
+
+Phase 2 delivered: `current_agent: Pubkey` + `agent_nonce: u64` on Mission;
+`execute_action` instruction (TRANSFER_SOL via System, TRANSFER_SPL via
+Token, vault-PDA-signed); `fund_spl` instruction (SPL deposit into the
+program-owned spl-vault, exact-match, single-use); SPL-aware `cancel`;
+`ActionExecuted` event; 13 new program errors (6008–6020); FR-03 checks in
+pure `validation.rs` (`validate_execute_policy`). Verified: `cargo test`
+(25/25), integration suite 27/27 runnable, `pnpm`
+lint/typecheck/test/build/format all pass.
+Amendment note: cancel semantics were extended to be SPL-aware as a
+necessary consequence of Phase 2's SPL support (`fund_spl` creates an SPL
+vault; cancel must be able to close it). Authority model unchanged.
+Known environment-blocked verification: two expiry E2E tests are skipped
+on this Windows sandbox (bank-clock lag with `--ticks-per-slot 1024`,
+required because the sandbox lacks symlink privilege and the validator
+dies packaging its slot-100 snapshot). Unit coverage for expiry rejection
+passes. These should be run on a Linux host before mainnet.
+Note: the `anchor deploy` IDL-write loop does not converge on slow
+validators; `solana program deploy` is the working path. No test depends
+on the on-chain IDL.
+Prior checkpoint: Phase 1 complete (`d9811bb`).
+Next assigned task: **Phase 3 — Web auth + database**, not yet authorized.
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
