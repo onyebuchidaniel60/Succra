@@ -1,0 +1,175 @@
+# SUCCRA CI — web, Supabase (real local stack), Solana program.
+#
+# Triggers: push to main, pull requests, and pushes to the `phase-3-ci`
+# iteration branch (Phase 3.1 verification; remove that branch entry when
+# the branch is merged and deleted — it is harmless afterwards).
+# No secrets: the Supabase job uses local dev keys only.
+
+name: ci
+
+on:
+  push:
+    branches: [main, phase-3-ci]
+  pull_request:
+
+jobs:
+  web:
+    name: web (lint, typecheck, test, build, format)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm format
+
+  supabase:
+    name: supabase (real stack + live RLS/auth)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - name: Start local Supabase
+        run: npx -y supabase start
+      - name: Reset database (applies migrations from scratch)
+        run: npx -y supabase db reset
+      - name: Lint database
+        run: npx -y supabase db lint
+      - name: Export local Supabase env
+        run: npx -y supabase status -o env | sed 's/^export //' | grep -E '^(SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY)=' >> "$GITHUB_ENV"
+      - name: Build web app
+        run: pnpm --filter @succra/web build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+      - name: Boot web app with short nonce TTL
+        run: |
+          NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL" \
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$SUPABASE_ANON_KEY" \
+          SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
+          NEXT_PUBLIC_APP_URL=http://127.0.0.1:3100 \
+          SUCCRA_NONCE_TTL_SECONDS=10 \
+          PORT=3100 \
+          pnpm --filter @succra/web start > /tmp/succra-web.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3100/ > /dev/null; then
+              echo "web app ready after ${attempt} checks"
+              break
+            fi
+            sleep 5
+          done
+          curl -sf http://127.0.0.1:3100/ > /dev/null
+      - name: Run live Supabase integration suite
+        run: pnpm vitest run tests/integration/supabase-rls-live.test.ts
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_URL: http://127.0.0.1:3100
+      - name: Show web app log on failure
+        if: failure()
+        run: tail -n 200 /tmp/succra-web.log
+      - name: Stop web app
+        if: always()
+        run: pkill -f "next-server" || true
+      - name: Stop Supabase
+        if: always()
+        run: npx -y supabase stop --no-backup
+
+  solana:
+    name: solana (program build, unit, validator suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache toolchains and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo
+            ~/.rustup
+            ~/.avm
+            ~/.cache/solana
+            target/
+            programs/succra/target/
+          key: solana-2.3.0-anchor-0.32.1-tools-1.48-${{ runner.os }}-${{ hashFiles('programs/succra/Cargo.lock') }}
+          restore-keys: |
+            solana-2.3.0-anchor-0.32.1-tools-1.48-${{ runner.os }}-
+      - name: Install Solana 2.3.0 (Agave)
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v2.3.0/install)"
+          echo "$HOME/.local/share/solana/active_release/bin" >> "$GITHUB_PATH"
+      - name: Install Anchor 0.32.1 via avm
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+          avm install 0.32.1
+          avm use 0.32.1
+          anchor --version
+      - name: Install platform-tools v1.48
+        run: cargo build-sbf --tools-version v1.48 --install-only
+      - name: cargo build
+        run: cargo build --manifest-path programs/succra/Cargo.toml
+      - name: cargo test
+        run: cargo test --manifest-path programs/succra/Cargo.toml
+      - name: anchor build
+        run: anchor build --no-idl
+      - name: anchor idl build
+        run: anchor idl build -o target/idl/succra.json -t target/types/succra.ts --skip-lint
+      - name: Start local validator
+        run: |
+          solana-keygen new --no-bip39-passphrase --silent --outfile ~/.config/solana/id.json || true
+          solana-test-validator --ledger /tmp/succra-test-ledger --reset --quiet > /tmp/validator.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if solana cluster-version --url http://127.0.0.1:8899 > /dev/null 2>&1; then
+              echo "validator ready after ${attempt} checks"
+              break
+            fi
+            sleep 2
+          done
+          solana cluster-version --url http://127.0.0.1:8899
+      - name: Deploy program
+        run: solana program deploy --url http://127.0.0.1:8899 target/deploy/succra.so --program-id target/deploy/succra-keypair.json
+      - name: Run mocha integration suite
+        run: >-
+          mocha -t 1000000 --require ts-node/register
+          --compiler-options {"module":"commonjs","moduleResolution":"node","verbatimModuleSyntax":false,"types":["node","mocha"]}
+          "programs/succra/tests/*.ts"
+        env:
+          ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
+          ANCHOR_WALLET: ~/.config/solana/id.json
+      - name: Show validator log on failure
+        if: failure()
+        run: tail -n 200 /tmp/validator.log
+      - name: Stop validator
+        if: always()
+        run: pkill -f solana-test-validator || true
