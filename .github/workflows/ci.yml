@@ -55,39 +55,63 @@ jobs:
         run: npx -y supabase db lint
       - name: Export local Supabase env
         run: |
-          npx -y supabase status -o env | tee /tmp/supabase-env.txt
+          set +e
+          npx -y supabase status -o env > /tmp/status-env.txt 2>&1
+          echo "env exit: $?"
+          npx -y supabase status -o json > /tmp/status-json.txt 2>&1
+          echo "json exit: $?"
+          echo 'env keys seen:'
+          cut -d= -f1 /tmp/status-env.txt 2> /dev/null || echo '(no env output)'
           python3 - <<'PYEOF'
+          import json
           import re
           import sys
+
           found = {}
-          for line in open('/tmp/supabase-env.txt'):
-              line = line.strip()
-              if line.startswith('export '):
-                  line = line[len('export ') :]
-              match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
-              if match:
-                  found[match.group(1)] = match.group(2).strip().strip('"').strip("'")
-          print('status keys:', sorted(found))
-          mapping = {
-              'SUPABASE_URL': ['SUPABASE_URL'],
-              'SUPABASE_ANON_KEY': ['SUPABASE_ANON_KEY', 'ANON_KEY'],
-              'SUPABASE_SERVICE_ROLE_KEY': [
-                  'SUPABASE_SERVICE_ROLE_KEY',
-                  'SERVICE_ROLE_KEY',
-                  'SERVICE_KEY',
-              ],
-          }
+          try:
+              for line in open('/tmp/status-env.txt'):
+                  line = line.strip()
+                  if line.startswith('export '):
+                      line = line[len('export ') :]
+                  match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
+                  if match:
+                      found[match.group(1)] = match.group(2).strip().strip('"').strip("'")
+          except OSError:
+              pass
+          try:
+              payload = json.load(open('/tmp/status-json.txt'))
+              if isinstance(payload, dict):
+                  for key, value in payload.items():
+                      if isinstance(value, str) and value and key not in found:
+                          found[str(key)] = value
+          except (OSError, ValueError):
+              pass
+
+          def pick(*fragments):
+              for name, value in found.items():
+                  lowered = name.lower()
+                  if value and all(part in lowered for part in fragments):
+                      return value
+              return None
+
+          url = pick('supabase', 'url') or pick('api', 'url') or pick('url')
+          anon = pick('anon')
+          service = pick('service')
+          print('candidate key names:', sorted(found))
           missing = []
-          with open('/tmp/succra-supabase.env', 'w') as out:
-              for target, candidates in mapping.items():
-                  value = next((found[name] for name in candidates if found.get(name)), None)
-                  if value is None:
-                      missing.append(target)
-                  else:
-                      out.write(f'{target}={value}\n')
+          if not url or not url.startswith('http'):
+              missing.append('SUPABASE_URL')
+          if not anon or not anon.startswith('eyJ'):
+              missing.append('SUPABASE_ANON_KEY')
+          if not service or not service.startswith('eyJ'):
+              missing.append('SUPABASE_SERVICE_ROLE_KEY')
           if missing:
-              print(f'MISSING REQUIRED KEYS: {missing}', file=sys.stderr)
+              print(f'MISSING OR MALFORMED KEYS: {missing}', file=sys.stderr)
               sys.exit(1)
+          with open('/tmp/succra-supabase.env', 'w') as out:
+              out.write(f'SUPABASE_URL={url}\n')
+              out.write(f'SUPABASE_ANON_KEY={anon}\n')
+              out.write(f'SUPABASE_SERVICE_ROLE_KEY={service}\n')
           PYEOF
           while IFS='=' read -r key value; do
             if [ -n "$key" ]; then echo "$key=$value" >> "$GITHUB_ENV"; fi
@@ -177,7 +201,12 @@ jobs:
           avm use 0.32.1
           anchor --version
       - name: Install platform-tools v1.48
-        run: cargo build-sbf --tools-version v1.48 --install-only
+        # Agave 2.3.0's cargo-build-sbf has no --install-only flag; running
+        # it with --force-tools-install in the program dir installs the
+        # pinned tools and compiles the program as a side effect (anchor
+        # reuses both incrementally afterwards).
+        working-directory: programs/succra
+        run: cargo build-sbf --tools-version v1.48 --force-tools-install
       - name: cargo build
         run: cargo build --manifest-path programs/succra/Cargo.toml
       - name: cargo test
