@@ -196,19 +196,17 @@ jobs:
           sh /tmp/solana-install.sh
           # Agave installs versioned releases under install/active_release.
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
-      - name: Install Anchor 0.32.1 via avm
+      - name: Install Anchor 0.32.1
         run: |
-          # Anchor lives at otter-sec/anchor now (coral-xyz redirects there);
-          # use the official prebuilt-avm installer (no cargo compile).
-          curl -sSfL https://raw.githubusercontent.com/otter-sec/anchor/master/avm/install | sh
-          export PATH="$HOME/.avm/bin:$HOME/.cargo/bin:$PATH"
-          avm install 0.32.1
-          avm use 0.32.1
+          # avm's shims do not resolve reliably across CI steps, so fetch
+          # the official 0.32.1 release binary directly (same artifact avm
+          # would install, minus the version manager).
+          mkdir -p "$HOME/.anchor-0.32.1/bin"
+          curl -sSfL https://github.com/otter-sec/anchor/releases/download/v0.32.1/anchor-0.32.1-x86_64-unknown-linux-gnu -o "$HOME/.anchor-0.32.1/bin/anchor"
+          test -s "$HOME/.anchor-0.32.1/bin/anchor"
+          chmod +x "$HOME/.anchor-0.32.1/bin/anchor"
+          echo "$HOME/.anchor-0.32.1/bin" >> "$GITHUB_PATH"
           anchor --version
-          # Prepend (not append): the installer also links an anchor binary
-          # into ~/.cargo/bin, which would otherwise shadow the avm-managed
-          # pinned version for the rest of the job.
-          echo "PATH=$HOME/.avm/bin:$PATH" >> "$GITHUB_ENV"
       - name: Verify Rust toolchain
         run: |
           rustc --version
