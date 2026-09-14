@@ -26,7 +26,7 @@ Known open items:
 
 Previous checkpoint: Phase 2 (`979e6d4`).
 Next assigned task: **Phase 4 — not yet authorized.**
-CI: phase-3-ci runs at https://github.com/onyebuchidaniel60/Succra/actions?query=branch%3Aphase-3-ci (run 11 for `78b08a1`: https://github.com/onyebuchidaniel60/Succra/actions/runs/34778044318 — web + supabase green, solana red at Anchor install, motivating the 3.2 split).
+CI: verified on phase-3-ci run 12 (https://github.com/onyebuchidaniel60/Succra/actions/runs/34805905117 — web + supabase + solana-cargo green, solana-e2e non-blocking red) and on main run 13 (https://github.com/onyebuchidaniel60/Succra/actions/runs/34806623212 — same). Phase 3 merged to main as `b3cfd8e`; phase-3-ci fully merged, no commits ahead.
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
