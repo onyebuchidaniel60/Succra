@@ -131,6 +131,25 @@
 - `onchain_signature` TEXT NULL
 - `created_at`
 
+## `agent_challenges`
+- `id` UUID PK
+- `agent_id` UUID FK agents.id
+- `challenge` TEXT NOT NULL UNIQUE
+- `expires_at` TIMESTAMPTZ NOT NULL
+- `consumed_at` TIMESTAMPTZ NULL
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+RLS enabled, no policies (service-role only). Single-use enforced via UPDATE … WHERE `consumed_at` IS NULL AND `expires_at` > now() RETURNING.
+
+## `agent_request_nonces`
+- `id` UUID PK
+- `agent_id` UUID FK agents.id
+- `nonce` TEXT NOT NULL
+- `expires_at` TIMESTAMPTZ NOT NULL
+- `consumed_at` TIMESTAMPTZ NULL
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- unique `(agent_id, nonce)`
+RLS enabled, no policies (service-role only).
+
 Sensitive data:
 - no private keys;
 - no wallet seeds;
@@ -315,17 +334,40 @@ Auth: owner.
 Purpose: attach primary/successor.
 
 ## `POST /api/agents/:id/challenge`
-Auth: user session.
+Auth: owner session.
 Purpose: issue registration challenge.
+Request: `{}` (empty).
+Response:
+```json
+{
+  "challenge": "<hex, 32 random bytes>",
+  "expiresAt": "<iso8601, 5 minutes from issue>"
+}
+```
 
 ## `POST /api/agents/:id/verify`
-Auth: user session.
-Request: signed challenge.
+Auth: owner session.
 Purpose: prove agent key possession.
+Request:
+```json
+{
+  "challenge": "<hex>",
+  "signature": "<base64 Ed25519 signature over the raw challenge bytes>"
+}
+```
+Response:
+```json
+{
+  "agentId": "<uuid>",
+  "status": "VERIFIED"
+}
+```
+Errors: `CHALLENGE_EXPIRED`, `CHALLENGE_UNKNOWN`, `INVALID_SIGNATURE`.
 
 ## `POST /api/agents/:id/heartbeat`
 Auth: agent signature.
 Purpose: liveness signal.
+Heartbeat minimum interval: 30 seconds. The gateway rejects heartbeats received less than 30s after the previous accepted heartbeat for the same agent. This value is a named constant in code, not an env var.
 
 Headers:
 - `x-succra-agent-id`
@@ -334,8 +376,9 @@ Headers:
 - `x-succra-signature`
 
 ## `POST /api/missions/:id/actions`
-Auth: registered current agent signature.
-Request:
+Auth: registered current agent signature (§12).
+Purpose: pre-flight policy evaluation + unsigned transaction construction. Gateway partially signs as fee payer. Does NOT touch the chain.
+Request body (unchanged):
 ```json
 {
   "idempotencyKey": "...",
@@ -348,8 +391,67 @@ Request:
   "expiresAt": "..."
 }
 ```
-Success: decision + transaction signature when executed.
-Errors: `AGENT_NOT_CURRENT`, `POLICY_BLOCKED`, `DUPLICATE_REQUEST`, `MISSION_QUARANTINED`.
+Response (ALLOW):
+```json
+{
+  "decision": "ALLOW",
+  "requestId": "<action_requests.id uuid>",
+  "unsignedTransaction": "<base64 serialized message>",
+  "expiresAt": "<iso8601>"
+}
+```
+Response (BLOCK):
+```json
+{
+  "decision": "BLOCK",
+  "requestId": "<uuid>",
+  "reasonCode": "<POLICY_BLOCKED | AGENT_NOT_CURRENT | MISSION_QUARANTINED | ...>",
+  "reason": "<human-readable>"
+}
+```
+Errors (with §10 envelope): `DUPLICATE_REQUEST`, `INVALID_BODY`, `AGENT_NOT_CURRENT`, `MISSION_NOT_ACTIVE`.
+
+## `POST /api/missions/:id/actions/:requestId/submit`
+Auth: registered current agent signature.
+Purpose: submit the agent-signed transaction, confirm on-chain, mirror result to DB.
+Request body:
+```json
+{
+  "signedTransaction": "<base64 serialized transaction>"
+}
+```
+Response (CONFIRMED):
+```json
+{
+  "decision": "ALLOW",
+  "requestId": "<uuid>",
+  "signature": "<base58>",
+  "slot": "<number>",
+  "status": "CONFIRMED"
+}
+```
+Response (FAILED):
+```json
+{
+  "decision": "ALLOW",
+  "requestId": "<uuid>",
+  "signature": "<base58 or null>",
+  "status": "FAILED",
+  "error": { "code": "...", "message": "..." }
+}
+```
+Errors (with §10 envelope): `TRANSACTION_MISMATCH`, `TRANSACTION_EXPIRED`, `ALREADY_SUBMITTED`, `CHAIN_REJECTION`.
+
+The gateway acts as Solana fee payer. It holds a single operational Ed25519 keypair whose public key is the fee payer of every constructed transaction. This key never signs as the agent (agent signature is required by the program's execute_action); never signs for the mission vault (vault is a program PDA); never custodies mission funds; co-signs only as fee payer.
+
+The fee-payer secret is server-only. It is not shipped to the browser and is not used outside the gateway's submit path.
+
+### Wire format
+Transactions are serialized using @solana/kit's canonical wire serialization. `unsignedTransaction` is the base64 encoding of the serialized message (the unsigned transaction, not the versioned transaction). The agent SDK deserializes, verifies, signs, and returns a fully signed transaction as base64 in `signedTransaction`.
+
+Hashing: `unsigned_tx_hash` stored on action_requests is SHA-256 of the decoded message bytes, hex-encoded. On submit, the gateway recomputes the message hash from the submitted transaction's message and compares to `unsigned_tx_hash`. Mismatch → `TRANSACTION_MISMATCH`.
+
+The gateway uses SUCCRA_RPC_URL for chain reads, transaction submission, and confirmation polling. In Phase 4 this is a direct Solana RPC endpoint. Helius webhooks are deferred (see §16).
 
 ## `POST /api/missions/:id/quarantine`
 Auth: runtime guardian credential OR owner.
@@ -376,6 +478,16 @@ Purpose: cancel/close mission and reclaim funds according to program rules.
 ## `GET /api/agents/:id/status`
 Auth: owner or mission-scoped agent.
 Purpose: status/health.
+Response:
+```json
+{
+  "agentId": "<uuid>",
+  "publicKey": "<base58>",
+  "status": "<REGISTERED | ACTIVE_PRIMARY | ...>",
+  "lastHeartbeatAt": "<iso8601 or null>",
+  "missions": [{ "missionId": "<uuid>", "role": "PRIMARY | SUCCESSOR" }]
+}
+```
 
 ### Rate limiting
 - auth endpoints: strict edge/API rate limit;
@@ -452,6 +564,8 @@ Canonical signing string:
 ```text
 SUCCRA-V1\n{timestamp}\n{nonce}\n{missionId}\n{method}\n{path}\n{sha256(body)}
 ```
+
+`{nonce}` in the signing string is a request-level replay-protection value, stored single-use in agent_request_nonces. It never advances on-chain state. `agentNonce` in the §10 request body is a distinct value passed to the program's monotonic on-chain counter and enforced by execute_action. The two values MUST NOT be the same variable.
 
 ## Resource authorization
 Every API request performs both:
@@ -639,6 +753,8 @@ Webhook secret: `HELIUS_WEBHOOK_SECRET`.
 Failure: fall back to direct RPC polling for critical state; do not block on-chain action validity.
 
 Helius webhooks can notify on transaction/account activity and may retry duplicate deliveries; the runtime must use event IDs/signatures for idempotent processing. citeturn663417search1turn663417search3
+
+Phase 4 uses direct RPC polling for transaction confirmation via SUCCRA_RPC_URL. Helius webhook integration is deferred to Phase 9. Do not add both mechanisms.
 
 ## Solana Wallet Standard
 Purpose: wallet connection/signing.
@@ -952,6 +1068,7 @@ HELIUS_WEBHOOK_SECRET=
 SUCCRA_PROGRAM_ID=
 SUCCRA_RPC_URL=
 SUCCRA_GUARDIAN_SECRET_KEY=
+SUCCRA_GATEWAY_FEE_PAYER_SECRET_KEY=
 OPENAI_API_KEY=
 OPENAI_MODEL=
 ```

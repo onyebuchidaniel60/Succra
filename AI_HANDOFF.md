@@ -28,6 +28,8 @@ Previous checkpoint: Phase 2 (`979e6d4`).
 Next assigned task: **Phase 4 — not yet authorized.**
 CI: verified on phase-3-ci run 12 (https://github.com/onyebuchidaniel60/Succra/actions/runs/34805905117 — web + supabase + solana-cargo green, solana-e2e non-blocking red) and on main run 13 (https://github.com/onyebuchidaniel60/Succra/actions/runs/34806623212 — same). Phase 3 merged to main as `b3cfd8e`; phase-3-ci fully merged, no commits ahead.
 
+Spec amendment (2026-09-14, v2): ARCHITECTURE.md and SUCCRA_BLUEPRINT amended for two-step action signing (§10), gateway fee-payer role and key (§10, §23), transaction wire format and hash preimage (§10), challenge/verify shapes and agent_challenges table (§10, §7), heartbeat minimum interval 30s (§10), gateway RPC via SUCCRA_RPC_URL and RPC polling as Phase 4 confirmation path (§10, §16), agent_request_nonces table and request-nonce vs agentNonce distinction (§7, §12), status endpoint envelope (§10). Rationale: prior single-endpoint spec contradicted the Phase 2 program's requirement that execute_action is signed by the current agent; two-step signing preserves non-custody.
+
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
