@@ -3,12 +3,32 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Succra web app placeholder (Phase 0, no product logic). Next.js App Router scaffold lands in a later phase per IMPLEMENTATION_PLAN.md.",
+  "description": "Succra web app: Next.js App Router + Supabase Auth + wallet login (Phase 3: landing, dashboard read path).",
   "scripts": {
-    "build": "tsc --noEmit -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@solana/kit": "^8.3.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.0.0",
+    "@wallet-standard/app": "^1.1.1",
+    "@wallet-standard/base": "^1.1.1",
+    "next": "^15.5.25",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tweetnacl": "^1.0.3",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0"
   }
 }

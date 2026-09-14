@@ -1,7 +1,32 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
-  "include": ["src", "tests"]
+  "include": [
+    "app",
+    "components",
+    "lib",
+    "middleware.ts",
+    "next-env.d.ts",
+    "next.config.ts",
+    "tests",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
 }

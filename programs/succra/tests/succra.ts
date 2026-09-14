@@ -760,7 +760,7 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
     }
   });
 
-  it.skip('rejects execution after expiry (environment-blocked on Windows sandbox: bank-clock lag)', async () => {
+  it('rejects execution after expiry', async () => {
     const { mission } = await createMission(22, {
       expiresAt: new anchor.BN(Math.floor(Date.now() / 1000) + 2),
     });
@@ -932,7 +932,7 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
     }
   });
 
-  it.skip('rejects creation with a past expiry (environment-blocked on Windows sandbox: bank-clock lag)', async () => {
+  it('rejects creation with a past expiry', async () => {
     try {
       await createMission(30, {
         expiresAt: new anchor.BN(Math.floor(Date.now() / 1000) - 60),
