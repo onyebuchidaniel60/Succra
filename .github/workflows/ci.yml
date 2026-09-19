@@ -143,8 +143,13 @@ jobs:
             sleep 5
           done
           curl -sf http://127.0.0.1:3100/ > /dev/null
+      # Phase 4.1 (option a): gateway/contract suites run in this job. The live
+      # Alpha test (tests/integration/phase4-alpha-live.test.ts) is NOT run
+      # here — it requires SUCCRA_GATEWAY_FEE_PAYER_SECRET_KEY + a validator
+      # URL + IDL/keypair and skips honestly without them (same pattern as
+      # the Phase 2 expiry tests). No new job, no continue-on-error.
       - name: Run live Supabase integration suite
-        run: pnpm vitest run tests/integration/supabase-rls-live.test.ts
+        run: pnpm vitest run tests/integration/supabase-rls-live.test.ts tests/integration/supabase-rls-phase4.test.ts "apps/web/tests/gateway-*.test.ts" apps/web/tests/mission-state.test.ts apps/web/tests/txkit-interop.test.ts "packages/sdk/tests/*.test.ts" "packages/shared/tests/*.test.ts"
         env:
           SUPABASE_URL: ${{ env.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}

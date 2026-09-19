@@ -393,4 +393,121 @@ if (!LIVE) {
       expect(response.headers.get('location')).toEqual('/');
     }, 60_000);
   });
+
+  describe('live Phase 4 gateway tables', () => {
+    let userA: TestUser;
+    let userB: TestUser;
+    let missionA = '';
+    let agentA = '';
+
+    beforeAll(async () => {
+      userA = await makeUser('p4a');
+      userB = await makeUser('p4b');
+      for (const [user, tag] of [
+        [userA, 'p4a'],
+        [userB, 'p4b'],
+      ] as const) {
+        const profile = await user.client
+          .from('profiles')
+          .insert({ id: user.id, wallet_address: `live-${tag}-${randomUUID()}` })
+          .select('id')
+          .single();
+        if (profile.error) throw new Error(`profile ${tag}: ${profile.error.message}`);
+      }
+      const agent = await userA.client
+        .from('agents')
+        .insert({
+          owner_id: userA.id,
+          name: 'alpha',
+          public_key: `key-${randomUUID()}`,
+          status: 'ACTIVE_PRIMARY',
+        })
+        .select('id')
+        .single();
+      if (agent.error || !agent.data)
+        throw new Error(`agent: ${agent.error?.message ?? 'unknown'}`);
+      agentA = (agent.data as { id: string }).id;
+      const mission = await userA.client
+        .from('missions')
+        .insert({
+          owner_id: userA.id,
+          name: 'Phase 4 live',
+          objective: 'Prove gateway isolation',
+          pda_address: `pending:live:${randomUUID()}`,
+          vault_address: `pending:live:${randomUUID()}`,
+          mint_address: '11111111111111111111111111111111',
+          budget_atomic: '50000000',
+          remaining_budget_atomic: '50000000',
+          status: 'DRAFT',
+          current_agent_public_key: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+          policy_version: 1,
+          policy_hash: 'hash',
+          expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        })
+        .select('id')
+        .single();
+      if (mission.error || !mission.data) {
+        throw new Error(`mission: ${mission.error?.message ?? 'unknown'}`);
+      }
+      missionA = (mission.data as { id: string }).id;
+      const action = await userA.client
+        .from('action_requests')
+        .insert({
+          mission_id: missionA,
+          agent_id: agentA,
+          idempotency_key: `live-${randomUUID()}`,
+          agent_nonce: 1,
+          action_type: 'TRANSFER_SOL',
+          payload: {},
+          request_hash: 'hash',
+          signature: 'sig',
+          decision: 'BLOCKED',
+          decision_reason_code: 'POLICY_BLOCKED',
+        })
+        .select('id')
+        .single();
+      if (action.error) throw new Error(`action: ${action.error.message}`);
+    }, 120_000);
+
+    afterAll(async () => {
+      await cleanupUser(userA).catch(() => undefined);
+      await cleanupUser(userB).catch(() => undefined);
+    });
+
+    it('B sees no action rows of A and cannot write for A’s mission', async () => {
+      const seen = await userB.client.from('action_requests').select('id');
+      expect(seen.data ?? []).toEqual([]);
+      const written = await userB.client.from('action_requests').insert({
+        mission_id: missionA,
+        agent_id: agentA,
+        idempotency_key: `evil-${randomUUID()}`,
+        agent_nonce: 99,
+        action_type: 'TRANSFER_SOL',
+        payload: {},
+        request_hash: 'h',
+        signature: 's',
+        decision: 'APPROVED',
+      });
+      expect(written.error).not.toBeNull();
+    });
+
+    it('agent_request_nonces and agent_challenges are server-only', async () => {
+      const nonces = await userA.client.from('agent_request_nonces').select('id');
+      expect(nonces.data ?? []).toEqual([]);
+      const challenges = await userA.client.from('agent_challenges').select('id');
+      expect(challenges.data ?? []).toEqual([]);
+      const writeNonce = await userA.client.from('agent_request_nonces').insert({
+        agent_id: agentA,
+        nonce: 'n',
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      expect(writeNonce.error).not.toBeNull();
+      const writeChallenge = await userA.client.from('agent_challenges').insert({
+        agent_id: agentA,
+        challenge: 'c',
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      expect(writeChallenge.error).not.toBeNull();
+    });
+  });
 }
