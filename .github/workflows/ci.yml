@@ -277,7 +277,12 @@ jobs:
               echo "DEPLOY FAILED (exit $?)" >> /work/deploy-out.log
               exit 1
             fi
-            ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json pnpm exec mocha -t 1000000 --require ts-node/register --compiler-options {"module":"commonjs","moduleResolution":"node","verbatimModuleSyntax":false,"types":["node","mocha"]} "programs/succra/tests/*.ts"
+            if ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json pnpm exec mocha -t 1000000 --require ts-node/register --compiler-options {"module":"commonjs","moduleResolution":"node","verbatimModuleSyntax":false,"types":["node","mocha"]} "programs/succra/tests/*.ts" > /work/mocha-out.log 2>&1; then
+              echo "MOCHA OK" >> /work/mocha-out.log
+            else
+              echo "MOCHA FAILED (exit $?)" >> /work/mocha-out.log
+              exit 1
+            fi
           '
       - name: Diagnostics summary
         if: always()
@@ -296,6 +301,11 @@ jobs:
             echo "### All .so files in repo"
             find . -name '*.so' -not -path './node_modules/*' -not -path './target/*' 2>/dev/null || true
             echo ""
+            echo ""
+            echo ""
+            echo "### mocha-out.log (test suite output)"
+            # print up to the last 200 lines; mocha logs can be long
+            tail -200 mocha-out.log 2>&1 || echo "no mocha-out.log"
             echo ""
             echo "### pre-deploy-diag.log (container-time state)"
             cat pre-deploy-diag.log 2>&1 || echo "no pre-deploy-diag.log"
