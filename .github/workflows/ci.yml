@@ -212,6 +212,8 @@ jobs:
         # progress collapses the failing layer).
         run: docker build --progress=plain -f .github/docker/solana-e2e.Dockerfile -t succra-solana-e2e .
       - name: Run e2e suite in container
+        id: e2e
+        continue-on-error: true
         # pnpm exec prefix: mocha must resolve inside the container PATH.
         # solana (not anchor) deploy: proven path from Phase 2 local runs.
         # No stop-validator step: `docker run --rm` tears the validator
@@ -234,10 +236,18 @@ jobs:
             fi
             anchor keys sync
             anchor build --no-idl
-            # PHASE-4.9-DIAGNOSTIC: remove after deploy verified
-            echo "=== DIAGNOSTIC: after anchor build ==="
-            ls -la target/deploy/ || echo "target/deploy does not exist after anchor build"
-            echo "=== END DIAGNOSTIC ==="
+            # anchor build writes the .so to the per-program target dir on this
+            # toolchain; the deploy command expects it at the workspace root.
+            mkdir -p target/deploy
+            if [ ! -f target/deploy/succra.so ]; then
+              if [ -f programs/succra/target/deploy/succra.so ]; then
+                cp programs/succra/target/deploy/succra.so target/deploy/succra.so
+              else
+                echo "ERROR: no .so at programs/succra/target/deploy/succra.so either" >&2
+                find . -name '*.so' -not -path './node_modules/*' >&2 || true
+                exit 1
+              fi
+            fi
             anchor idl build -o target/idl/succra.json -t target/types/succra.ts --skip-lint
             solana-keygen new --no-bip39-passphrase --silent --outfile ~/.config/solana/id.json || true
             solana-test-validator --ledger /tmp/succra-test-ledger --reset --quiet > /work/validator-e2e.log 2>&1 &
@@ -249,15 +259,32 @@ jobs:
               sleep 2
             done
             solana cluster-version --url http://127.0.0.1:8899
-            # PHASE-4.9-DIAGNOSTIC: remove after deploy verified
-            echo "=== DIAGNOSTIC: listing target/deploy ==="
-            ls -la target/deploy/ || echo "target/deploy does not exist"
-            echo "=== DIAGNOSTIC: anchor build output check ==="
-            find . -name '*.so' -not -path './node_modules/*' 2>/dev/null | head -20
-            echo "=== END DIAGNOSTIC ==="
             solana program deploy --url http://127.0.0.1:8899 target/deploy/succra.so --program-id target/deploy/succra-keypair.json
             ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json pnpm exec mocha -t 1000000 --require ts-node/register --compiler-options {"module":"commonjs","moduleResolution":"node","verbatimModuleSyntax":false,"types":["node","mocha"]} "programs/succra/tests/*.ts"
           '
+      - name: Diagnostics summary
+        if: always()
+        run: |
+          {
+            echo "## solana-e2e diagnostics"
+            echo ""
+            echo "**e2e step outcome:** ${{ steps.e2e.outcome }}"
+            echo ""
+            echo "### target/deploy contents (host)"
+            ls -la target/deploy/ 2>&1 || echo "target/deploy does not exist"
+            echo ""
+            echo "### programs/succra/target/deploy contents (host)"
+            ls -la programs/succra/target/deploy/ 2>&1 || echo "does not exist"
+            echo ""
+            echo "### All .so files in repo"
+            find . -name '*.so' -not -path './node_modules/*' -not -path './target/*' 2>/dev/null || true
+            echo ""
+            echo "### validator-e2e.log (last 40 lines)"
+            tail -40 validator-e2e.log 2>&1 || echo "no validator log"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail if e2e step failed
+        if: steps.e2e.outcome == 'failure'
+        run: exit 1
       - name: Show validator log on failure
         if: failure()
         run: tail -n 200 /work/validator-e2e.log || true
