@@ -225,6 +225,14 @@ jobs:
             anchor --version | grep -q "0.32.1"
             cargo build --manifest-path programs/succra/Cargo.toml
             cargo test --manifest-path programs/succra/Cargo.toml
+            # Program keypair is not committed (target/ is gitignored);
+            # generate fresh and sync declare_id + Anchor.toml so the CI
+            # workspace is self-consistent. Not committed.
+            mkdir -p target/deploy
+            if [ ! -f target/deploy/succra-keypair.json ]; then
+              solana-keygen new --no-bip39-passphrase --silent -o target/deploy/succra-keypair.json
+            fi
+            anchor keys sync
             anchor build --no-idl
             anchor idl build -o target/idl/succra.json -t target/types/succra.ts --skip-lint
             solana-keygen new --no-bip39-passphrase --silent --outfile ~/.config/solana/id.json || true
