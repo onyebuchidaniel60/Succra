@@ -208,7 +208,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build toolchain image
-        run: docker build -f .github/docker/solana-e2e.Dockerfile -t succra-solana-e2e .
+        # --progress=plain: expanded RUN output for diagnosis (default
+        # progress collapses the failing layer).
+        run: docker build --progress=plain -f .github/docker/solana-e2e.Dockerfile -t succra-solana-e2e .
       - name: Run e2e suite in container
         # pnpm exec prefix: mocha must resolve inside the container PATH.
         # solana (not anchor) deploy: proven path from Phase 2 local runs.
