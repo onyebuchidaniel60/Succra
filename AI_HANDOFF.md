@@ -34,7 +34,7 @@ Known open items:
 
 Previous checkpoint: Phase 3 merge (`b3cfd8e` / `987f9de`); spec amendment v2 (`971edd7`).
 Next assigned task: **Phase 5 — Guardian + quarantine, not yet authorized.**
-CI: local gates green (lint, typecheck, test 140 + Alpha 6/6, build, format); branch CI status to be confirmed after push (see session report).
+CI: local gates green (lint, typecheck, test 140 + Alpha 6/6, build, format); push trigger fixed to `phase-*` so phase branches run CI; branch run URL and per-job conclusions in the session report.
 
 Spec amendment (2026-09-14, v2): ARCHITECTURE.md and SUCCRA_BLUEPRINT amended for two-step action signing (§10), gateway fee-payer role and key (§10, §23), transaction wire format and hash preimage (§10), challenge/verify shapes and agent_challenges table (§10, §7), heartbeat minimum interval 30s (§10), gateway RPC via SUCCRA_RPC_URL and RPC polling as Phase 4 confirmation path (§10, §16), agent_request_nonces table and request-nonce vs agentNonce distinction (§7, §12), status endpoint envelope (§10). Rationale: prior single-endpoint spec contradicted the Phase 2 program's requirement that execute_action is signed by the current agent; two-step signing preserves non-custody.
 

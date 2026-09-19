@@ -3,16 +3,16 @@
 # Jobs: web (required), supabase (required), solana-cargo (required),
 # solana-e2e (non-blocking, continue-on-error; see job comment).
 #
-# Triggers: push to main, pull requests, and pushes to the `phase-3-ci`
-# iteration branch (Phase 3.1 verification; remove that branch entry when
-# the branch is merged and deleted — it is harmless afterwards).
+# Triggers: push to main, pull requests, and pushes to any `phase-*`
+# iteration branch (Phase 4+ verification; `phase-3-ci` matches the glob
+# and needs no exact entry anymore).
 # No secrets: the Supabase job uses local dev keys only.
 
 name: ci
 
 on:
   push:
-    branches: [main, phase-3-ci]
+    branches: [main, 'phase-*']
   pull_request:
 
 jobs:
