@@ -5,9 +5,9 @@
 # binary, and crates.io strategies). A pinned image makes the toolchain
 # deterministic: the same bytes on every run.
 #
-# Base: ubuntu:22.04 (not 24.04). The prebuilt anchor
-# x86_64-unknown-linux-gnu binary and Solana platform-tools v1.48 target
-# the 22.04-era glibc; 24.04 is untested with this combination.
+# Base: ubuntu:24.04. The Anchor 0.32.1 prebuilt binary requires GLIBC
+# 2.39, which 24.04 ships; 22.04 (GLIBC 2.35) was tried first and failed
+# at `anchor --version` with `GLIBC_2.39 not found` (CI run #20).
 #
 # Anchor install path: prebuilt release binary (NOT cargo install).
 # `cargo install anchor-cli --version 0.32.1 --locked` was the step that
@@ -22,7 +22,7 @@
 #
 # No secrets, tokens, or PATs are embedded in this image.
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     SOLANA_VERSION=2.3.0 \
