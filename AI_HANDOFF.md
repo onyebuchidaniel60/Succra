@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on Solana.
 
 ## Current status
-**Phase 4 — SDK + agent gateway: complete (on phase-4-gateway, unmerged). Phases 0–3.2 remain complete as below.**
+**Phase 4 — SDK + agent gateway: complete, merged to main (`2e88b4c`). Phases 0–3.2 remain complete as below.**
 
 Phase 2 complete (`979e6d4`): mission/vault accounts with create/fund/cancel; `current_agent: Pubkey` + `agent_nonce: u64`; `execute_action` (TRANSFER_SOL via System, TRANSFER_SPL via Token, vault-PDA-signed); `fund_spl` (exact-match, single-use); SPL-aware `cancel`; `ActionExecuted` event; FR-03 checks in pure `validation.rs`. Verified locally: `cargo test` (25/25), validator integration suite 27/27 runnable (2 expiry E2E skipped on the Windows sandbox — bank-clock lag — unit coverage for expiry rejection passes).
 
@@ -32,9 +32,9 @@ Known open items:
 - `solana-e2e` not green; a pinned Docker image shipping Rust + Solana 2.3.0 + Anchor 0.32.1 is the fix path, scheduled before Phase 5.
 - Phase 2 expiry E2E tests still unverified on Linux CI until `solana-e2e` goes green (not claimed as passing).
 
-Previous checkpoint: Phase 3 merge (`b3cfd8e` / `987f9de`); spec amendment v2 (`971edd7`).
+Previous checkpoint: Phase 4 merge (`2e88b4c`; branch commits `3b5cb46` + `6886aa6`).
 Next assigned task: **Phase 5 — Guardian + quarantine, not yet authorized.**
-CI: local gates green (lint, typecheck, test 140 + Alpha 6/6, build, format); push trigger fixed to `phase-*` so phase branches run CI; branch run URL and per-job conclusions in the session report.
+CI: verified on phase-4-gateway run 16 (https://github.com/onyebuchidaniel60/Succra/actions/runs/35462439880 — web + supabase + solana-cargo green, solana-e2e non-blocking red at Anchor install) and on main run 17 (https://github.com/onyebuchidaniel60/Succra/actions/runs/35464213809 — same). Phase 4 merged to main as `2e88b4c`; phase-4-gateway fully merged, no commits ahead.
 
 Spec amendment (2026-09-14, v2): ARCHITECTURE.md and SUCCRA_BLUEPRINT amended for two-step action signing (§10), gateway fee-payer role and key (§10, §23), transaction wire format and hash preimage (§10), challenge/verify shapes and agent_challenges table (§10, §7), heartbeat minimum interval 30s (§10), gateway RPC via SUCCRA_RPC_URL and RPC polling as Phase 4 confirmation path (§10, §16), agent_request_nonces table and request-nonce vs agentNonce distinction (§7, §12), status endpoint envelope (§10). Rationale: prior single-endpoint spec contradicted the Phase 2 program's requirement that execute_action is signed by the current agent; two-step signing preserves non-custody.
 
