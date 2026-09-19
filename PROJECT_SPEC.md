@@ -384,6 +384,14 @@ Quarantine MUST be triggered after 3 consecutive blocked policy violations in th
 
 The counter resets after a valid successful action or after a configured quiet period of 15 minutes.
 
+Two distinct reset mechanisms apply:
+  (a) Any CONFIRMED action resets the consecutive counter to zero.
+  (b) Any violation older than violation_window_seconds is no longer
+      counted toward the streak.
+Both mechanisms operate independently. A streak is the number of
+policy-blocked actions within the window since the most recent
+CONFIRMED action (or since mission activation, whichever is later).
+
 Guardian quarantine MUST NOT transfer funds.
 
 ## FR-05 Succession
@@ -457,6 +465,12 @@ ACTIVE ── expiry ──> EXPIRED
 ACTIVE ── owner cancel ──> CANCELLED
 QUARANTINED ── no eligible successor ──> HALTED
 ```
+
+From QUARANTINED, two transitions exist in MVP:
+  QUARANTINED → CANCELLED   (owner cancel)
+  QUARANTINED → RECOVERING  (succession, Phase 6)
+There is no QUARANTINED → ACTIVE shortcut. A quarantined mission
+cannot resume without either succession or cancellation.
 
 ## Agent assignment state machine
 ```text

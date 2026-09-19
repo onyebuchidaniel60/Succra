@@ -55,7 +55,7 @@ Tasks:
 - 3-violation trigger;
 - guardian signer;
 - on-chain quarantine;
-- timeline events.
+- timeline events: writes audit_events rows for quarantine-related events (violation counted, threshold reached, quarantine submitted, quarantine confirmed).
 
 Acceptance: three authenticated policy violations cause one quarantine and prevent further actions.
 
@@ -71,7 +71,7 @@ Acceptance: Beta becomes current agent with lower authority and can continue.
 
 ## Phase 7 — Audit + polished UX
 Tasks:
-- timeline;
+- timeline: displays audit_events as the mission timeline UI (reads only; no writes to audit_events);
 - decision receipt;
 - Solana proof links;
 - succession visualization;

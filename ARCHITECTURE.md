@@ -131,6 +131,8 @@
 - `onchain_signature` TEXT NULL
 - `created_at`
 
+`audit_events` is created by the Phase 5 migration. Every material mission event writes an immutable audit event. Public audit reads (via GET /api/missions/:id/audit) are added in a later phase.
+
 ## `agent_challenges`
 - `id` UUID PK
 - `agent_id` UUID FK agents.id
@@ -575,7 +577,7 @@ Every API request performs both:
 Supabase RLS is the database backstop. The service-role key is server-only and never shipped to the browser. citeturn564420search2
 
 ## Guardian authorization
-A dedicated guardian public key is registered in program configuration. The guardian can only perform:
+A dedicated guardian public key is registered in program configuration. The guardian is a single global keypair shared across missions, held server-side by the Succra runtime. It is not per-mission. Rotation is performed via the program upgrade authority. A decentralized guardian set (multisig or keeper network) is explicitly out of MVP scope and noted as a future direction. The guardian can only perform:
 - quarantine;
 - activate one of the pre-approved successors;
 - commit approved recovery state.

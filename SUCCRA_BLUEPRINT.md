@@ -394,6 +394,14 @@ Quarantine MUST be triggered after 3 consecutive blocked policy violations in th
 
 The counter resets after a valid successful action or after a configured quiet period of 15 minutes.
 
+Two distinct reset mechanisms apply:
+  (a) Any CONFIRMED action resets the consecutive counter to zero.
+  (b) Any violation older than violation_window_seconds is no longer
+      counted toward the streak.
+Both mechanisms operate independently. A streak is the number of
+policy-blocked actions within the window since the most recent
+CONFIRMED action (or since mission activation, whichever is later).
+
 Guardian quarantine MUST NOT transfer funds.
 
 ## FR-05 Succession
@@ -467,6 +475,12 @@ ACTIVE ── expiry ──> EXPIRED
 ACTIVE ── owner cancel ──> CANCELLED
 QUARANTINED ── no eligible successor ──> HALTED
 ```
+
+From QUARANTINED, two transitions exist in MVP:
+  QUARANTINED → CANCELLED   (owner cancel)
+  QUARANTINED → RECOVERING  (succession, Phase 6)
+There is no QUARANTINED → ACTIVE shortcut. A quarantined mission
+cannot resume without either succession or cancellation.
 
 ## Agent assignment state machine
 ```text
@@ -664,6 +678,8 @@ Malformed/unauthenticated requests do not increase the agent's policy violation 
 - `payload_public` JSONB
 - `onchain_signature` TEXT NULL
 - `created_at`
+
+`audit_events` is created by the Phase 5 migration. Every material mission event writes an immutable audit event. Public audit reads (via GET /api/missions/:id/audit) are added in a later phase.
 
 ## `agent_challenges`
 - `id` UUID PK
@@ -1109,7 +1125,7 @@ Every API request performs both:
 Supabase RLS is the database backstop. The service-role key is server-only and never shipped to the browser. citeturn564420search2
 
 ## Guardian authorization
-A dedicated guardian public key is registered in program configuration. The guardian can only perform:
+A dedicated guardian public key is registered in program configuration. The guardian is a single global keypair shared across missions, held server-side by the Succra runtime. It is not per-mission. Rotation is performed via the program upgrade authority. A decentralized guardian set (multisig or keeper network) is explicitly out of MVP scope and noted as a future direction. The guardian can only perform:
 - quarantine;
 - activate one of the pre-approved successors;
 - commit approved recovery state.
@@ -1770,7 +1786,7 @@ Tasks:
 - 3-violation trigger;
 - guardian signer;
 - on-chain quarantine;
-- timeline events.
+- timeline events: writes audit_events rows for quarantine-related events (violation counted, threshold reached, quarantine submitted, quarantine confirmed).
 
 Acceptance: three authenticated policy violations cause one quarantine and prevent further actions.
 
@@ -1786,7 +1802,7 @@ Acceptance: Beta becomes current agent with lower authority and can continue.
 
 ## Phase 7 — Audit + polished UX
 Tasks:
-- timeline;
+- timeline: displays audit_events as the mission timeline UI (reads only; no writes to audit_events);
 - decision receipt;
 - Solana proof links;
 - succession visualization;
