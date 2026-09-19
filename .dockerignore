@@ -1,0 +1,9 @@
+# Keep the solana-e2e toolchain-image build context small. The image
+# bakes the toolchain only; the repo is mounted at runtime (/work).
+node_modules
+target
+programs/succra/target
+apps/web/.next
+.git
+*.log
+test-ledger

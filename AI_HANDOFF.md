@@ -29,7 +29,7 @@ Design decisions recorded:
 - Helius webhooks deferred to Phase 9.
 
 Known open items:
-- `solana-e2e` not green; a pinned Docker image shipping Rust + Solana 2.3.0 + Anchor 0.32.1 is the fix path, scheduled before Phase 5.
+- `solana-e2e` Docker-image fix attempted on phase-4.9-solana-e2e (pinned Ubuntu 22.04 image, prebuilt Anchor binary, job required); run URL and per-job conclusions in the session report.
 - Phase 2 expiry E2E tests still unverified on Linux CI until `solana-e2e` goes green (not claimed as passing).
 
 Previous checkpoint: Phase 4 merge (`2e88b4c`; branch commits `3b5cb46` + `6886aa6`).
