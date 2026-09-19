@@ -277,7 +277,10 @@ jobs:
               echo "DEPLOY FAILED (exit $?)" >> /work/deploy-out.log
               exit 1
             fi
-            if ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json pnpm exec mocha -t 1000000 --require ts-node/register --compiler-options {"module":"commonjs","moduleResolution":"node","verbatimModuleSyntax":false,"types":["node","mocha"]} "programs/succra/tests/*.ts" > /work/mocha-out.log 2>&1; then
+            cat > /tmp/mocha-compiler-options.json <<'JSON'
+            {"module":"commonjs","moduleResolution":"node","verbatimModuleSyntax":false,"types":["node","mocha"]}
+            JSON
+            if ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json pnpm exec mocha -t 1000000 --require ts-node/register --compiler-options "$(cat /tmp/mocha-compiler-options.json)" "programs/succra/tests/*.ts" > /work/mocha-out.log 2>&1; then
               echo "MOCHA OK" >> /work/mocha-out.log
             else
               echo "MOCHA FAILED (exit $?)" >> /work/mocha-out.log
