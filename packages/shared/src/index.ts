@@ -1,4 +1,7 @@
-// Phase 0 placeholder — no product logic.
-// Shared contracts/types land in a later phase per IMPLEMENTATION_PLAN.md.
-// This marker exists only so workspace lint/typecheck/test/build commands resolve.
-export const SUCCRA_SHARED_PHASE = 'phase-0' as const;
+// Succra shared — pure transaction/message/codec contracts.
+// Re-exported for the SDK (agent process) and the gateway (Next.js).
+export * from './base.js';
+export * from './canonical.js';
+export * from './execute-ix.js';
+export * from './signing.js';
+export * from './txmsg.js';

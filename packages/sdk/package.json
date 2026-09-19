@@ -3,10 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Succra SDK placeholder (Phase 0, no product logic). Agent gateway SDK lands in a later phase per IMPLEMENTATION_PLAN.md.",
+  "description": "Succra agent SDK: thin typed client for the agent gateway (signing, pre-flight, submit). Runs in the agent's process; never stores keys server-side.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@succra/shared": "workspace:*",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "typescript": "^5.9.0"

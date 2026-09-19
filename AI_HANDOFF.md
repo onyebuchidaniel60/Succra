@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on Solana.
 
 ## Current status
-**Phase 3 — Web auth + database: complete. Phase 3.1: complete. Phase 3.2: complete (CI split; required jobs await green on phase-3-ci).**
+**Phase 4 — SDK + agent gateway: complete (on phase-4-gateway, unmerged). Phases 0–3.2 remain complete as below.**
 
 Phase 2 complete (`979e6d4`): mission/vault accounts with create/fund/cancel; `current_agent: Pubkey` + `agent_nonce: u64`; `execute_action` (TRANSFER_SOL via System, TRANSFER_SPL via Token, vault-PDA-signed); `fund_spl` (exact-match, single-use); SPL-aware `cancel`; `ActionExecuted` event; FR-03 checks in pure `validation.rs`. Verified locally: `cargo test` (25/25), validator integration suite 27/27 runnable (2 expiry E2E skipped on the Windows sandbox — bank-clock lag — unit coverage for expiry rejection passes).
 
@@ -14,19 +14,27 @@ Phase 3.1 complete: nonce storage migrated from in-memory Map to the `auth_nonce
 
 Phase 3.2: `solana` CI job split into `solana-cargo` (required: Rust stable, `cargo build` + `cargo test` only, no Anchor/Solana CLI/platform-tools) and `solana-e2e` (non-blocking via job-level `continue-on-error`: full Solana 2.3.0 + Anchor 0.32.1 toolchain, `anchor build`, IDL, validator, deploy, mocha). No 11th Anchor-install fix attempted; the install steps are left as-is.
 
+Phase 4 complete (SDK + agent gateway): `packages/sdk` (thin `SuccraAgentClient`, verify-before-sign, canonical signing via shared, `SdkError`/`SdkRefusal`, `tweetnacl` keys); `packages/shared` (base58/64 + sha256, §12 canonical string, execute-ix codec, legacy txmsg parse/assemble, signing); `apps/web/lib/gateway` (14 modules: auth, chain, handlers, heartbeat, mission-state, pdas, policy, preflight, registration, schemas, status, store, submit, supabase-store); 7 API routes (agents attach/challenge/verify/heartbeat/status; missions actions preflight/submit); migration `20260914000000_phase4_gateway.sql` (`action_requests`, `onchain_transactions`, `agent_request_nonces`, `agent_challenges`).
+
+Two-step signing: preflight constructs the message and the gateway co-signs as fee payer at submit; the agent verifies-before-signs with the SDK and never shares its key; submit polls to CONFIRMED/FAILED and mirrors remaining budget (chain authoritative). Terminal-state short-circuit precedes hash comparison in `submit.ts` (documented state machine; the Alpha suite asserts both orderings in separate tests).
+
+Alpha acceptance verified live on localnet: 6/6 (`phase4-alpha-live.test.ts`), submit signature `3pMoGWKVqyZMrSMseFpemEmxY6RdH1N9q6FKUvPAbquQQsHZQBWBLZSPt9TXY2DeJwXmagUL5pKkavXV1jjsYXJw`, program `2DkVabKRQ3R8ZXtJkptAVvnWDm6DuhakhPqpvoVKsJeT`. Fee-payer path: the test reads production `SUCCRA_GATEWAY_FEE_PAYER_SECRET_KEY` (repo `.env.local`, gitignored); the local faucet is unreliable on this box — transfer-from-genesis is the documented workaround.
+
 Design decisions recorded:
 - Next 15 pinned (not 16) for stable middleware conventions.
 - zod v3 pinned.
 - `@solana/kit` codecs throw internally in this toolchain; the auth path uses local Ed25519 decode with fixture tests, and kit only for `address()` validation.
-- Rate limiting (ARCHITECTURE.md §10) still deferred, not in Phase 3 scope.
+- Rate limiting (ARCHITECTURE.md §10) still deferred, not in Phase 4 scope.
+- Vitest per-test timeouts use the options-object form (`it(name, { timeout }, fn)`; object-as-third-arg is deprecated in vitest 3.x).
+- Helius webhooks deferred to Phase 9.
 
 Known open items:
 - `solana-e2e` not green; a pinned Docker image shipping Rust + Solana 2.3.0 + Anchor 0.32.1 is the fix path, scheduled before Phase 5.
 - Phase 2 expiry E2E tests still unverified on Linux CI until `solana-e2e` goes green (not claimed as passing).
 
-Previous checkpoint: Phase 2 (`979e6d4`).
-Next assigned task: **Phase 4 — not yet authorized.**
-CI: verified on phase-3-ci run 12 (https://github.com/onyebuchidaniel60/Succra/actions/runs/34805905117 — web + supabase + solana-cargo green, solana-e2e non-blocking red) and on main run 13 (https://github.com/onyebuchidaniel60/Succra/actions/runs/34806623212 — same). Phase 3 merged to main as `b3cfd8e`; phase-3-ci fully merged, no commits ahead.
+Previous checkpoint: Phase 3 merge (`b3cfd8e` / `987f9de`); spec amendment v2 (`971edd7`).
+Next assigned task: **Phase 5 — Guardian + quarantine, not yet authorized.**
+CI: local gates green (lint, typecheck, test 140 + Alpha 6/6, build, format); push trigger fixed to `phase-*` so phase branches run CI; branch run URL and per-job conclusions in the session report.
 
 Spec amendment (2026-09-14, v2): ARCHITECTURE.md and SUCCRA_BLUEPRINT amended for two-step action signing (§10), gateway fee-payer role and key (§10, §23), transaction wire format and hash preimage (§10), challenge/verify shapes and agent_challenges table (§10, §7), heartbeat minimum interval 30s (§10), gateway RPC via SUCCRA_RPC_URL and RPC polling as Phase 4 confirmation path (§10, §16), agent_request_nonces table and request-nonce vs agentNonce distinction (§7, §12), status endpoint envelope (§10). Rationale: prior single-endpoint spec contradicted the Phase 2 program's requirement that execute_action is signed by the current agent; two-step signing preserves non-custody.
 

@@ -178,6 +178,9 @@ importers:
       '@solana/kit':
         specifier: ^8.3.0
         version: 8.3.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@succra/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@supabase/ssr':
         specifier: ^0.12.7
         version: 0.12.7(@supabase/supabase-js@2.116.0)
@@ -232,12 +235,23 @@ importers:
         version: 5.9.3
 
   packages/sdk:
+    dependencies:
+      '@succra/shared':
+        specifier: workspace:*
+        version: link:../shared
+      tweetnacl:
+        specifier: ^1.0.3
+        version: 1.0.3
     devDependencies:
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
 
   packages/shared:
+    dependencies:
+      tweetnacl:
+        specifier: ^1.0.3
+        version: 1.0.3
     devDependencies:
       typescript:
         specifier: ^5.9.0

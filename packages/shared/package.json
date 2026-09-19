@@ -3,10 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Succra shared contracts/types placeholder (Phase 0, no product logic).",
+  "description": "Succra shared pure contracts: canonical signing, execute ix codec, transaction message helpers. No Solana client dependencies by design (kit-free, portable).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "typescript": "^5.9.0"
