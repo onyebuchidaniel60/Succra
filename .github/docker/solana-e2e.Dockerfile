@@ -74,7 +74,9 @@ RUN curl -sSfL "https://nodejs.org/download/release/v${NODE_VERSION}/node-v${NOD
 
 # Bake Solana platform-tools v1.48 using the exact flags proven locally
 # (dummy crate: the repo is mounted at runtime, never baked in).
-RUN cargo new --lib /tmp/toolwarm \
+# --edition 2021: the warm-up crate's edition is irrelevant, and the
+# platform-tools cargo (1.84.0) cannot parse edition 2024 (CI run #21).
+RUN cargo new --lib --edition 2021 /tmp/toolwarm \
     && cargo build-sbf --tools-version "${PLATFORM_TOOLS_VERSION}" --force-tools-install \
         --manifest-path /tmp/toolwarm/Cargo.toml \
     && rm -rf /tmp/toolwarm \
