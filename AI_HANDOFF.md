@@ -29,7 +29,7 @@ Design decisions recorded:
 - Helius webhooks deferred to Phase 9.
 
 Known open items:
-- `solana-e2e` Docker-image fix attempted on phase-4.9-solana-e2e (pinned Ubuntu 22.04 image, prebuilt Anchor binary, job required); run URL and per-job conclusions in the session report.
+- `solana-e2e` Docker-image fix on phase-4.9-solana-e2e (Ubuntu 24.04, prebuilt Anchor binary, job required; glibc + edition fixes applied): image now builds, but the container run fails ~2 min in at an unknown line — run #23 (https://github.com/onyebuchidaniel60/Succra/actions/runs/35469158768), logs auth-gated. Keys-sync approach added for the missing deploy keypair (no test hardcodes the program ID). Awaiting human log read.
 - Phase 2 expiry E2E tests still unverified on Linux CI until `solana-e2e` goes green (not claimed as passing).
 
 Previous checkpoint: Phase 4 merge (`2e88b4c`; branch commits `3b5cb46` + `6886aa6`).
