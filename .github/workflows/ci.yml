@@ -259,7 +259,24 @@ jobs:
               sleep 2
             done
             solana cluster-version --url http://127.0.0.1:8899
-            solana program deploy --url http://127.0.0.1:8899 target/deploy/succra.so --program-id target/deploy/succra-keypair.json
+            echo "=== BEFORE DEPLOY ===" > /work/pre-deploy-diag.log
+            pwd >> /work/pre-deploy-diag.log
+            ls -la target/deploy/ >> /work/pre-deploy-diag.log 2>&1 || echo "no target/deploy" >> /work/pre-deploy-diag.log
+            ls -la programs/succra/target/deploy/ >> /work/pre-deploy-diag.log 2>&1 || echo "no programs/.../target/deploy" >> /work/pre-deploy-diag.log
+            which solana >> /work/pre-deploy-diag.log
+            solana --version >> /work/pre-deploy-diag.log
+            file target/deploy/succra.so >> /work/pre-deploy-diag.log 2>&1 || true
+            stat target/deploy/succra.so >> /work/pre-deploy-diag.log 2>&1 || true
+            echo "=== END BEFORE DEPLOY ===" >> /work/pre-deploy-diag.log
+            if solana program deploy --url http://127.0.0.1:8899 \
+                 target/deploy/succra.so \
+                 --program-id target/deploy/succra-keypair.json \
+                 > /work/deploy-out.log 2>&1; then
+              echo "DEPLOY OK" >> /work/deploy-out.log
+            else
+              echo "DEPLOY FAILED (exit $?)" >> /work/deploy-out.log
+              exit 1
+            fi
             ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=~/.config/solana/id.json pnpm exec mocha -t 1000000 --require ts-node/register --compiler-options {"module":"commonjs","moduleResolution":"node","verbatimModuleSyntax":false,"types":["node","mocha"]} "programs/succra/tests/*.ts"
           '
       - name: Diagnostics summary
@@ -278,6 +295,13 @@ jobs:
             echo ""
             echo "### All .so files in repo"
             find . -name '*.so' -not -path './node_modules/*' -not -path './target/*' 2>/dev/null || true
+            echo ""
+            echo ""
+            echo "### pre-deploy-diag.log (container-time state)"
+            cat pre-deploy-diag.log 2>&1 || echo "no pre-deploy-diag.log"
+            echo ""
+            echo "### deploy-out.log (exact deploy output)"
+            cat deploy-out.log 2>&1 || echo "no deploy-out.log"
             echo ""
             echo "### validator-e2e.log (last 40 lines)"
             tail -40 validator-e2e.log 2>&1 || echo "no validator log"
