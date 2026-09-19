@@ -29,12 +29,11 @@ Design decisions recorded:
 - Helius webhooks deferred to Phase 9.
 
 Known open items:
-- `solana-e2e` GREEN on phase-4.9-solana-e2e run 29 (https://github.com/onyebuchidaniel60/Succra/actions/runs/35474287060): pinned Docker toolchain (Ubuntu 24.04, prebuilt Anchor 0.32.1, platform-tools v1.48), keys-sync + `.so` copy + mocha quoting fixes; full mocha suite incl. Phase 2 expiry E2E passed on Linux CI. Awaiting merge to main.
-- Pinned Docker image as e2e fix: done (above); registry-cache upgrade remains an optional later optimization.
+- Phase 2 expiry E2E: closed — verified on Linux CI via the required `solana-e2e` job (branch run 29, main run 31).
 
-Previous checkpoint: Phase 4 merge (`2e88b4c`; branch commits `3b5cb46` + `6886aa6`).
+Previous checkpoint: Phase 4.9 merge (`085fc67`; `solana-e2e` required-green via pinned Docker toolchain).
 Next assigned task: **Phase 5 — Guardian + quarantine, not yet authorized.**
-CI: verified on phase-4-gateway run 16 (https://github.com/onyebuchidaniel60/Succra/actions/runs/35462439880 — web + supabase + solana-cargo green, solana-e2e non-blocking red at Anchor install) and on main run 17 (https://github.com/onyebuchidaniel60/Succra/actions/runs/35464213809 — same). Phase 4 merged to main as `2e88b4c`; phase-4-gateway fully merged, no commits ahead.
+CI: verified on main run 31 (https://github.com/onyebuchidaniel60/Succra/actions/runs/35474814702 — web + supabase + solana-cargo + solana-e2e all green, no continue-on-error anywhere). Phase 4 merged as `2e88b4c`; phase-4.9 merged as `085fc67`; both branches fully merged, no commits ahead.
 
 Spec amendment (2026-09-14, v2): ARCHITECTURE.md and SUCCRA_BLUEPRINT amended for two-step action signing (§10), gateway fee-payer role and key (§10, §23), transaction wire format and hash preimage (§10), challenge/verify shapes and agent_challenges table (§10, §7), heartbeat minimum interval 30s (§10), gateway RPC via SUCCRA_RPC_URL and RPC polling as Phase 4 confirmation path (§10, §16), agent_request_nonces table and request-nonce vs agentNonce distinction (§7, §12), status endpoint envelope (§10). Rationale: prior single-endpoint spec contradicted the Phase 2 program's requirement that execute_action is signed by the current agent; two-step signing preserves non-custody.
 
