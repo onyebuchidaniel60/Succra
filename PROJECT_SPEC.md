@@ -283,8 +283,10 @@ Failure protection: quarantine transaction is allowed to happen even if the agen
 5. Program verifies successor is pre-approved.
 6. Program moves mission to `RECOVERING`.
 7. Successor receives the verified checkpoint and restricted authority.
-8. Successor must acknowledge the handoff.
-9. Mission becomes `ACTIVE_RECOVERY`.
+8. Successor sends an authenticated off-chain acknowledgement (`POST /api/missions/:id/succession/:successionId/acknowledge`).
+9. Runtime submits a second guardian-signed on-chain instruction (`acknowledge_recovery`), moving the mission `RECOVERING` → `ACTIVE_RECOVERY`.
+
+Phase 6 resolution (spec amendment): activation is two guardian-signed instructions, not one (`activate_successor`: `QUARANTINED` → `RECOVERING`; `acknowledge_recovery`: `RECOVERING` → `ACTIVE_RECOVERY`). Collapsing `RECOVERING` into the activation step is a Phase 9 simplification candidate, not a Phase 6 change.
 
 ## Flow G — Recovery execution
 1. Successor proposes action.
@@ -379,6 +381,8 @@ Decision checks:
 8. request nonce/idempotency key unused;
 9. token mint matches mission mint for SPL transfers.
 
+Phase 6 resolutions (spec amendment): `execute_action` accepts `Active` and `ActiveRecovery` (see FR-06 for which ceiling applies in each state). `Recovering` and `Quarantined` are non-executable. The program and the gateway decoder must be deployed together whenever new `MissionStatus` discriminants are added; a decoder that sees an unknown discriminant must fail closed, never treat the mission as `Active`.
+
 ## FR-04 Quarantine
 Quarantine MUST be triggered after 3 consecutive blocked policy violations in the configured rolling window.
 
@@ -403,6 +407,12 @@ Successor MUST:
 - be in `AVAILABLE` state;
 - be selected according to deterministic priority rules.
 
+Phase 6 resolutions (spec amendment):
+- Priority: lower integer wins. Tie-break: earlier position in the on-chain successor list wins; no new column.
+- `AVAILABLE` means `mission_agents.status='AVAILABLE'`, set when the agent is attached AND has passed key-possession verification.
+- Capability check: if the mission requires no capabilities the check passes trivially; otherwise the candidate's declared capabilities must be a superset of the required set.
+- On-chain verification covers membership in the pre-approved successor list; off-chain (gateway) verification covers AVAILABLE + capability filters.
+
 ## FR-06 Recovery authority
 On activation, successor receives:
 - mission authority;
@@ -418,6 +428,8 @@ It does NOT receive:
 - ability to expand policy;
 - ability to name a new successor.
 
+Phase 6 resolution (spec amendment): `recovery_max_action` is enforced on-chain, in the program, selected by mission state: the per-action ceiling is `max_action` when status is `Active` and `recovery_max_action` when status is `ActiveRecovery`. Off-chain-only enforcement is forbidden by ARCHITECTURE.md §13 (on-chain enforcement) and AGENTS.md invariant #4.
+
 ## FR-07 Checkpoints
 A checkpoint contains only deterministic/verified mission facts:
 - mission ID;
@@ -432,8 +444,25 @@ A checkpoint contains only deterministic/verified mission facts:
 
 Agent reasoning, raw chain-of-thought, or model-private context is never stored as a trusted checkpoint.
 
+Phase 6 resolutions (spec amendment):
+- `state_snapshot` schema: `{confirmed_signatures, authority_limits_at_checkpoint, policy_version, policy_hash}`.
+- `status` ∈ {`CANDIDATE`, `VERIFIED`, `SUPERSEDED`}; `CANDIDATE` is reserved for future use and unused in Phase 6.
+- `committed_signature` remains NULL through Phase 6 (on-chain hash commitment deferred to Phase 9).
+- Cadence: a `VERIFIED` checkpoint is written on every CONFIRMED action, plus an initial `sequence=0` checkpoint at mission activation, so a checkpoint always exists.
+- Quarantine marks the latest `VERIFIED` checkpoint as the recovery boundary.
+
 ## FR-08 Audit
 Every material event MUST create an immutable audit event in the application database and, where practical, a corresponding on-chain proof/event.
+
+Phase 6 resolutions (spec amendment) — Phase 6 writes these audit event types (dotted convention mirrors Phase 5):
+- `checkpoint.verified`
+- `succession.triggered`
+- `succession.candidate_selected`
+- `succession.activate.submitted`
+- `succession.activate.confirmed`
+- `succession.acknowledge.submitted`
+- `succession.acknowledge.confirmed`
+Phase 7 reads these rows only and writes none.
 
 ## FR-09 Owner control
 Owner can cancel a mission and reclaim assets according to on-chain rules. No application administrator can move mission funds.
@@ -471,6 +500,8 @@ From QUARANTINED, two transitions exist in MVP:
   QUARANTINED → RECOVERING  (succession, Phase 6)
 There is no QUARANTINED → ACTIVE shortcut. A quarantined mission
 cannot resume without either succession or cancellation.
+
+Phase 6 resolution (spec amendment) — explicit cancel edges: `cancel()` accepts `Draft`, `Active`, `Quarantined`, `Recovering`, `ActiveRecovery`. Terminal states (`Completed`, `Expired`, `Cancelled`, `Halted`) are excluded. `HALTED` is a DB-only mirror state: the chain remains `QUARANTINED`; no fund movement is possible in either representation; owner notification beyond the audit row and dashboard status is out of scope for MVP.
 
 ## Agent assignment state machine
 ```text

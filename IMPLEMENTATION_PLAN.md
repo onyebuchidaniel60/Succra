@@ -61,13 +61,24 @@ Acceptance: three authenticated policy violations cause one quarantine and preve
 
 ## Phase 6 — Checkpoints + succession
 Tasks:
-- verified checkpoint schema;
-- checkpoint hashing;
-- successor eligibility;
-- activation instruction;
-- recovery limit.
+- verified checkpoint schema (`state_snapshot` per the FR-07 amendment; `VERIFIED` on every CONFIRMED action plus `sequence=0` at activation);
+- checkpoint hashing (canonical Borsh preimage per ARCHITECTURE.md §10; hex SHA-256);
+- successor eligibility (priority lower-wins, on-chain-list tie-break, AVAILABLE + capability superset);
+- activate_successor instruction (guardian-signed; membership + eligibility + state_version check; sets current_agent; bumps state_version; emits event);
+- acknowledge_recovery instruction (guardian-signed; `RECOVERING` → `ACTIVE_RECOVERY`; bumps state_version; emits event);
+- new MissionStatus variants Recovering and ActiveRecovery;
+- state-dependent per-action ceiling in validate_execute_policy;
+- state_version field (0 at creation, bumped on every status transition);
+- successors list on the Mission account (Vec<Pubkey> ≤8, unique, primary excluded; create() extended — breaking change);
+- cancel() extended to Draft, Active, Quarantined, Recovering, ActiveRecovery;
+- gateway decoder + evaluatePolicy updates for the new states (deployed together with the program);
+- new tables mission_checkpoints and succession_events with owner RLS;
+- new endpoints POST /api/missions/:id/succession, POST /api/missions/:id/succession/:successionId/acknowledge, POST /api/missions/:id/checkpoints;
+- Phase 6 audit writes (checkpoint.verified, succession.* per the FR-08 amendment).
 
-Acceptance: Beta becomes current agent with lower authority and can continue.
+Acceptance: Beta becomes current agent with lower authority and can continue (`ActiveRecovery` ceiling = `recovery_max_action`, enforced on-chain).
+
+Phase 9 defers: on-chain checkpoint hash commitment (SHOULD-HAVE #4; `committed_signature` stays NULL) and the pre-Phase-6 `GUARDIAN_PUBKEY` coverage gap.
 
 ## Phase 7 — Audit + polished UX
 Tasks:
@@ -78,6 +89,8 @@ Tasks:
 - error/empty/loading states.
 
 Acceptance: full lifecycle can be understood without developer terminology.
+
+Note: the timeline reads the Phase 6 audit events (checkpoint.verified, succession.*) alongside Phase 5 events; Phase 7 writes no audit rows.
 
 ## Phase 8 — AI advisory layer
 Tasks:

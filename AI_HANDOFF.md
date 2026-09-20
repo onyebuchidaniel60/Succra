@@ -43,6 +43,8 @@ Spec amendment (2026-09-14, v2): ARCHITECTURE.md and SUCCRA_BLUEPRINT amended fo
 
 Spec amendment (Phase 5 pre-work): clarified FR-04 counter reset semantics (success resets; window drops old violations), made QUARANTINED state transitions explicit (no ACTIVE shortcut), stated the guardian is a single global key rotated via program upgrade authority, noted audit_events is created by the Phase 5 migration, and split Phase 5 (write audit events) from Phase 7 (display timeline). Clarifications only; no new mechanisms.
 
+Spec amendment (Phase 6 pre-work): resolved the 14 pre-flight ambiguities — checkpoint schema/cadence/recovery boundary, priority/tie-break/AVAILABLE/capability rules, on-chain recovery ceiling, Active/ActiveRecovery authorization, two-instruction acknowledgement, Phase 6 audit event list, cancel edges plus DB-only HALTED, checkpoints endpoint with Phase 9 commitment deferral, Mission layout with successors plus state_version, canonical Borsh checkpoint preimage, expanded Phase 6 task list, Phase 7 timeline note. Resolutions stay within the Phase 6 scope; the breaking create()/account-size change is accepted; no new mechanisms beyond Phase 6. Phase 6 implementation not started.
+
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 

@@ -133,6 +133,8 @@
 
 `audit_events` is created by the Phase 5 migration. Every material mission event writes an immutable audit event. Public audit reads (via GET /api/missions/:id/audit) are added in a later phase.
 
+Phase 6 resolution (spec amendment): Phase 6 writes `checkpoint.verified`, `succession.triggered`, `succession.candidate_selected`, `succession.activate.submitted`, `succession.activate.confirmed`, `succession.acknowledge.submitted`, `succession.acknowledge.confirmed` (full list in PROJECT_SPEC.md FR-08). Phase 7 reads these rows only and writes none.
+
 ## `agent_challenges`
 - `id` UUID PK
 - `agent_id` UUID FK agents.id
@@ -151,6 +153,11 @@ RLS enabled, no policies (service-role only). Single-use enforced via UPDATE …
 - `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
 - unique `(agent_id, nonce)`
 RLS enabled, no policies (service-role only).
+
+## Mission account layout (end of Phase 6)
+On-chain `Mission` fields at end of Phase 6: owner, vault, mint, budget_atomic, remaining_budget_atomic, max_action, recovery_max_action, allowed_recipients, allowed_action_types, current_agent, agent_nonce, status, expires_at, policy_hash, successors: Vec<Pubkey> (bounded ≤8, unique, primary excluded), state_version: u64 (0 at creation, bumped on every status transition), plus any Anchor bookkeeping fields.
+
+Phase 6 resolution (spec amendment): `create()` is extended in Phase 6 to accept successors; the instruction signature change and account-size change are accepted as breaking. Any account whose size does not match the current `Mission::LEN` must be rejected as "needs recreation." Pre-Phase-6 devnet missions are test-only.
 
 Sensitive data:
 - no private keys;
@@ -465,9 +472,13 @@ Auth: runtime guardian.
 Purpose: activate an eligible pre-approved successor.
 Idempotency: succession nonce unique.
 
+## `POST /api/missions/:id/succession/:successionId/acknowledge`
+Auth: successor agent signature.
+Purpose: successor acknowledges the handoff; runtime then submits the guardian-signed `acknowledge_recovery` instruction (`RECOVERING` → `ACTIVE_RECOVERY`).
+
 ## `POST /api/missions/:id/checkpoints`
 Auth: runtime internal.
-Purpose: persist verified checkpoint and optionally commit its hash on-chain.
+Purpose: persist a verified checkpoint and compute its deterministic hash (canonical preimage below). On-chain hash commitment is deferred to Phase 9; the `committed_signature` column remains NULL through Phase 6.
 
 ## `GET /api/missions/:id/audit`
 Auth: owner or public audit mode for public events.
@@ -504,6 +515,9 @@ Required for:
 - quarantine;
 - succession;
 - checkpoint commit.
+
+### Canonical checkpoint serialization
+The checkpoint preimage is a fixed-layout struct Borsh-serialized with field order {mission_id, sequence, confirmed_action_ids, confirmed_signatures, remaining_budget_atomic, max_action_at_checkpoint, recovery_max_action_at_checkpoint, policy_version, policy_hash, created_at}. checkpoint_hash = SHA-256 over those bytes, hex-encoded. This is the only canonical preimage; JSON-stringify hashing is forbidden for checkpoint hashes.
 
 ---
 
@@ -847,6 +861,8 @@ The program tracks remaining budget and rejects actions that would exceed it.
 
 ## Recovery limit
 Successor receives a smaller `recovery_max_action`.
+
+Phase 6 resolution (spec amendment): the recovery limit is enforced on-chain, in the program, selected by mission state — per-action ceiling `max_action` when `Active`, ceiling `recovery_max_action` when `ActiveRecovery`. Off-chain-only enforcement is forbidden by §13 (on-chain enforcement) and AGENTS.md invariant #4.
 
 ## Refund/cancel
 Owner can cancel/close according to terminal-state rules and reclaim remaining assets.
