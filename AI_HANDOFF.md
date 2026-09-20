@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on Solana.
 
 ## Current status
-**Phase 5 — Guardian + quarantine: implemented on phase-5-guardian, CI pending. Phases 0–4 remain complete as below.**
+**Phase 5 — Guardian + quarantine: implemented on phase-5-guardian, CI green (run 34, all four jobs). Awaiting merge.**
 
 Phase 2 complete (`979e6d4`): mission/vault accounts with create/fund/cancel; `current_agent: Pubkey` + `agent_nonce: u64`; `execute_action` (TRANSFER_SOL via System, TRANSFER_SPL via Token, vault-PDA-signed); `fund_spl` (exact-match, single-use); SPL-aware `cancel`; `ActionExecuted` event; FR-03 checks in pure `validation.rs`. Verified locally: `cargo test` (25/25), validator integration suite 27/27 runnable (2 expiry E2E skipped on the Windows sandbox — bank-clock lag — unit coverage for expiry rejection passes).
 
