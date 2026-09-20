@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on Solana.
 
 ## Current status
-**Phase 5 — Guardian + quarantine: merged to main via b94df5e; latest green on main per the ci workflow. Phase 5 closed; Phase 6 awaits explicit authorization.**
+**Phase 6 — Checkpoints + succession: in progress on phase-6-succession (program + DB + gateway + tests implemented, branch CI pending). Do not merge to main without reviewer approval; do not begin Phase 7.**
 
 Phase 2 complete (`979e6d4`): mission/vault accounts with create/fund/cancel; `current_agent: Pubkey` + `agent_nonce: u64`; `execute_action` (TRANSFER_SOL via System, TRANSFER_SPL via Token, vault-PDA-signed); `fund_spl` (exact-match, single-use); SPL-aware `cancel`; `ActionExecuted` event; FR-03 checks in pure `validation.rs`. Verified locally: `cargo test` (25/25), validator integration suite 27/27 runnable (2 expiry E2E skipped on the Windows sandbox — bank-clock lag — unit coverage for expiry rejection passes).
 
@@ -36,7 +36,9 @@ Known open items:
 - `solana-e2e` step-level `continue-on-error`: the container step carries `continue-on-error: true` solely so the Diagnostics summary step always publishes; a trailing `Fail if e2e step failed` step re-fails the job on e2e failure, so `solana-e2e` remains a required job whose failure fails the workflow. Fragile by construction — if the re-fail step is ever removed, e2e failures would be silently swallowed. Phase 9 review item; do not touch without explicit human authorization.
 
 Previous checkpoint: Phase 5 merge (`b94df5e`; --no-ff merge of phase-5-guardian `6f91891` + `a94e8f0`; branch CI green on all four jobs at merge time).
-Next assigned task: **Phase 6 — Checkpoints + succession (awaiting explicit reviewer authorization; do not start).**
+Next assigned task: **Phase 6 — Checkpoints + succession, in progress on phase-6-succession (do not merge without reviewer approval; do not begin Phase 7).**
+
+Phase 6 progress (branch phase-6-succession, unmerged): program adds successors list + state_version to Mission, Recovering/ActiveRecovery states, activate_successor + acknowledge_recovery instructions, state-selected recovery ceiling, extended cancel, 8 new errors (`05098ff`); migration creates mission_checkpoints + succession_events (`a57932c`); gateway adds decoder/policy updates, canonical Borsh checkpoints, succession engine, 3 endpoints, 7 audit event types (`fbe4c8c`); tests add mocha succession block + golden path and gateway checkpoint/succession suites (`a03e70e`). SDK unchanged (no shared-type flow-through). Branch CI verification in the completion report.
 CI: latest green on main per https://github.com/onyebuchidaniel60/Succra/actions/workflows/ci.yml (required jobs: web, supabase, solana-cargo, solana-e2e). At Phase 5 merge time, main and phase-5-guardian were green on all four jobs; the merge report records the post-merge verification. Phase 5 merged as `b94df5e` (--no-ff over `6f91891` + `a94e8f0`); phase-5-guardian retained and now an ancestor of main.
 
 Spec amendment (2026-09-14, v2): ARCHITECTURE.md and SUCCRA_BLUEPRINT amended for two-step action signing (§10), gateway fee-payer role and key (§10, §23), transaction wire format and hash preimage (§10), challenge/verify shapes and agent_challenges table (§10, §7), heartbeat minimum interval 30s (§10), gateway RPC via SUCCRA_RPC_URL and RPC polling as Phase 4 confirmation path (§10, §16), agent_request_nonces table and request-nonce vs agentNonce distinction (§7, §12), status endpoint envelope (§10). Rationale: prior single-endpoint spec contradicted the Phase 2 program's requirement that execute_action is signed by the current agent; two-step signing preserves non-custody.
