@@ -29,6 +29,12 @@ export async function attachAgent(args: {
   publicKey: string;
   name: string;
   role: 'PRIMARY' | 'SUCCESSOR';
+  /** Succession order; null means unordered (Phase 6 selection sorts last). */
+  priority?: number | null;
+  /** Required capability tags for this assignment (Phase 6 eligibility). */
+  requiredCapabilities?: string[] | null;
+  /** Declared agent capability tags (Phase 6 eligibility). */
+  capabilities?: string[] | null;
 }): Promise<AttachResult> {
   const { store } = args;
   const mission = await store.getMissionById(args.missionId);
@@ -53,15 +59,26 @@ export async function attachAgent(args: {
       name: args.name,
       public_key: args.publicKey,
       status: 'REGISTERED',
+      capabilities: args.capabilities ?? [],
     }));
+  if (existing && args.capabilities !== undefined && args.capabilities !== null) {
+    await store.updateAgentCapabilities(existing.id, args.capabilities);
+  }
   const prior = await store.getAssignment(mission.id, agent.id);
   if (prior) {
     return { agent, assignment: prior, created: false };
   }
+  // AVAILABLE (FR-05) requires attachment AND passed key verification:
+  // verified agents attach straight to AVAILABLE, unverified agents
+  // attach as PENDING and flip on successful challenge verification.
+  const verified = agent.status !== 'REGISTERED';
   const assignment = await store.insertAssignment({
     mission_id: mission.id,
     agent_id: agent.id,
     role: args.role,
+    priority: args.priority ?? null,
+    required_capabilities: args.requiredCapabilities ?? null,
+    status: verified ? 'AVAILABLE' : 'PENDING',
   });
   return { agent, assignment, created: true };
 }
@@ -145,6 +162,9 @@ export async function verifyChallenge(args: {
   if (!updated) {
     throw registrationError(500, 'REGISTRATION_FAILED', 'Could not activate the agent.');
   }
+  // Key possession proven: pending mission assignments become AVAILABLE
+  // (FR-05 eligibility input).
+  await args.store.markAgentAssignmentsAvailable(agent.id);
   return updated;
 }
 

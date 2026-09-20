@@ -13,6 +13,7 @@ import { preflightAction, type PreflightBody } from './preflight';
 import {
   ATTACH_AGENT_SCHEMA,
   CHALLENGE_VERIFY_SCHEMA,
+  CHECKPOINTS_BODY_SCHEMA,
   EMPTY_BODY_SCHEMA,
   normalizeAgentNonce,
   PREFLIGHT_SCHEMA,
@@ -20,6 +21,8 @@ import {
   UUID_SCHEMA,
 } from './schemas';
 import { attachAgent, isRegistrationError, issueChallenge, verifyChallenge } from './registration';
+import { acknowledgeSuccession, runSuccession } from './succession';
+import { writeVerifiedCheckpoint } from './checkpoints';
 import { agentStatusView } from './status';
 import { quarantineMission } from './quarantine';
 import { submitAction } from './submit';
@@ -78,7 +81,7 @@ export async function handleAttachAgent(args: {
   if ('error' in parsedBody) return parsedBody.error;
   const parsed = ATTACH_AGENT_SCHEMA.safeParse(parsedBody.ok);
   if (!parsed.success) {
-    return error(400, 'INVALID_BODY', 'Expected { publicKey, name, role? }.');
+    return error(400, 'INVALID_BODY', 'Expected { publicKey, name, role?, priority?, requiredCapabilities?, capabilities? }.');
   }
   try {
     const result = await attachAgent({
@@ -88,6 +91,9 @@ export async function handleAttachAgent(args: {
       publicKey: parsed.data.publicKey,
       name: parsed.data.name,
       role: parsed.data.role,
+      priority: parsed.data.priority ?? null,
+      requiredCapabilities: parsed.data.requiredCapabilities ?? null,
+      capabilities: parsed.data.capabilities ?? null,
     });
     return {
       status: result.created ? 201 : 200,
@@ -526,4 +532,270 @@ export async function handleGetStatus(args: {
     return error(403, 'AGENT_FORBIDDEN', 'Header agent does not match the path agent.');
   }
   return { status: 200, json: await agentStatusView({ store: args.store, agent: auth.agent }) };
+}
+
+function guardianAuthorized(
+  guardianCredentialHeader: string | null,
+  expectedGuardianCredential: string | null
+): boolean {
+  return (
+    !!guardianCredentialHeader &&
+    !!expectedGuardianCredential &&
+    guardianCredentialHeader.length === expectedGuardianCredential.length &&
+    timingSafeEqual(
+      Buffer.from(guardianCredentialHeader, 'utf8'),
+      Buffer.from(expectedGuardianCredential, 'utf8')
+    )
+  );
+}
+
+/**
+ * Run succession (POST /api/missions/:id/succession).
+ * Auth: runtime guardian credential only (ARCHITECTURE.md §10).
+ * Selects the highest-priority eligible successor (FR-05 as amended),
+ * submits guardian-signed activate_successor, mirrors to
+ * succession_events, writes audit rows.
+ */
+export async function handleSuccession(args: {
+  store: GatewayStore;
+  chain: ChainGateway;
+  guardian: FeePayer;
+  programId: string;
+  guardianCredentialHeader: string | null;
+  expectedGuardianCredential: string | null;
+  missionId: string;
+  rawBody: string;
+  nowMs: number;
+}): Promise<HandlerResult> {
+  if (!UUID_SCHEMA.safeParse(args.missionId).success) {
+    return error(400, 'INVALID_BODY', 'Mission id must be a UUID.');
+  }
+  const parsedBody = parseJson(args.rawBody === '' ? '{}' : args.rawBody);
+  if ('error' in parsedBody) return parsedBody.error;
+  if (!EMPTY_BODY_SCHEMA.safeParse(parsedBody.ok).success) {
+    return error(400, 'INVALID_BODY', 'Request body must be empty.');
+  }
+  if (!guardianAuthorized(args.guardianCredentialHeader, args.expectedGuardianCredential)) {
+    return error(401, 'UNAUTHORIZED', 'Guardian credential required.');
+  }
+  const mission = await args.store.getMissionById(args.missionId);
+  if (!mission) {
+    return error(404, 'MISSION_NOT_FOUND', 'Mission does not exist.');
+  }
+  try {
+    const outcome = await runSuccession({
+      deps: {
+        store: args.store,
+        chain: args.chain,
+        guardian: args.guardian,
+        programId: args.programId,
+      },
+      mission,
+      actor: { type: 'guardian', id: null },
+      nowMs: args.nowMs,
+    });
+    if (outcome.kind === 'activated') {
+      return {
+        status: 200,
+        json: {
+          missionId: mission.id,
+          successionId: outcome.successionId,
+          status: 'RECOVERING',
+          toAgentId: outcome.toAgentId,
+          signature: outcome.signature,
+          slot: outcome.slot,
+        },
+      };
+    }
+    if (outcome.kind === 'halted') {
+      return {
+        status: 200,
+        json: { missionId: mission.id, status: 'HALTED', reason: outcome.reason },
+      };
+    }
+    if (outcome.kind === 'already') {
+      return {
+        status: 200,
+        json: { missionId: mission.id, status: outcome.status, signature: outcome.signature },
+      };
+    }
+    if (outcome.kind === 'failed') {
+      return {
+        status: 200,
+        json: {
+          missionId: mission.id,
+          status: 'FAILED',
+          signature: outcome.signature,
+          error: { code: outcome.code, message: outcome.message },
+        },
+      };
+    }
+    return error(outcome.status, outcome.code, outcome.message);
+  } catch {
+    return error(500, 'SUCCESSION_FAILED', 'Succession failed.');
+  }
+}
+
+/**
+ * Acknowledge a succession
+ * (POST /api/missions/:id/succession/:successionId/acknowledge).
+ * Auth: the successor agent's signature (assignment must be SUCCESSOR
+ * and the signer must be the succession's to_agent). Step 1 of 2: the
+ * off-chain ack. Step 2 (same call): the runtime submits
+ * guardian-signed acknowledge_recovery and mirrors ACTIVE_RECOVERY.
+ */
+export async function handleAcknowledgeSuccession(args: {
+  store: GatewayStore;
+  chain: ChainGateway;
+  guardian: FeePayer;
+  programId: string;
+  headers: Headers;
+  method: string;
+  path: string;
+  rawBody: string;
+  missionId: string;
+  successionId: string;
+  nowMs: number;
+}): Promise<HandlerResult> {
+  if (!UUID_SCHEMA.safeParse(args.missionId).success) {
+    return error(400, 'INVALID_BODY', 'Mission id must be a UUID.');
+  }
+  if (!UUID_SCHEMA.safeParse(args.successionId).success) {
+    return error(400, 'INVALID_BODY', 'Succession id must be a UUID.');
+  }
+  const parsedBody = parseJson(args.rawBody === '' ? '{}' : args.rawBody);
+  if ('error' in parsedBody) return parsedBody.error;
+  if (!EMPTY_BODY_SCHEMA.safeParse(parsedBody.ok).success) {
+    return error(400, 'INVALID_BODY', 'Request body must be empty.');
+  }
+  const auth = await agentAuth({
+    store: args.store,
+    headers: args.headers,
+    method: args.method,
+    path: args.path,
+    rawBody: args.rawBody,
+    missionId: args.missionId,
+    nowMs: args.nowMs,
+  });
+  if ('status' in auth) return auth;
+  if (auth.assignment?.role !== 'SUCCESSOR') {
+    return error(403, 'SUCCESSION_FORBIDDEN', 'Only an assigned successor may acknowledge.');
+  }
+  try {
+    const outcome = await acknowledgeSuccession({
+      deps: {
+        store: args.store,
+        chain: args.chain,
+        guardian: args.guardian,
+        programId: args.programId,
+      },
+      mission: auth.mission as NonNullable<typeof auth.mission>,
+      successionId: args.successionId,
+      agent: auth.agent,
+      actor: { type: 'agent', id: auth.agent.id },
+      nowMs: args.nowMs,
+    });
+    if (outcome.kind === 'acknowledged') {
+      return {
+        status: 200,
+        json: {
+          missionId: args.missionId,
+          successionId: outcome.successionId,
+          status: 'ACTIVE_RECOVERY',
+          signature: outcome.signature,
+          slot: outcome.slot,
+        },
+      };
+    }
+    if (outcome.kind === 'already') {
+      return {
+        status: 200,
+        json: {
+          missionId: args.missionId,
+          successionId: args.successionId,
+          status: outcome.status,
+          signature: outcome.signature,
+        },
+      };
+    }
+    if (outcome.kind === 'failed') {
+      return {
+        status: 200,
+        json: {
+          missionId: args.missionId,
+          successionId: args.successionId,
+          status: 'FAILED',
+          signature: outcome.signature,
+          error: { code: outcome.code, message: outcome.message },
+        },
+      };
+    }
+    return error(outcome.status, outcome.code, outcome.message);
+  } catch {
+    return error(500, 'ACKNOWLEDGE_FAILED', 'Acknowledgement failed.');
+  }
+}
+
+/**
+ * Persist a verified checkpoint (POST /api/missions/:id/checkpoints).
+ * Auth: runtime internal (guardian credential). Manual/backfill path —
+ * the automatic path writes checkpoints on CONFIRMED actions. Computes
+ * the deterministic hash; never commits on-chain in Phase 6
+ * (committed_signature stays NULL).
+ */
+export async function handleCheckpoints(args: {
+  store: GatewayStore;
+  chain: ChainGateway;
+  guardianCredentialHeader: string | null;
+  expectedGuardianCredential: string | null;
+  missionId: string;
+  rawBody: string;
+  nowMs: number;
+}): Promise<HandlerResult> {
+  if (!UUID_SCHEMA.safeParse(args.missionId).success) {
+    return error(400, 'INVALID_BODY', 'Mission id must be a UUID.');
+  }
+  const parsedBody = parseJson(args.rawBody === '' ? '{}' : args.rawBody);
+  if ('error' in parsedBody) return parsedBody.error;
+  const parsed = CHECKPOINTS_BODY_SCHEMA.safeParse(parsedBody.ok);
+  if (!parsed.success) {
+    return error(400, 'INVALID_BODY', 'Expected { sequence, confirmedActionIds, confirmedSignatures }.');
+  }
+  if (!guardianAuthorized(args.guardianCredentialHeader, args.expectedGuardianCredential)) {
+    return error(401, 'UNAUTHORIZED', 'Runtime credential required.');
+  }
+  const mission = await args.store.getMissionById(args.missionId);
+  if (!mission) {
+    return error(404, 'MISSION_NOT_FOUND', 'Mission does not exist.');
+  }
+  try {
+    const onchain = await args.chain.getMissionState(mission.pda_address);
+    if (!onchain) {
+      return error(409, 'MISSION_NOT_ACTIVE', 'Mission has no on-chain state.');
+    }
+    const policy = await args.store.getLatestPolicy(mission.id);
+    const row = await writeVerifiedCheckpoint(args.store, {
+      missionId: mission.id,
+      sequence: parsed.data.sequence,
+      confirmedActionIds: parsed.data.confirmedActionIds,
+      confirmedSignatures: parsed.data.confirmedSignatures,
+      remainingBudgetAtomic: onchain.remainingBudget,
+      maxActionAtomic: onchain.maxAction,
+      recoveryMaxActionAtomic: onchain.recoveryMaxAction,
+      policyVersion: policy?.version ?? mission.policy_version,
+      policyHash: policy?.policy_hash ?? mission.policy_hash,
+      nowMs: args.nowMs,
+    });
+    return {
+      status: 200,
+      json: {
+        missionId: mission.id,
+        sequence: row.sequence,
+        checkpointHash: row.checkpoint_hash,
+        status: row.status,
+      },
+    };
+  } catch {
+    return error(500, 'CHECKPOINT_FAILED', 'Checkpoint write failed.');
+  }
 }

@@ -31,6 +31,8 @@ export interface ChainPolicyState {
   agentNonce: bigint;
   expiresAtSec: bigint;
   mintAddress: string;
+  /** On-chain recovery ceiling (FR-06; the program enforces it). */
+  recoveryMaxAtomic: bigint;
 }
 
 export interface PolicyIntent {
@@ -77,13 +79,14 @@ export function evaluatePolicy(args: {
     reasonCode,
     reason: `${reasonMessage(reasonCode)} ${detail}`.trim(),
   });
-  // FR-03 #1: mission is active (no recovery states exist on-chain in Phase 4).
-  // A quarantined mission reports its own code so callers can distinguish
-  // a frozen mission from a never-activated one.
+  // FR-03 #1: mission is Active or ActiveRecovery (Phase 6, FR-06).
+  // Recovering and Quarantined are non-executable. A quarantined
+  // mission reports its own code so callers can distinguish a frozen
+  // mission from a never-activated one.
   if (chain.status === 'Quarantined') {
     return block('MISSION_QUARANTINED', 'On-chain status is Quarantined.');
   }
-  if (chain.status !== 'Active') {
+  if (chain.status !== 'Active' && chain.status !== 'ActiveRecovery') {
     return block('MISSION_NOT_ACTIVE', `On-chain status is ${chain.status}.`);
   }
   // FR-03 #2: agent is the current agent.
@@ -98,8 +101,16 @@ export function evaluatePolicy(args: {
   if (!policy.allowedRecipients || !policy.allowedRecipients.includes(intent.recipient)) {
     return block('POLICY_BLOCKED', 'Recipient is not allowlisted.');
   }
-  // FR-03 #5: amount within per-action max.
-  if (policy.maxActionAtomic === null || intent.amountAtomic > policy.maxActionAtomic) {
+  // FR-03 #5: amount within the state-selected per-action max
+  // (Phase 6, FR-06). The program enforces the same ceiling on-chain;
+  // this courtesy evaluation mirrors it. Missing primary max fails
+  // closed in every state.
+  if (policy.maxActionAtomic === null) {
+    return block('POLICY_BLOCKED', 'Amount exceeds the per-action maximum.');
+  }
+  const ceiling =
+    chain.status === 'ActiveRecovery' ? chain.recoveryMaxAtomic : policy.maxActionAtomic;
+  if (intent.amountAtomic > ceiling) {
     return block('POLICY_BLOCKED', 'Amount exceeds the per-action maximum.');
   }
   // FR-03 #6: amount within remaining budget.

@@ -5,17 +5,27 @@
 // budget u64, remaining u64, max_action u64, recovery_max u64,
 // allowed_action_types vec<u8-enum>, allowed_recipients vec<Pubkey>,
 // expires_at i64, violation_threshold u8, violation_window u64,
-// status u8 (Draft = 0, Active = 1, Cancelled = 2, Quarantined = 3),
-// current_agent(32), agent_nonce u64.
+// status u8 (Draft = 0, Active = 1, Cancelled = 2, Quarantined = 3,
+// Recovering = 4, ActiveRecovery = 5),
+// current_agent(32), agent_nonce u64, successors vec<Pubkey>,
+// state_version u64.
 // Anchor allocates the FULL Mission::LEN on init, so live accounts carry
 // zero padding past the serialized struct: the decoder verifies the
 // account discriminator (like Anchor does) and requires trailing bytes,
 // if any, to be all zeros. Decoding is validated against
 // anchor-decoded accounts by the validator-gated comparison test.
+// Unknown status discriminants fail closed (FR-03 amendment): never
+// default to Active.
 import { createHash } from 'node:crypto';
 import { bytesToBase58 } from '@succra/shared';
 
-export type OnchainMissionStatus = 'Draft' | 'Active' | 'Cancelled' | 'Quarantined';
+export type OnchainMissionStatus =
+  | 'Draft'
+  | 'Active'
+  | 'Cancelled'
+  | 'Quarantined'
+  | 'Recovering'
+  | 'ActiveRecovery';
 
 export interface OnchainMissionState {
   address: string;
@@ -25,6 +35,8 @@ export interface OnchainMissionState {
   budget: bigint;
   remainingBudget: bigint;
   maxAction: bigint;
+  /** Successor per-action ceiling (FR-06; enforced on-chain in Phase 6). */
+  recoveryMaxAction: bigint;
   allowedActionTypes: string[];
   allowedRecipients: string[];
   expiresAtSec: bigint;
@@ -35,6 +47,10 @@ export interface OnchainMissionState {
   status: OnchainMissionStatus;
   currentAgent: string;
   agentNonce: bigint;
+  /** Pre-approved successor allowlist, on-chain order (FR-05 tie-break). */
+  successors: string[];
+  /** Monotonic state version (0 at creation, +1 per status transition). */
+  stateVersion: bigint;
 }
 
 class MissionReader {
@@ -108,7 +124,7 @@ export function decodeMissionAccount(address: string, data: Uint8Array): Onchain
   const budget = reader.u64();
   const remainingBudget = reader.u64();
   const maxAction = reader.u64();
-  reader.u64(); // recovery_max_action (Phase 6 concern, not pre-flight)
+  const recoveryMaxAction = reader.u64();
   const typeCount = reader.u32();
   if (typeCount > 8) {
     throw new Error('Mission account has too many action types.');
@@ -143,11 +159,24 @@ export function decodeMissionAccount(address: string, data: Uint8Array): Onchain
     status = 'Cancelled';
   } else if (statusIndex === 3) {
     status = 'Quarantined';
+  } else if (statusIndex === 4) {
+    status = 'Recovering';
+  } else if (statusIndex === 5) {
+    status = 'ActiveRecovery';
   } else {
     throw new Error('Mission account has an unknown status.');
   }
   const currentAgent = reader.pubkey();
   const agentNonce = reader.u64();
+  const successorCount = reader.u32();
+  if (successorCount > 8) {
+    throw new Error('Mission account has too many successors.');
+  }
+  const successors: string[] = [];
+  for (let i = 0; i < successorCount; i += 1) {
+    successors.push(reader.pubkey());
+  }
+  const stateVersion = reader.u64();
   // Anchor zero-fills the full LEN allocation past the serialized
   // struct; only all-zero padding is accepted here.
   for (const byte of reader.take(reader.remaining())) {
@@ -163,6 +192,7 @@ export function decodeMissionAccount(address: string, data: Uint8Array): Onchain
     budget,
     remainingBudget,
     maxAction,
+    recoveryMaxAction,
     allowedActionTypes,
     allowedRecipients,
     expiresAtSec,
@@ -171,5 +201,7 @@ export function decodeMissionAccount(address: string, data: Uint8Array): Onchain
     status,
     currentAgent,
     agentNonce,
+    successors,
+    stateVersion,
   };
 }

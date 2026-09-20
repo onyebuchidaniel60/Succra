@@ -20,6 +20,7 @@ const CHAIN: ChainPolicyState = {
   agentNonce: 7n,
   expiresAtSec: 9_999_999_999n,
   mintAddress: '11111111111111111111111111111111',
+  recoveryMaxAtomic: 1_000_000n,
 };
 
 const INTENT: PolicyIntent = {
@@ -41,7 +42,7 @@ describe('FR-03 policy evaluation', () => {
   });
 
   it('blocks #1 non-active missions', () => {
-    for (const status of ['Draft', 'Cancelled']) {
+    for (const status of ['Draft', 'Cancelled', 'Recovering']) {
       const result = evaluatePolicy({
         policy: POLICY,
         chain: { ...CHAIN, status },
@@ -50,6 +51,31 @@ describe('FR-03 policy evaluation', () => {
       });
       expect(result).toMatchObject({ decision: 'BLOCK', reasonCode: 'MISSION_NOT_ACTIVE' });
     }
+  });
+
+  it('applies the recovery ceiling in ActiveRecovery', () => {
+    const within = evaluatePolicy({
+      policy: POLICY,
+      chain: { ...CHAIN, status: 'ActiveRecovery' },
+      intent: { ...INTENT, amountAtomic: 1_000_000n },
+      nowMs: Date.now(),
+    });
+    expect(within).toEqual({ decision: 'ALLOW' });
+    const above = evaluatePolicy({
+      policy: POLICY,
+      chain: { ...CHAIN, status: 'ActiveRecovery' },
+      intent: { ...INTENT, amountAtomic: 1_000_001n },
+      nowMs: Date.now(),
+    });
+    expect(above).toMatchObject({ decision: 'BLOCK', reasonCode: 'POLICY_BLOCKED' });
+    // Same amount under Active uses the primary ceiling.
+    const active = evaluatePolicy({
+      policy: POLICY,
+      chain: { ...CHAIN, status: 'Active' },
+      intent: { ...INTENT, amountAtomic: 1_000_001n },
+      nowMs: Date.now(),
+    });
+    expect(active).toEqual({ decision: 'ALLOW' });
   });
 
   it('blocks quarantined missions with MISSION_QUARANTINED', () => {

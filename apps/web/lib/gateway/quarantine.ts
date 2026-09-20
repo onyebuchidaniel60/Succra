@@ -21,21 +21,17 @@ import {
   type Blockhash,
   type Instruction,
 } from '@solana/kit';
-import { sha256HexUtf8 } from '@succra/shared';
 import { bytesToBase58, bytesToBase64, encodeWireTransaction } from '@succra/shared';
 import { planQuarantineInstruction } from '@succra/shared';
 import type { ChainGateway, FeePayer } from './chain';
 import type { AgentRow, GatewayStore, MissionRow } from './store';
 import { toKitRole } from './preflight';
+import { writeAuditEvent, type QuarantineActor } from './audit';
+
+export type { QuarantineActor };
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 30_000;
-
-export type QuarantineActor =
-  | { type: 'agent'; id: string }
-  | { type: 'guardian'; id: null }
-  | { type: 'owner'; id: string }
-  | { type: 'system'; id: null };
 
 export interface QuarantineDeps {
   store: GatewayStore;
@@ -54,40 +50,6 @@ export type QuarantineOutcome =
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function eventHash(event: Record<string, unknown>): string {
-  return sha256HexUtf8(JSON.stringify(event));
-}
-
-/** Write an immutable audit row (used by the streak trigger and quarantine). */
-export async function writeAuditEvent(args: {
-  store: GatewayStore;
-  missionId: string;
-  eventType: string;
-  actor: QuarantineActor;
-  signature: string | null;
-  payload: Record<string, unknown>;
-  nowMs: number;
-}): Promise<void> {
-  const atIso = new Date(args.nowMs).toISOString();
-  await args.store.insertAuditEvent({
-    mission_id: args.missionId,
-    event_type: args.eventType,
-    actor_type: args.actor.type,
-    actor_id: args.actor.id,
-    event_hash: eventHash({
-      mission_id: args.missionId,
-      event_type: args.eventType,
-      actor_type: args.actor.type,
-      actor_id: args.actor.id,
-      signature: args.signature,
-      at: atIso,
-      payload: args.payload,
-    }),
-    payload_public: { ...args.payload, at: atIso },
-    onchain_signature: args.signature,
-  });
 }
 
 /**
@@ -236,13 +198,26 @@ async function pollToTerminal(
     }
     if (status && status.err == null) {
       await store.markMissionQuarantined(mission.id, new Date(nowMs).toISOString());
+      // Phase 6: mark the latest VERIFIED checkpoint as the recovery
+      // boundary (recorded in the audit payload; best-effort).
+      const boundary = await store.latestVerifiedCheckpoint(mission.id).catch(() => null);
       await writeAuditEvent({
         store,
         missionId: mission.id,
         eventType: 'quarantine.confirmed',
         actor,
         signature,
-        payload: { ...auditPayload, slot: status.slot },
+        payload: {
+          ...auditPayload,
+          slot: status.slot,
+          checkpoint_boundary: boundary
+            ? {
+                checkpoint_id: boundary.id,
+                sequence: boundary.sequence,
+                checkpoint_hash: boundary.checkpoint_hash,
+              }
+            : null,
+        },
         nowMs,
       });
       return { kind: 'confirmed', signature, slot: status.slot };

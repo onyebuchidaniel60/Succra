@@ -4,5 +4,6 @@ export * from './base.js';
 export * from './canonical.js';
 export * from './execute-ix.js';
 export * from './quarantine-ix.js';
+export * from './succession-ix.js';
 export * from './signing.js';
 export * from './txmsg.js';

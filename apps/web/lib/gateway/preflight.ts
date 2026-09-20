@@ -43,7 +43,8 @@ import type { FeePayer } from './chain';
 import { findAssociatedTokenAddress, findSplVaultPda, findVaultPda } from './pdas';
 import { evaluatePolicy, reasonMessage, type BlockReasonCode } from './policy';
 import { COUNTED_REASON_CODE, evaluateStreak, streakWindowStartMs } from './streak';
-import { quarantineMission, writeAuditEvent } from './quarantine';
+import { quarantineMission } from './quarantine';
+import { writeAuditEvent } from './audit';
 import type { ActionRequestRow, AgentRow, GatewayStore, MissionRow } from './store';
 
 export function toKitRole(role: AccountRoleName): AccountRole {
@@ -297,8 +298,11 @@ export async function preflightAction(args: {
     };
   };
 
-  // Phase 4: only PRIMARY assignments submit (successor activation is Phase 6).
-  if (args.assignmentRole !== 'PRIMARY') {
+  // Phase 6: PRIMARY and SUCCESSOR assignments may submit. The binding
+  // check is FR-03 #2 (signer == on-chain current agent) plus the
+  // program's own current-agent enforcement — the assignment role never
+  // grants authority by itself.
+  if (args.assignmentRole !== 'PRIMARY' && args.assignmentRole !== 'SUCCESSOR') {
     return insertBlocked('AGENT_NOT_CURRENT');
   }
 
@@ -321,6 +325,7 @@ export async function preflightAction(args: {
       agentNonce: onchain.agentNonce,
       expiresAtSec: onchain.expiresAtSec,
       mintAddress: onchain.mint,
+      recoveryMaxAtomic: onchain.recoveryMaxAction,
     },
     intent: {
       agentPublicKey: agent.public_key,

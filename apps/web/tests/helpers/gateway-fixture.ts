@@ -135,6 +135,9 @@ export interface FakeChainOptions {
   mint?: string;
   violationThreshold?: number;
   violationWindowSeconds?: bigint;
+  recoveryMaxAction?: bigint;
+  successors?: string[];
+  stateVersion?: bigint;
   /** When true, getMissionState returns null (undeployed/placeholder PDA). */
   missingMission?: boolean;
   /** Script for sendRawTransaction: return signature or throw. */
@@ -166,6 +169,7 @@ export function makeFakeChain(
         budget: 50_000_000n,
         remainingBudget: options.remainingBudget ?? 50_000_000n,
         maxAction: 5_000_000n,
+        recoveryMaxAction: options.recoveryMaxAction ?? 1_000_000n,
         allowedActionTypes: ['TRANSFER_SOL'],
         allowedRecipients: [world.recipient],
         expiresAtSec: options.expiresAtSec ?? BigInt(Math.floor(Date.now() / 1000) + 3600),
@@ -174,6 +178,8 @@ export function makeFakeChain(
         status: options.status ?? 'Active',
         currentAgent: options.currentAgent ?? world.agent.base58,
         agentNonce: options.agentNonce ?? 0n,
+        successors: options.successors ?? [],
+        stateVersion: options.stateVersion ?? 0n,
       };
     },
     async getLatestBlockhash() {

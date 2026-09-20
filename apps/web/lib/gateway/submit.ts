@@ -21,6 +21,8 @@ import {
   sha256Hex,
 } from '@succra/shared';
 import type { ChainGateway, FeePayer } from './chain';
+import { writeAuditEvent } from './audit';
+import { ensureActivationCheckpoint, writeVerifiedCheckpoint } from './checkpoints';
 import type { ActionRequestRow, AgentRow, GatewayStore, MissionRow } from './store';
 
 const POLL_INTERVAL_MS = 1000;
@@ -298,6 +300,12 @@ async function pollToTerminal(
       await store.updateOnchainTxConfirmed(signature, status.slot, new Date(nowMs).toISOString());
       await store.markActionSubmitted(row.id, new Date(nowMs).toISOString());
       await mirrorRemaining(store, chain, mission);
+      // Phase 6: every CONFIRMED action writes a VERIFIED checkpoint
+      // (sequence = on-chain action order). Best-effort: checkpoint
+      // failure must never fail an already-confirmed action.
+      await recordConfirmedCheckpoint(store, chain, mission, row, signature, nowMs).catch(
+        () => undefined
+      );
       return { kind: 'confirmed', requestId: row.id, signature, slot: status.slot };
     }
     if (Date.now() >= deadline) {
@@ -316,8 +324,7 @@ async function pollToTerminal(
  * Mirror the confirmed on-chain remainder into missions (AGENTS.md
  * invariant #3: mirror, never authority). Best-effort with retries; the
  * chain stays authoritative and reconciliation converges on next read.
- */
-async function mirrorRemaining(
+ */async function mirrorRemaining(
   store: GatewayStore,
   chain: ChainGateway,
   mission: MissionRow
@@ -333,4 +340,59 @@ async function mirrorRemaining(
       // Retry below; fall through to the next attempt.
     }
   }
+}
+
+/**
+ * Phase 6 checkpoint hook: after a CONFIRMED action, ensure the
+ * sequence=0 activation checkpoint exists (cold-start guard), then
+ * write the VERIFIED checkpoint for this action (sequence = on-chain
+ * agent_nonce = action order). Reads authoritative chain state fresh;
+ * throws on unexpected shape so the caller can swallow best-effort.
+ */
+async function recordConfirmedCheckpoint(
+  store: GatewayStore,
+  chain: ChainGateway,
+  mission: MissionRow,
+  row: ActionRequestRow,
+  signature: string,
+  nowMs: number
+): Promise<void> {
+  const state = await chain.getMissionState(mission.pda_address);
+  if (!state) return;
+  const policy = await store.getLatestPolicy(mission.id);
+  const checkpointArgs = {
+    missionId: mission.id,
+    remainingBudgetAtomic: state.remainingBudget,
+    maxActionAtomic: state.maxAction,
+    recoveryMaxActionAtomic: state.recoveryMaxAction,
+    policyVersion: policy?.version ?? mission.policy_version,
+    policyHash: policy?.policy_hash ?? mission.policy_hash,
+    nowMs,
+  };
+  await ensureActivationCheckpoint(store, checkpointArgs);
+  await writeVerifiedCheckpoint(store, {
+    ...checkpointArgs,
+    sequence: row.agent_nonce,
+    confirmedActionIds: [row.id],
+    confirmedSignatures: [signature],
+  });
+  await writeAuditEventForCheckpoint(store, mission.id, row.id, signature, nowMs);
+}
+
+async function writeAuditEventForCheckpoint(
+  store: GatewayStore,
+  missionId: string,
+  requestId: string,
+  signature: string,
+  nowMs: number
+): Promise<void> {
+  await writeAuditEvent({
+    store,
+    missionId,
+    eventType: 'checkpoint.verified',
+    actor: { type: 'system', id: null },
+    signature,
+    payload: { action_request_id: requestId },
+    nowMs,
+  });
 }

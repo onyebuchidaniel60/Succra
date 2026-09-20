@@ -1,6 +1,7 @@
 // Test-only PGlite GatewayStore: the production seam over real SQL.
 //
-// Applies the ACTUAL migrations (Phase 3 core + Phase 4 gateway), so the
+// Applies the ACTUAL migrations (Phase 3 core + Phase 4 gateway +
+// Phase 5 guardian + Phase 6 succession), so the
 // schema under test is byte-identical to what ships. Plus the same
 // test-only auth stub as tests/integration/supabase-rls.test.ts
 // (auth.users, auth.uid(), authenticated role + grants). RLS is NOT
@@ -17,6 +18,7 @@ import type {
   AgentRow,
   AuditEventRow,
   ChallengeRow,
+  CheckpointRow,
   GatewayStore,
   InsertActionOutcome,
   MissionAgentRow,
@@ -25,9 +27,12 @@ import type {
   NewAgent,
   NewAssignment,
   NewAuditEvent,
+  NewCheckpoint,
+  NewSuccessionEvent,
   OnchainTxRow,
   OnchainTxStatus,
   PolicyRow,
+  SuccessionEventRow,
 } from '../../lib/gateway/store';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +53,7 @@ export async function createGatewayTestDb(): Promise<PGlite> {
   await db.exec(readMigration('20260913000000_phase3_core.sql'));
   await db.exec(readMigration('20260914000000_phase4_gateway.sql'));
   await db.exec(readMigration('20260915000000_phase5_guardian.sql'));
+  await db.exec(readMigration('20260916000000_phase6_succession.sql'));
   return db;
 }
 
@@ -162,9 +168,15 @@ export class PGliteGatewayStore implements GatewayStore {
 
   async insertAgent(row: NewAgent): Promise<AgentRow> {
     const created = await this.one<Record<string, unknown>>(
-      `INSERT INTO agents (owner_id, name, public_key, status)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [row.owner_id, row.name, row.public_key, row.status]
+      `INSERT INTO agents (owner_id, name, public_key, status, capabilities)
+       VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING *`,
+      [
+        row.owner_id,
+        row.name,
+        row.public_key,
+        row.status,
+        JSON.stringify(row.capabilities ?? []),
+      ]
     );
     if (!created) throw new Error('Agent insert returned nothing.');
     return PGliteGatewayStore.agent(created);
@@ -182,6 +194,14 @@ export class PGliteGatewayStore implements GatewayStore {
     const row = await this.one<Record<string, unknown>>(
       `UPDATE agents SET last_heartbeat_at = $2, updated_at = $2 WHERE id = $1 RETURNING *`,
       [agentId, atIso]
+    );
+    return row ? PGliteGatewayStore.agent(row) : null;
+  }
+
+  async updateAgentCapabilities(agentId: string, capabilities: unknown): Promise<AgentRow | null> {
+    const row = await this.one<Record<string, unknown>>(
+      `UPDATE agents SET capabilities = $2::jsonb, updated_at = now() WHERE id = $1 RETURNING *`,
+      [agentId, JSON.stringify(capabilities ?? [])]
     );
     return row ? PGliteGatewayStore.agent(row) : null;
   }
@@ -263,8 +283,18 @@ export class PGliteGatewayStore implements GatewayStore {
 
   async insertAssignment(row: NewAssignment): Promise<MissionAgentRow> {
     const created = await this.one<Record<string, unknown>>(
-      `INSERT INTO mission_agents (mission_id, agent_id, role) VALUES ($1, $2, $3) RETURNING *`,
-      [row.mission_id, row.agent_id, row.role]
+      `INSERT INTO mission_agents (mission_id, agent_id, role, priority, required_capabilities, status)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6) RETURNING *`,
+      [
+        row.mission_id,
+        row.agent_id,
+        row.role,
+        row.priority ?? null,
+        row.required_capabilities === undefined
+          ? null
+          : JSON.stringify(row.required_capabilities ?? null),
+        row.status ?? null,
+      ]
     );
     if (!created) throw new Error('Assignment insert returned nothing.');
     const assignment = await this.getAssignment(
@@ -273,6 +303,102 @@ export class PGliteGatewayStore implements GatewayStore {
     );
     if (!assignment) throw new Error('Assignment insert vanished.');
     return assignment;
+  }
+
+  async listMissionAssignments(missionId: string): Promise<MissionAgentRow[]> {
+    const rows = await this.many<Record<string, unknown>>(
+      'SELECT * FROM mission_agents WHERE mission_id = $1',
+      [missionId]
+    );
+    const out: MissionAgentRow[] = [];
+    for (const row of rows) {
+      const assignment = await this.getAssignment(
+        String(row['mission_id']),
+        String(row['agent_id'])
+      );
+      if (assignment) out.push(assignment);
+    }
+    return out;
+  }
+
+  async updateAssignment(
+    assignmentId: string,
+    patch: { status?: string; activated_at?: string | null; revoked_at?: string | null }
+  ): Promise<MissionAgentRow | null> {
+    const sets: string[] = [];
+    const params: SqlValue[] = [];
+    if (patch.status !== undefined) {
+      params.push(patch.status);
+      sets.push(`status = $${params.length}`);
+    }
+    if (patch.activated_at !== undefined) {
+      params.push(patch.activated_at);
+      sets.push(`activated_at = $${params.length}`);
+    }
+    if (patch.revoked_at !== undefined) {
+      params.push(patch.revoked_at);
+      sets.push(`revoked_at = $${params.length}`);
+    }
+    if (sets.length === 0) {
+      const row = await this.one<Record<string, unknown>>(
+        'SELECT * FROM mission_agents WHERE id = $1',
+        [assignmentId]
+      );
+      if (!row) return null;
+      const assignment = await this.getAssignment(
+        String(row['mission_id']),
+        String(row['agent_id'])
+      );
+      return assignment;
+    }
+    params.push(assignmentId);
+    const row = await this.one<Record<string, unknown>>(
+      `UPDATE mission_agents SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+      params
+    );
+    if (!row) return null;
+    return this.getAssignment(String(row['mission_id']), String(row['agent_id']));
+  }
+
+  async markAgentAssignmentsAvailable(agentId: string): Promise<number> {
+    const result = await this.db.query(
+      `UPDATE mission_agents SET status = 'AVAILABLE'
+       WHERE agent_id = $1 AND status = 'PENDING' RETURNING id`,
+      [agentId] as unknown[]
+    );
+    return result.rows.length;
+  }
+
+  async updateMissionAuthority(
+    missionId: string,
+    patch: {
+      status: string;
+      current_agent_id: string | null;
+      current_agent_public_key: string;
+      atIso: string;
+    }
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE missions
+       SET status = $2, current_agent_id = $3, current_agent_public_key = $4, updated_at = $5
+       WHERE id = $1`,
+      [
+        missionId,
+        patch.status,
+        patch.current_agent_id,
+        patch.current_agent_public_key,
+        patch.atIso,
+      ] as unknown[]
+    );
+  }
+
+  async markMissionHalted(missionId: string, atIso: string): Promise<boolean> {
+    const result = await this.db.query(
+      `UPDATE missions SET status = 'HALTED', updated_at = $2
+       WHERE id = $1 AND status = 'QUARANTINED' RETURNING id`,
+      [missionId, atIso] as unknown[]
+    );
+    return result.rows.length > 0;
   }
 
   async getActionById(requestId: string): Promise<ActionRequestRow | null> {
@@ -521,5 +647,144 @@ export class PGliteGatewayStore implements GatewayStore {
       onchain_signature: created['onchain_signature'] ? String(created['onchain_signature']) : null,
       created_at: iso(created['created_at']),
     };
+  }
+
+  private static checkpoint(row: Record<string, unknown>): CheckpointRow {
+    return {
+      id: String(row['id']),
+      mission_id: String(row['mission_id']),
+      sequence: num(row['sequence']),
+      status: String(row['status']),
+      checkpoint_hash: String(row['checkpoint_hash']),
+      confirmed_action_ids: row['confirmed_action_ids'] ?? null,
+      remaining_budget_atomic: String(row['remaining_budget_atomic']),
+      state_snapshot: row['state_snapshot'] ?? null,
+      committed_signature: row['committed_signature']
+        ? String(row['committed_signature'])
+        : null,
+      created_at: iso(row['created_at']),
+    };
+  }
+
+  async insertCheckpoint(row: NewCheckpoint): Promise<CheckpointRow> {
+    try {
+      const created = await this.one<Record<string, unknown>>(
+        `INSERT INTO mission_checkpoints
+           (mission_id, sequence, status, checkpoint_hash, confirmed_action_ids,
+            remaining_budget_atomic, state_snapshot, committed_signature)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8) RETURNING *`,
+        [
+          row.mission_id,
+          row.sequence,
+          row.status,
+          row.checkpoint_hash,
+          JSON.stringify(row.confirmed_action_ids ?? null),
+          row.remaining_budget_atomic,
+          JSON.stringify(row.state_snapshot ?? null),
+          row.committed_signature,
+        ]
+      );
+      if (!created) throw new Error('Checkpoint insert returned nothing.');
+      return PGliteGatewayStore.checkpoint(created);
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const existing = await this.getCheckpoint(row.mission_id, row.sequence);
+      if (!existing) throw error;
+      return existing;
+    }
+  }
+
+  async getCheckpoint(missionId: string, sequence: number): Promise<CheckpointRow | null> {
+    const row = await this.one<Record<string, unknown>>(
+      'SELECT * FROM mission_checkpoints WHERE mission_id = $1 AND sequence = $2',
+      [missionId, sequence]
+    );
+    return row ? PGliteGatewayStore.checkpoint(row) : null;
+  }
+
+  async latestVerifiedCheckpoint(missionId: string): Promise<CheckpointRow | null> {
+    const row = await this.one<Record<string, unknown>>(
+      `SELECT * FROM mission_checkpoints
+       WHERE mission_id = $1 AND status = 'VERIFIED'
+       ORDER BY sequence DESC LIMIT 1`,
+      [missionId]
+    );
+    return row ? PGliteGatewayStore.checkpoint(row) : null;
+  }
+
+  async supersedeOlderCheckpoints(missionId: string, keepSequence: number): Promise<void> {
+    await this.db.query(
+      `UPDATE mission_checkpoints SET status = 'SUPERSEDED'
+       WHERE mission_id = $1 AND status = 'VERIFIED' AND sequence < $2`,
+      [missionId, keepSequence] as unknown[]
+    );
+  }
+
+  private static succession(row: Record<string, unknown>): SuccessionEventRow {
+    return {
+      id: String(row['id']),
+      mission_id: String(row['mission_id']),
+      from_agent_id: row['from_agent_id'] ? String(row['from_agent_id']) : null,
+      to_agent_id: String(row['to_agent_id']),
+      trigger_type: String(row['trigger_type']),
+      checkpoint_id: row['checkpoint_id'] ? String(row['checkpoint_id']) : null,
+      recovery_limit_atomic: row['recovery_limit_atomic']
+        ? String(row['recovery_limit_atomic'])
+        : null,
+      status: String(row['status']),
+      onchain_signature: row['onchain_signature'] ? String(row['onchain_signature']) : null,
+      created_at: iso(row['created_at']),
+    };
+  }
+
+  async insertSuccessionEvent(row: NewSuccessionEvent): Promise<SuccessionEventRow> {
+    const created = await this.one<Record<string, unknown>>(
+      `INSERT INTO succession_events
+         (mission_id, from_agent_id, to_agent_id, trigger_type, checkpoint_id,
+          recovery_limit_atomic, status, onchain_signature)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [
+        row.mission_id,
+        row.from_agent_id,
+        row.to_agent_id,
+        row.trigger_type,
+        row.checkpoint_id,
+        row.recovery_limit_atomic,
+        row.status,
+        row.onchain_signature,
+      ]
+    );
+    if (!created) throw new Error('Succession insert returned nothing.');
+    return PGliteGatewayStore.succession(created);
+  }
+
+  async getSuccessionById(successionId: string): Promise<SuccessionEventRow | null> {
+    const row = await this.one<Record<string, unknown>>(
+      'SELECT * FROM succession_events WHERE id = $1',
+      [successionId]
+    );
+    return row ? PGliteGatewayStore.succession(row) : null;
+  }
+
+  async latestSuccessionForMission(missionId: string): Promise<SuccessionEventRow | null> {
+    const row = await this.one<Record<string, unknown>>(
+      `SELECT * FROM succession_events WHERE mission_id = $1
+       ORDER BY created_at DESC LIMIT 1`,
+      [missionId]
+    );
+    return row ? PGliteGatewayStore.succession(row) : null;
+  }
+
+  async updateSuccessionStatus(
+    successionId: string,
+    patch: { status: string; onchain_signature?: string | null }
+  ): Promise<SuccessionEventRow | null> {
+    const row = await this.one<Record<string, unknown>>(
+      `UPDATE succession_events SET status = $2,
+         onchain_signature = COALESCE($3, onchain_signature)
+       WHERE id = $1 RETURNING *`,
+      [successionId, patch.status, patch.onchain_signature ?? null]
+    );
+    return row ? PGliteGatewayStore.succession(row) : null;
   }
 }

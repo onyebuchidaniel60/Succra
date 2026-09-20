@@ -30,13 +30,31 @@ export function normalizeAgentNonce(value: number | string): string {
   return typeof value === 'number' ? String(Math.trunc(value)) : value.replace(/^0+(?=\d)/, '');
 }
 
+export const UUID_SCHEMA = z.string().uuid();
+
 export const ATTACH_AGENT_SCHEMA = z.object({
   publicKey: solanaAddress,
   name: z.string().min(1).max(120),
   role: z.enum(['PRIMARY', 'SUCCESSOR']).default('PRIMARY'),
+  /** Succession order (lower wins); absent means unordered-last (Phase 6). */
+  priority: z.number().int().nonnegative().max(255).optional(),
+  /** Required capability tags for this assignment (Phase 6 eligibility). */
+  requiredCapabilities: z.array(z.string().min(1).max(64)).max(32).optional(),
+  /** Declared agent capability tags, stored on the agent row (Phase 6). */
+  capabilities: z.array(z.string().min(1).max(64)).max(32).optional(),
 });
 
 export type AttachAgentInput = z.infer<typeof ATTACH_AGENT_SCHEMA>;
+
+export const SUCCESSION_ACK_SCHEMA = z.object({}).strict();
+
+export const CHECKPOINTS_BODY_SCHEMA = z.object({
+  sequence: z.number().int().nonnegative(),
+  confirmedActionIds: z.array(UUID_SCHEMA).max(1024),
+  confirmedSignatures: z.array(z.string().min(32).max(128)).max(1024),
+});
+
+export type CheckpointsInput = z.infer<typeof CHECKPOINTS_BODY_SCHEMA>;
 
 export const EMPTY_BODY_SCHEMA = z.object({}).strict();
 
@@ -67,5 +85,3 @@ export const SUBMIT_SCHEMA = z.object({
 });
 
 export type SubmitInput = z.infer<typeof SUBMIT_SCHEMA>;
-
-export const UUID_SCHEMA = z.string().uuid();

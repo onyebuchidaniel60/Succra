@@ -12,13 +12,22 @@ function u64(value: bigint): number[] {
   return [...out];
 }
 
-function buildMission(overrides: { status?: number; agentFill?: number } = {}): {
+function u32(value: number): number[] {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, value, true);
+  return [...out];
+}
+
+function buildMission(
+  overrides: { status?: number; agentFill?: number; successorFills?: number[] } = {}
+): {
   bytes: Uint8Array;
   mission: string;
   agent: string;
 } {
   const mission = new Uint8Array(32).fill(21);
   const agent = new Uint8Array(32).fill(22);
+  const successorFills = overrides.successorFills ?? [23];
   const out: number[] = [
     ...missionDiscriminator(),
     ...new Uint8Array(32).fill(1), // owner
@@ -45,6 +54,9 @@ function buildMission(overrides: { status?: number; agentFill?: number } = {}): 
     overrides.status ?? 1, // Active
     ...(overrides.agentFill !== undefined ? new Uint8Array(32).fill(overrides.agentFill) : agent),
     ...u64(7n), // agent_nonce
+    ...u32(successorFills.length), // successors vec
+    ...successorFills.flatMap((fill) => [...new Uint8Array(32).fill(fill)]),
+    ...u64(2n), // state_version
   ];
   return {
     bytes: new Uint8Array(out),
@@ -64,6 +76,7 @@ describe('mission account decoding', () => {
     expect(state.budget).toEqual(50_000_000n);
     expect(state.remainingBudget).toEqual(49_000_000n);
     expect(state.maxAction).toEqual(5_000_000n);
+    expect(state.recoveryMaxAction).toEqual(1_000_000n);
     expect(state.allowedActionTypes).toEqual(['TRANSFER_SOL']);
     expect(state.allowedRecipients).toEqual([bytesToBase58(new Uint8Array(32).fill(30))]);
     expect(state.expiresAtSec).toEqual(9_999_999_999n);
@@ -72,15 +85,23 @@ describe('mission account decoding', () => {
     expect(state.status).toEqual('Active');
     expect(state.currentAgent).toEqual(agent);
     expect(state.agentNonce).toEqual(7n);
+    expect(state.successors).toEqual([bytesToBase58(new Uint8Array(32).fill(23))]);
+    expect(state.stateVersion).toEqual(2n);
   });
 
-  it('maps all three statuses and rejects unknown ones', () => {
+  it('maps all six statuses and rejects unknown ones', () => {
     expect(decodeMissionAccount('m', buildMission({ status: 0 }).bytes).status).toEqual('Draft');
     expect(decodeMissionAccount('m', buildMission({ status: 2 }).bytes).status).toEqual(
       'Cancelled'
     );
     expect(decodeMissionAccount('m', buildMission({ status: 3 }).bytes).status).toEqual(
       'Quarantined'
+    );
+    expect(decodeMissionAccount('m', buildMission({ status: 4 }).bytes).status).toEqual(
+      'Recovering'
+    );
+    expect(decodeMissionAccount('m', buildMission({ status: 5 }).bytes).status).toEqual(
+      'ActiveRecovery'
     );
     expect(() => decodeMissionAccount('m', buildMission({ status: 9 }).bytes)).toThrow();
   });
@@ -93,7 +114,7 @@ describe('mission account decoding', () => {
     badDisc[0] = (badDisc[0] ?? 0) ^ 0xff;
     expect(() => decodeMissionAccount('m', badDisc)).toThrow();
     // Anchor zero-fills the LEN allocation: zero padding passes (live
-    // accounts are 699 bytes), non-zero padding fails.
+    // accounts are Mission::LEN bytes), non-zero padding fails.
     expect(() => decodeMissionAccount('m', new Uint8Array([...bytes, 0, 0]))).not.toThrow();
     const dirty = new Uint8Array([...bytes, 0, 1]);
     expect(() => decodeMissionAccount('m', dirty)).toThrow();

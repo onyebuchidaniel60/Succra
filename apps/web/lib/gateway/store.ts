@@ -132,17 +132,69 @@ export interface NewAuditEvent {
   onchain_signature: string | null;
 }
 
+export interface CheckpointRow {
+  id: string;
+  mission_id: string;
+  sequence: number;
+  status: string;
+  checkpoint_hash: string;
+  confirmed_action_ids: unknown;
+  remaining_budget_atomic: string;
+  state_snapshot: unknown;
+  committed_signature: string | null;
+  created_at: string;
+}
+
+export interface NewCheckpoint {
+  mission_id: string;
+  sequence: number;
+  status: string;
+  checkpoint_hash: string;
+  confirmed_action_ids: unknown;
+  remaining_budget_atomic: string;
+  state_snapshot: unknown;
+  committed_signature: string | null;
+}
+
+export interface SuccessionEventRow {
+  id: string;
+  mission_id: string;
+  from_agent_id: string | null;
+  to_agent_id: string;
+  trigger_type: string;
+  checkpoint_id: string | null;
+  recovery_limit_atomic: string | null;
+  status: string;
+  onchain_signature: string | null;
+  created_at: string;
+}
+
+export interface NewSuccessionEvent {
+  mission_id: string;
+  from_agent_id: string | null;
+  to_agent_id: string;
+  trigger_type: string;
+  checkpoint_id: string | null;
+  recovery_limit_atomic: string | null;
+  status: string;
+  onchain_signature: string | null;
+}
+
 export interface NewAgent {
   owner_id: string;
   name: string;
   public_key: string;
   status: string;
+  capabilities?: unknown;
 }
 
 export interface NewAssignment {
   mission_id: string;
   agent_id: string;
   role: string;
+  priority?: number | null;
+  required_capabilities?: unknown;
+  status?: string | null;
 }
 
 export interface NewActionRequest {
@@ -172,12 +224,38 @@ export interface GatewayStore {
   insertAgent(row: NewAgent): Promise<AgentRow>;
   updateAgentStatus(agentId: string, status: string): Promise<AgentRow | null>;
   updateAgentHeartbeat(agentId: string, atIso: string): Promise<AgentRow | null>;
+  /** Replace an agent's declared capability tags (Phase 6 eligibility input). */
+  updateAgentCapabilities(agentId: string, capabilities: unknown): Promise<AgentRow | null>;
   getMissionById(missionId: string): Promise<MissionRow | null>;
   updateMissionRemaining(missionId: string, remainingAtomic: string): Promise<void>;
   getLatestPolicy(missionId: string): Promise<PolicyRow | null>;
   getAssignment(missionId: string, agentId: string): Promise<MissionAgentRow | null>;
   listAssignmentsForAgent(agentId: string): Promise<MissionAgentRow[]>;
+  /** All agent assignments for a mission (Phase 6 succession selection). */
+  listMissionAssignments(missionId: string): Promise<MissionAgentRow[]>;
   insertAssignment(row: NewAssignment): Promise<MissionAgentRow>;
+  /** Patch an assignment row (Phase 6: status/activated_at/revoked_at mirroring). */
+  updateAssignment(
+    assignmentId: string,
+    patch: { status?: string; activated_at?: string | null; revoked_at?: string | null }
+  ): Promise<MissionAgentRow | null>;
+  /** Flip an agent's PENDING assignments to AVAILABLE after key verification. */
+  markAgentAssignmentsAvailable(agentId: string): Promise<number>;
+  /** Mirror the mission authority handoff (Phase 6 succession). */
+  updateMissionAuthority(
+    missionId: string,
+    patch: {
+      status: string;
+      current_agent_id: string | null;
+      current_agent_public_key: string;
+      atIso: string;
+    }
+  ): Promise<void>;
+  /**
+   * Compare-and-set mission to HALTED from QUARANTINED (Phase 6: no
+   * eligible successor). Returns true when this call flipped the row.
+   */
+  markMissionHalted(missionId: string, atIso: string): Promise<boolean>;
   getActionById(requestId: string): Promise<ActionRequestRow | null>;
   getActionByIdempotency(missionId: string, key: string): Promise<ActionRequestRow | null>;
   insertAction(row: NewActionRequest): Promise<InsertActionOutcome>;
@@ -218,4 +296,19 @@ export interface GatewayStore {
    */
   markMissionQuarantined(missionId: string, atIso: string): Promise<boolean>;
   insertAuditEvent(row: NewAuditEvent): Promise<AuditEventRow>;
+  /** Insert a checkpoint; on (mission_id, sequence) conflict return the existing row. */
+  insertCheckpoint(row: NewCheckpoint): Promise<CheckpointRow>;
+  getCheckpoint(missionId: string, sequence: number): Promise<CheckpointRow | null>;
+  /** Latest VERIFIED checkpoint for a mission (the recovery boundary), or null. */
+  latestVerifiedCheckpoint(missionId: string): Promise<CheckpointRow | null>;
+  /** Mark older VERIFIED rows SUPERSEDED when a newer VERIFIED row lands. */
+  supersedeOlderCheckpoints(missionId: string, keepSequence: number): Promise<void>;
+  insertSuccessionEvent(row: NewSuccessionEvent): Promise<SuccessionEventRow>;
+  getSuccessionById(successionId: string): Promise<SuccessionEventRow | null>;
+  /** Latest succession event for a mission, or null. */
+  latestSuccessionForMission(missionId: string): Promise<SuccessionEventRow | null>;
+  updateSuccessionStatus(
+    successionId: string,
+    patch: { status: string; onchain_signature?: string | null }
+  ): Promise<SuccessionEventRow | null>;
 }
