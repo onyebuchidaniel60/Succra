@@ -1,5 +1,5 @@
 use crate::errors::SuccraError;
-use crate::state::{ActionType, MissionStatus, MAX_ACTION_TYPES, MAX_ALLOWED_RECIPIENTS};
+use crate::state::{ActionType, MissionStatus, MAX_ACTION_TYPES, MAX_ALLOWED_RECIPIENTS, MAX_SUCCESSORS};
 use anchor_lang::prelude::*;
 
 /// DB defaults from ARCHITECTURE.md §7 `mission_policies`
@@ -45,6 +45,30 @@ pub fn validate_create_params(
     Ok(())
 }
 
+/// Creation-time validation for the Phase 6 successor allowlist,
+/// following PROJECT_SPEC.md FR-01 (ordered successor list: unique,
+/// primary excluded) as amended. Pure function so it is unit-testable
+/// on the host target without a validator.
+pub fn validate_successors(successors: &[Pubkey], primary: &Pubkey) -> Result<()> {
+    require!(
+        successors.len() <= MAX_SUCCESSORS,
+        SuccraError::TooManySuccessors
+    );
+    for (index, successor) in successors.iter().enumerate() {
+        require!(
+            successor != primary,
+            SuccraError::PrimaryIsSuccessor
+        );
+        for earlier in &successors[..index] {
+            require!(
+                successor != earlier,
+                SuccraError::DuplicateSuccessors
+            );
+        }
+    }
+    Ok(())
+}
+
 /// On-chain mission state needed for the FR-03 execution decision.
 /// Passed by reference so the check stays a pure function, unit-testable
 /// on the host target without a validator.
@@ -57,6 +81,9 @@ pub struct ExecutePolicy<'a> {
     pub allowed_action_types: &'a [ActionType],
     pub allowed_recipients: &'a [Pubkey],
     pub max_action: u64,
+    /// Successor per-action ceiling (Phase 6, FR-06). Selected as the
+    /// effective ceiling when the mission is in `ActiveRecovery`.
+    pub recovery_max_action: u64,
     pub remaining_budget: u64,
     pub agent_nonce: u64,
     /// Mission mint. `Pubkey::default()` denotes a native-SOL mission;
@@ -81,11 +108,14 @@ pub fn validate_execute_policy(
     amount: u64,
     nonce: u64,
 ) -> Result<()> {
-    // FR-03 #1: mission is ACTIVE (no recovery states exist yet).
-    require!(
-        policy.status == MissionStatus::Active,
-        SuccraError::InvalidMissionStatus
-    );
+    // FR-03 #1: mission is ACTIVE or ACTIVE_RECOVERY (Phase 6, FR-06).
+    // Recovering and Quarantined are non-executable; the ceiling is
+    // selected by state inside the program (never off-chain only).
+    let ceiling = match policy.status {
+        MissionStatus::Active => policy.max_action,
+        MissionStatus::ActiveRecovery => policy.recovery_max_action,
+        _ => return Err(SuccraError::InvalidMissionStatus.into()),
+    };
     // FR-03 #2: signer is the current agent.
     require!(
         policy.agent == policy.current_agent,
@@ -109,9 +139,9 @@ pub fn validate_execute_policy(
         recipient != policy.vault_key && recipient != policy.mission_key,
         SuccraError::RecipientNotAllowed
     );
-    // FR-03 #5: per-action ceiling.
+    // FR-03 #5: per-action ceiling (state-selected above).
     require!(
-        amount <= policy.max_action,
+        amount <= ceiling,
         SuccraError::AmountExceedsMaxAction
     );
     // FR-03 #6: remaining budget covers the amount.
@@ -177,6 +207,41 @@ mod tests {
     }
 
     #[test]
+    fn accepts_empty_successor_list() {
+        let primary = Pubkey::new_unique();
+        assert!(validate_successors(&[], &primary).is_ok());
+    }
+
+    #[test]
+    fn accepts_unique_successors_excluding_primary() {
+        let primary = Pubkey::new_unique();
+        let beta = Pubkey::new_unique();
+        let gamma = Pubkey::new_unique();
+        assert!(validate_successors(&[beta, gamma], &primary).is_ok());
+    }
+
+    #[test]
+    fn rejects_primary_as_successor() {
+        let primary = Pubkey::new_unique();
+        let beta = Pubkey::new_unique();
+        assert!(validate_successors(&[beta, primary], &primary).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_successors() {
+        let primary = Pubkey::new_unique();
+        let beta = Pubkey::new_unique();
+        assert!(validate_successors(&[beta, beta], &primary).is_err());
+    }
+
+    #[test]
+    fn rejects_too_many_successors() {
+        let primary = Pubkey::new_unique();
+        let list: Vec<Pubkey> = (0..=MAX_SUCCESSORS).map(|_| Pubkey::new_unique()).collect();
+        assert!(validate_successors(&list, &primary).is_err());
+    }
+
+    #[test]
     fn rejects_empty_action_types() {
         let (b, m, r, _, p, e) = valid();
         assert!(validate_create_params(b, m, r, 0, p, e, NOW).is_err());
@@ -229,6 +294,7 @@ mod tests {
             allowed_action_types: action_types,
             allowed_recipients: recipients,
             max_action: 100_000,
+            recovery_max_action: 10_000,
             remaining_budget: 1_000_000,
             agent_nonce: 7,
             mint: Pubkey::default(),
@@ -245,12 +311,45 @@ mod tests {
     }
 
     #[test]
-    fn execute_rejects_non_active_status() {
+    fn execute_rejects_non_executable_status() {
         let (mut p, t, r, a, n) = execute_fixture();
-        for status in [MissionStatus::Draft, MissionStatus::Cancelled, MissionStatus::Quarantined] {
+        for status in [
+            MissionStatus::Draft,
+            MissionStatus::Cancelled,
+            MissionStatus::Quarantined,
+            MissionStatus::Recovering,
+        ] {
             p.status = status;
             assert!(validate_execute_policy(&p, t, r, a, n).is_err());
         }
+    }
+
+    #[test]
+    fn execute_accepts_active_recovery_within_recovery_ceiling() {
+        let (mut p, t, r, _, n) = execute_fixture();
+        p.status = MissionStatus::ActiveRecovery;
+        assert!(validate_execute_policy(&p, t, r, p.recovery_max_action, n).is_ok());
+    }
+
+    #[test]
+    fn execute_rejects_active_recovery_above_recovery_ceiling() {
+        let (mut p, t, r, _, n) = execute_fixture();
+        p.status = MissionStatus::ActiveRecovery;
+        assert!(validate_execute_policy(&p, t, r, p.recovery_max_action + 1, n).is_err());
+    }
+
+    #[test]
+    fn execute_ceiling_is_state_dependent() {
+        // Same amount passes in Active (below max_action) but fails in
+        // ActiveRecovery (above recovery_max_action): proves the ceiling
+        // is selected by mission state inside the program.
+        let (mut p, t, r, _, n) = execute_fixture();
+        let amount = p.recovery_max_action + 1;
+        assert!(amount <= p.max_action);
+        p.status = MissionStatus::Active;
+        assert!(validate_execute_policy(&p, t, r, amount, n).is_ok());
+        p.status = MissionStatus::ActiveRecovery;
+        assert!(validate_execute_policy(&p, t, r, amount, n).is_err());
     }
 
     #[test]

@@ -7,6 +7,10 @@ use anchor_lang::prelude::*;
 pub const MAX_ACTION_TYPES: usize = 8;
 pub const MAX_ALLOWED_RECIPIENTS: usize = 16;
 
+/// Bound on the pre-approved successor allowlist (Phase 6, FR-01).
+/// A technical account-size bound, not product policy.
+pub const MAX_SUCCESSORS: usize = 8;
+
 /// Mission account: on-chain authority for status, limits, and budget
 /// (AGENTS.md invariant #4). Derived from ARCHITECTURE.md §7 `missions`
 /// + `mission_policies`, minus DB-side fields (UUIDs, owner_id FK,
@@ -58,6 +62,17 @@ pub struct Mission {
     /// the new value. This is the on-chain replay/idempotency mechanism
     /// (DB idempotency keys arrive in Phase 4).
     pub agent_nonce: u64,
+    /// Pre-approved successor allowlist (FR-01 ordered successor list;
+    /// Phase 6). Bounded to MAX_SUCCESSORS, unique, primary excluded
+    /// (enforced by `create`). Only a listed key may be activated via
+    /// `activate_successor`. Appended after `agent_nonce` so all
+    /// pre-Phase-6 field offsets are unchanged.
+    pub successors: Vec<Pubkey>,
+    /// Monotonic state version (Phase 6, ARCHITECTURE.md §11). 0 at
+    /// creation; bumped on every status transition. Activation and
+    /// acknowledgement require the caller-observed version, so a stale
+    /// transition cannot execute twice.
+    pub state_version: u64,
 }
 
 impl Mission {
@@ -77,7 +92,9 @@ impl Mission {
         + 8 // violation_window_seconds
         + 1 // status
         + 32 // current_agent (Phase 2)
-        + 8; // agent_nonce (Phase 2)
+        + 8 // agent_nonce (Phase 2)
+        + (4 + 32 * MAX_SUCCESSORS) // successors (Phase 6)
+        + 8; // state_version (Phase 6)
 }
 
 /// MVP action adapters (PROJECT_SPEC.md FR-03, AGENTS.md invariant #8).
@@ -90,10 +107,11 @@ pub enum ActionType {
 }
 
 /// Draft/Active/Cancelled subset of the PROJECT_SPEC.md §6 mission state
-/// machine, plus Quarantined (Phase 5: ACTIVE → QUARANTINED only).
+/// machine, plus Quarantined (Phase 5: ACTIVE → QUARANTINED only) and
+/// Recovering/ActiveRecovery (Phase 6: succession only).
 /// Later phases extend this enum as their transitions land.
-/// The Quarantined variant is appended last so existing discriminants
-/// (Draft = 0, Active = 1, Cancelled = 2) never shift.
+/// New variants are always appended last so existing discriminants
+/// (Draft = 0, Active = 1, Cancelled = 2, Quarantined = 3) never shift.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum MissionStatus {
     /// Created, not yet funded. Only funding or `cancel` may follow.
@@ -107,6 +125,13 @@ pub enum MissionStatus {
     /// Set only by `quarantine`, which requires an ACTIVE mission and
     /// the registered guardian's signature.
     Quarantined,
+    /// Successor activated by the guardian, handoff not yet acknowledged.
+    /// Non-executable: only `acknowledge_recovery` or cancel may follow.
+    /// Set only by `activate_successor`.
+    Recovering,
+    /// Successor acknowledged and executing under recovery authority
+    /// (`recovery_max_action` ceiling). Set only by `acknowledge_recovery`.
+    ActiveRecovery,
 }
 
 /// Program-controlled vault PDA (ARCHITECTURE.md §8, §18). A native
@@ -128,6 +153,28 @@ pub struct Vault {}
 pub struct MissionQuarantined {
     pub mission_id: u64,
     pub guardian: Pubkey,
+}
+
+/// Emitted when the guardian activates a pre-approved successor
+/// (QUARANTINED → RECOVERING). Phase 6 on-chain proof of activation;
+/// the gateway mirrors it into `succession_events` and writes audit
+/// rows around submission and confirmation.
+#[event]
+pub struct SuccessionActivated {
+    pub mission_id: u64,
+    pub from_agent: Pubkey,
+    pub to_agent: Pubkey,
+    pub state_version: u64,
+}
+
+/// Emitted when the acknowledged handoff is reflected on-chain
+/// (RECOVERING → ACTIVE_RECOVERY). Phase 6 on-chain proof of
+/// acknowledgement; mirrored like `SuccessionActivated`.
+#[event]
+pub struct SuccessionAcknowledged {
+    pub mission_id: u64,
+    pub agent: Pubkey,
+    pub state_version: u64,
 }
 
 /// Emitted after every successful `execute_action`. This is the Phase 2

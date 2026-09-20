@@ -90,6 +90,7 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
       recipients?: anchor.web3.PublicKey[];
       mint?: anchor.web3.PublicKey;
       agent?: anchor.web3.PublicKey;
+      successors?: anchor.web3.PublicKey[];
     } = {}
   ): Promise<{
     mission: anchor.web3.PublicKey;
@@ -109,7 +110,8 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
         overrides.recipients ?? [recipientWallet.publicKey],
         mint,
         overrides.expiresAt ?? futureExpiry(),
-        overrides.agent ?? agent.publicKey
+        overrides.agent ?? agent.publicKey,
+        overrides.successors ?? []
       )
       .accounts({ owner })
       .rpc();
@@ -598,7 +600,8 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
         [vault],
         NATIVE_MINT,
         futureExpiry(),
-        agent.publicKey
+        agent.publicKey,
+        []
       )
       .accounts({ owner })
       .rpc();
@@ -1144,6 +1147,389 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
       expect(Buffer.from(anchorIx.data as Buffer).toString('hex')).to.equal(
         Buffer.from(expectedDisc).toString('hex')
       );
+    });
+  });
+
+  // Phase 6 rows (§21 Phase 6 subset): succession activation,
+  // acknowledgement, recovery ceiling, extended cancel, state version.
+  // Guardian loading mirrors the Phase 5 block above:
+  // SUCCRA_TEST_GUARDIAN_PATH in CI, repo .env.local dev secret local.
+  describe('succra phase 6 — succession and recovery', () => {
+    const beta = anchor.web3.Keypair.generate();
+    const gamma = anchor.web3.Keypair.generate();
+
+    function base58ToBytesPhase6(value: string): Uint8Array {
+      const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+      let num = 0n;
+      for (const char of value) {
+        const digit = alphabet.indexOf(char);
+        if (digit < 0) throw new Error('Invalid base58.');
+        num = num * 58n + BigInt(digit);
+      }
+      const out = new Uint8Array(64);
+      for (let i = 63; i >= 0; i -= 1) {
+        out[i] = Number(num & 0xffn);
+        num >>= 8n;
+      }
+      return out;
+    }
+
+    function loadGuardian(): anchor.web3.Keypair {
+      const fromPath = process.env.SUCCRA_TEST_GUARDIAN_PATH;
+      if (fromPath) {
+        const bytes = JSON.parse(readFileSync(fromPath, 'utf8')) as number[];
+        return anchor.web3.Keypair.fromSecretKey(Uint8Array.from(bytes));
+      }
+      const repoRoot = join(__dirname, '..', '..', '..');
+      const envText = readFileSync(join(repoRoot, '.env.local'), 'utf8');
+      const line = envText
+        .split('\n')
+        .find((entry) => entry.startsWith('SUCCRA_GUARDIAN_SECRET_KEY='));
+      if (!line) {
+        throw new Error('Missing SUCCRA_GUARDIAN_SECRET_KEY (or SUCCRA_TEST_GUARDIAN_PATH).');
+      }
+      return anchor.web3.Keypair.fromSecretKey(
+        base58ToBytesPhase6(line.slice('SUCCRA_GUARDIAN_SECRET_KEY='.length).trim())
+      );
+    }
+
+    async function activate(
+      mission: anchor.web3.PublicKey,
+      successor: anchor.web3.PublicKey,
+      expectedVersion: number,
+      signer: anchor.web3.Keypair
+    ): Promise<string> {
+      return program.methods
+        .activateSuccessor(successor, new anchor.BN(expectedVersion))
+        .accounts({ guardian: signer.publicKey, mission })
+        .signers([signer])
+        .rpc();
+    }
+
+    async function acknowledge(
+      mission: anchor.web3.PublicKey,
+      expectedVersion: number,
+      signer: anchor.web3.Keypair
+    ): Promise<string> {
+      return program.methods
+        .acknowledgeRecovery(new anchor.BN(expectedVersion))
+        .accounts({ guardian: signer.publicKey, mission })
+        .signers([signer])
+        .rpc();
+    }
+
+    async function quarantineAs(
+      mission: anchor.web3.PublicKey,
+      signer: anchor.web3.Keypair
+    ): Promise<string> {
+      return program.methods
+        .quarantine()
+        .accounts({ guardian: signer.publicKey, mission })
+        .signers([signer])
+        .rpc();
+    }
+
+    async function versionOf(mission: anchor.web3.PublicKey): Promise<number> {
+      const account = await program.account.mission.fetch(mission);
+      return (account.stateVersion as anchor.BN).toNumber();
+    }
+
+    // Drive a mission to RECOVERING with beta as the successor.
+    // Versions: create 0 → fund 1 → quarantine 2 → activate 3.
+    async function toRecovering(
+      missionNo: number,
+      guardian: anchor.web3.Keypair
+    ): Promise<{ mission: anchor.web3.PublicKey }> {
+      const { mission } = await createMission(missionNo, {
+        successors: [beta.publicKey, gamma.publicKey],
+      });
+      await fundSol(mission);
+      await quarantineAs(mission, guardian);
+      await activate(mission, beta.publicKey, 2, guardian);
+      return { mission };
+    }
+
+    it('rejects a successor list containing the primary at creation', async () => {
+      try {
+        await createMission(201, { successors: [agent.publicKey, beta.publicKey] });
+        expect.fail('primary-as-successor should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('PrimaryIsSuccessor');
+      }
+    });
+
+    it('rejects duplicate successors at creation', async () => {
+      try {
+        await createMission(202, { successors: [beta.publicKey, beta.publicKey] });
+        expect.fail('duplicate successors should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('DuplicateSuccessors');
+      }
+    });
+
+    it('rejects more than 8 successors at creation', async () => {
+      const list = Array.from({ length: 9 }, () => anchor.web3.Keypair.generate().publicKey);
+      try {
+        await createMission(203, { successors: list });
+        expect.fail('oversized successor list should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('TooManySuccessors');
+      }
+    });
+
+    it('activates a pre-approved successor and emits SuccessionActivated', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await createMission(204, {
+        successors: [beta.publicKey, gamma.publicKey],
+      });
+      await fundSol(mission);
+      await quarantineAs(mission, guardian);
+      let listener = -1;
+      const eventPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('SuccessionActivated event timeout')), 30000);
+        listener = program.addEventListener('successionActivated', (event) => {
+          clearTimeout(timer);
+          resolve(event as unknown as Record<string, unknown>);
+        });
+      });
+      try {
+        await activate(mission, beta.publicKey, 2, guardian);
+        const event = await eventPromise;
+        expect((event['toAgent'] as anchor.web3.PublicKey).toBase58()).to.equal(
+          beta.publicKey.toBase58()
+        );
+        expect((event['fromAgent'] as anchor.web3.PublicKey).toBase58()).to.equal(
+          agent.publicKey.toBase58()
+        );
+      } finally {
+        await program.removeEventListener(listener);
+      }
+      const account = await program.account.mission.fetch(mission);
+      expect(statusName(account.status)).to.equal('recovering');
+      expect((account.currentAgent as anchor.web3.PublicKey).toBase58()).to.equal(
+        beta.publicKey.toBase58()
+      );
+      expect((account.stateVersion as anchor.BN).toNumber()).to.equal(3);
+    });
+
+    it('rejects activation signed by a non-guardian', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await createMission(205, { successors: [beta.publicKey] });
+      await fundSol(mission);
+      await quarantineAs(mission, guardian);
+      try {
+        await activate(mission, beta.publicKey, 2, agent);
+        expect.fail('non-guardian activation should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('UnauthorizedGuardian');
+      }
+    });
+
+    it('rejects activation of a key outside the successor list', async () => {
+      const guardian = loadGuardian();
+      const outsider = anchor.web3.Keypair.generate();
+      const { mission } = await createMission(206, { successors: [beta.publicKey] });
+      await fundSol(mission);
+      await quarantineAs(mission, guardian);
+      try {
+        await activate(mission, outsider.publicKey, 2, guardian);
+        expect.fail('unlisted successor should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('SuccessorNotPreApproved');
+      }
+    });
+
+    it('rejects stale activation', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await createMission(207, { successors: [beta.publicKey] });
+      await fundSol(mission);
+      await quarantineAs(mission, guardian);
+      try {
+        await activate(mission, beta.publicKey, 99, guardian);
+        expect.fail('stale activation should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('StaleStateVersion');
+      }
+    });
+
+    it('rejects re-activation of the now-current successor', async () => {
+      // SuccessorIsCurrentAgent is defense-in-depth behind the
+      // create-time primary exclusion and the QUARANTINED status gate:
+      // no public instruction sequence can present a listed successor
+      // that already equals current_agent while QUARANTINED, so the
+      // status gate fires first here.
+      const guardian = loadGuardian();
+      const { mission } = await toRecovering(208, guardian);
+      try {
+        await activate(mission, beta.publicKey, 3, guardian);
+        expect.fail('re-activation should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('InvalidMissionStatus');
+      }
+    });
+
+    it('rejects double activation by a different successor', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await toRecovering(209, guardian);
+      try {
+        await activate(mission, gamma.publicKey, 3, guardian);
+        expect.fail('second activation should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('InvalidMissionStatus');
+      }
+    });
+
+    it('acknowledges recovery and emits SuccessionAcknowledged', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await toRecovering(210, guardian);
+      let listener = -1;
+      const eventPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error('SuccessionAcknowledged event timeout')),
+          30000
+        );
+        listener = program.addEventListener('successionAcknowledged', (event) => {
+          clearTimeout(timer);
+          resolve(event as unknown as Record<string, unknown>);
+        });
+      });
+      try {
+        await acknowledge(mission, 3, guardian);
+        const event = await eventPromise;
+        expect((event['agent'] as anchor.web3.PublicKey).toBase58()).to.equal(
+          beta.publicKey.toBase58()
+        );
+      } finally {
+        await program.removeEventListener(listener);
+      }
+      const account = await program.account.mission.fetch(mission);
+      expect(statusName(account.status)).to.equal('activeRecovery');
+      expect((account.stateVersion as anchor.BN).toNumber()).to.equal(4);
+    });
+
+    it('rejects stale acknowledgement', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await toRecovering(211, guardian);
+      try {
+        await acknowledge(mission, 99, guardian);
+        expect.fail('stale acknowledgement should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('StaleStateVersion');
+      }
+    });
+
+    it('rejects acknowledgement in the wrong state', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await createMission(212, { successors: [beta.publicKey] });
+      await fundSol(mission);
+      try {
+        await acknowledge(mission, 1, guardian);
+        expect.fail('acknowledgement on ACTIVE should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('InvalidMissionStatus');
+      }
+    });
+
+    it('executes a recovery transfer within the recovery ceiling', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await toRecovering(213, guardian);
+      await acknowledge(mission, 3, guardian);
+      await executeSol(
+        mission,
+        recipientWallet.publicKey,
+        RECOVERY_MAX_ACTION,
+        new anchor.BN(1),
+        beta
+      );
+      const account = await program.account.mission.fetch(mission);
+      expect(statusName(account.status)).to.equal('activeRecovery');
+      expect((account.remainingBudget as anchor.BN).toNumber()).to.equal(
+        BUDGET.toNumber() - RECOVERY_MAX_ACTION.toNumber()
+      );
+    });
+
+    it('rejects a recovery transfer above the recovery ceiling', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await toRecovering(214, guardian);
+      await acknowledge(mission, 3, guardian);
+      try {
+        await executeSol(
+          mission,
+          recipientWallet.publicKey,
+          RECOVERY_MAX_ACTION.addn(1),
+          new anchor.BN(1),
+          beta
+        );
+        expect.fail('over-recovery-ceiling transfer should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('AmountExceedsMaxAction');
+      }
+    });
+
+    it('proves the ceiling is state-dependent on an Active mission', async () => {
+      // 2M is above the 1M recovery ceiling but below the 5M primary
+      // max: succeeds here, fails under ActiveRecovery above.
+      const { mission } = await createMission(215, { successors: [beta.publicKey] });
+      await fundSol(mission);
+      await executeSol(
+        mission,
+        recipientWallet.publicKey,
+        new anchor.BN(2_000_000),
+        new anchor.BN(1)
+      );
+      const account = await program.account.mission.fetch(mission);
+      expect((account.remainingBudget as anchor.BN).toNumber()).to.equal(
+        BUDGET.toNumber() - 2_000_000
+      );
+    });
+
+    it('cancels from Quarantined, Recovering, and ActiveRecovery', async () => {
+      const guardian = loadGuardian();
+      const q = await createMission(216, { successors: [beta.publicKey] });
+      await fundSol(q.mission);
+      await quarantineAs(q.mission, guardian);
+      await program.methods.cancel().accounts({ mission: q.mission }).rpc();
+      expect(statusName((await program.account.mission.fetch(q.mission)).status)).to.equal(
+        'cancelled'
+      );
+
+      const r = await toRecovering(217, guardian);
+      await program.methods.cancel().accounts({ mission: r.mission }).rpc();
+      expect(statusName((await program.account.mission.fetch(r.mission)).status)).to.equal(
+        'cancelled'
+      );
+
+      const a = await toRecovering(218, guardian);
+      await acknowledge(a.mission, 3, guardian);
+      await program.methods.cancel().accounts({ mission: a.mission }).rpc();
+      expect(statusName((await program.account.mission.fetch(a.mission)).status)).to.equal(
+        'cancelled'
+      );
+    });
+
+    it('rejects cancel from a terminal state', async () => {
+      const { mission } = await createMission(219);
+      await program.methods.cancel().accounts({ mission }).rpc();
+      try {
+        await program.methods.cancel().accounts({ mission }).rpc();
+        expect.fail('second cancel should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('InvalidMissionStatus');
+      }
+    });
+
+    it('bumps state_version on every status transition', async () => {
+      const guardian = loadGuardian();
+      const { mission } = await createMission(220, { successors: [beta.publicKey] });
+      expect(await versionOf(mission)).to.equal(0);
+      await fundSol(mission);
+      expect(await versionOf(mission)).to.equal(1);
+      await quarantineAs(mission, guardian);
+      expect(await versionOf(mission)).to.equal(2);
+      await activate(mission, beta.publicKey, 2, guardian);
+      expect(await versionOf(mission)).to.equal(3);
+      await acknowledge(mission, 3, guardian);
+      expect(await versionOf(mission)).to.equal(4);
     });
   });
 });

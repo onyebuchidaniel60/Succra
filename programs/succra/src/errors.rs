@@ -48,4 +48,21 @@ pub enum SuccraError {
     // Phase 5: quarantine errors (PROJECT_SPEC.md FR-04).
     #[msg("Signer is not the registered guardian.")]
     UnauthorizedGuardian,
+    // Phase 6: succession errors (PROJECT_SPEC.md FR-05/FR-06, §6).
+    #[msg("Too many successors for the Mission account size.")]
+    TooManySuccessors,
+    #[msg("Successor list must not contain duplicates.")]
+    DuplicateSuccessors,
+    #[msg("Primary agent must not be listed as a successor.")]
+    PrimaryIsSuccessor,
+    #[msg("Successor is not in the mission pre-approved list.")]
+    SuccessorNotPreApproved,
+    #[msg("Successor is already the mission's current agent.")]
+    SuccessorIsCurrentAgent,
+    #[msg("State version does not match the mission's current version.")]
+    StaleStateVersion,
+    #[msg("Mission account size does not match the current layout; needs recreation.")]
+    MissionNeedsRecreation,
+    #[msg("State version counter overflowed.")]
+    VersionOverflow,
 }

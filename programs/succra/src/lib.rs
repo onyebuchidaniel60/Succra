@@ -8,9 +8,12 @@ pub mod state;
 pub mod validation;
 
 use errors::SuccraError;
-use state::{ActionExecuted, ActionType, Mission, MissionQuarantined, MissionStatus};
+use state::{
+    ActionExecuted, ActionType, Mission, MissionQuarantined, MissionStatus, SuccessionActivated,
+    SuccessionAcknowledged,
+};
 use validation::{
-    validate_create_params, validate_execute_policy, ExecutePolicy,
+    validate_create_params, validate_execute_policy, validate_successors, ExecutePolicy,
     DEFAULT_VIOLATION_THRESHOLD, DEFAULT_VIOLATION_WINDOW_SECONDS,
 };
 
@@ -28,6 +31,30 @@ const SPL_VAULT_SEEDS_PREFIX: &[u8] = b"spl-vault";
 /// rewriting declare_id); the committed value is never altered by CI.
 pub const GUARDIAN_PUBKEY: Pubkey = pubkey!("H5rPWxyMANp1XbBqZwvvEKZUS4KYGYHLv3UujxEQDdQs");
 
+/// Reject mission accounts whose size does not match the current
+/// `Mission::LEN` (Phase 6 amendment: "needs recreation"). Anchor
+/// deserialization may tolerate trailing bytes; this makes the layout
+/// contract explicit so pre-Phase-6 accounts can never be misread as
+/// carrying successors or a state version they do not have.
+fn require_current_layout(mission_info: &AccountInfo) -> Result<()> {
+    require!(
+        mission_info.data_len() == Mission::LEN,
+        SuccraError::MissionNeedsRecreation
+    );
+    Ok(())
+}
+
+/// Bump the mission state version after a status transition (Phase 6:
+/// 0 at creation, +1 on every transition). Checked so a counter
+/// overflow fails loudly instead of wrapping.
+fn bump_state_version(mission: &mut Mission) -> Result<()> {
+    mission.state_version = mission
+        .state_version
+        .checked_add(1)
+        .ok_or(SuccraError::VersionOverflow)?;
+    Ok(())
+}
+
 /// Resolve and validate the mission SPL token vault from an unchecked
 /// account.
 ///
@@ -36,8 +63,7 @@ pub const GUARDIAN_PUBKEY: Pubkey = pubkey!("H5rPWxyMANp1XbBqZwvvEKZUS4KYGYHLv3U
 /// deserialization) even on SOL missions that have no token vault. The
 /// account is therefore taken unchecked and validated here: correct PDA
 /// derivation first, then token-account shape.
-fn load_spl_vault(spl_vault: &AccountInfo, mission_key: &Pubkey) -> Result<TokenAccount> {
-    let (expected, _) =
+fn load_spl_vault(spl_vault: &AccountInfo, mission_key: &Pubkey) -> Result<TokenAccount> {    let (expected, _) =
         Pubkey::find_program_address(&[SPL_VAULT_SEEDS_PREFIX, mission_key.as_ref()], &crate::ID);
     require!(
         spl_vault.key() == expected,
@@ -58,8 +84,13 @@ pub mod succra {
     /// Post-state is DRAFT with `remaining_budget == 0` and
     /// `agent_nonce == 0`. Funding is a separate step (`fund` for native
     /// SOL missions, `fund_spl` for SPL missions). Creation-time validation
-    /// follows PROJECT_SPEC.md FR-01; successor-related FR-01 rules belong
-    /// to Phase 6, when successors exist on-chain.
+    /// follows PROJECT_SPEC.md FR-01, including the Phase 6 successor
+    /// allowlist (bounded, unique, primary excluded).
+    ///
+    /// Breaking change (accepted Phase 6 amendment): `create` now takes
+    /// `successors`, and the Mission account is larger. Pre-Phase-6
+    /// devnet missions are test-only; mismatched accounts are rejected
+    /// as "needs recreation."
     pub fn create(
         ctx: Context<Create>,
         mission_id: u64,
@@ -71,6 +102,7 @@ pub mod succra {
         mint: Pubkey,
         expires_at: i64,
         current_agent: Pubkey,
+        successors: Vec<Pubkey>,
     ) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         validate_create_params(
@@ -82,6 +114,7 @@ pub mod succra {
             expires_at,
             now,
         )?;
+        validate_successors(&successors, &current_agent)?;
 
         let mission = &mut ctx.accounts.mission;
         mission.owner = ctx.accounts.owner.key();
@@ -99,6 +132,8 @@ pub mod succra {
         mission.status = MissionStatus::Draft;
         mission.current_agent = current_agent;
         mission.agent_nonce = 0;
+        mission.successors = successors;
+        mission.state_version = 0;
 
         // Create the native system vault PDA by funding its rent reserve.
         // Anchor cannot `init` a system-owned account, so the vault is
@@ -126,6 +161,7 @@ pub mod succra {
     /// (retrying a confirmed funding is a safe no-op error, never a
     /// double-spend). Rejects SPL missions; they use `fund_spl`.
     pub fn fund(ctx: Context<Fund>) -> Result<()> {
+        require_current_layout(&ctx.accounts.mission.to_account_info())?;
         let mission = &ctx.accounts.mission;
         require!(
             mission.status == MissionStatus::Draft,
@@ -151,6 +187,7 @@ pub mod succra {
         let mission = &mut ctx.accounts.mission;
         mission.remaining_budget = mission.budget;
         mission.status = MissionStatus::Active;
+        bump_state_version(mission)?;
         Ok(())
     }
 
@@ -160,6 +197,7 @@ pub mod succra {
     /// Same single-use, exact-match semantics as `fund`. Rejects native
     /// SOL missions; they use `fund`.
     pub fn fund_spl(ctx: Context<FundSpl>) -> Result<()> {
+        require_current_layout(&ctx.accounts.mission.to_account_info())?;
         let mission = &ctx.accounts.mission;
         require!(
             mission.status == MissionStatus::Draft,
@@ -186,6 +224,7 @@ pub mod succra {
         let mission = &mut ctx.accounts.mission;
         mission.remaining_budget = mission.budget;
         mission.status = MissionStatus::Active;
+        bump_state_version(mission)?;
         Ok(())
     }
 
@@ -196,7 +235,9 @@ pub mod succra {
     /// value via the System or Token program with the vault PDA signing
     /// through `invoke_signed`, decrements `remaining_budget`, advances
     /// `agent_nonce` to the submitted nonce, and emits `ActionExecuted`.
-    /// Status remains ACTIVE. Only the current agent may sign.
+    /// Accepts ACTIVE (ceiling `max_action`) and ACTIVE_RECOVERY
+    /// (ceiling `recovery_max_action`, Phase 6 FR-06). Recovering and
+    /// Quarantined are non-executable. Only the current agent may sign.
     pub fn execute_action(
         ctx: Context<ExecuteAction>,
         action_type: ActionType,
@@ -204,6 +245,7 @@ pub mod succra {
         amount: u64,
         nonce: u64,
     ) -> Result<()> {
+        require_current_layout(&ctx.accounts.mission.to_account_info())?;
         let mission_key = ctx.accounts.mission.key();
         let vault_key = ctx.accounts.vault.key();
         let vault_bump = ctx.accounts.mission.vault_bump;
@@ -219,6 +261,7 @@ pub mod succra {
                 allowed_action_types: &mission.allowed_action_types,
                 allowed_recipients: &mission.allowed_recipients,
                 max_action: mission.max_action,
+                recovery_max_action: mission.recovery_max_action,
                 remaining_budget: mission.remaining_budget,
                 agent_nonce: mission.agent_nonce,
                 mint: mission.mint,
@@ -306,20 +349,27 @@ pub mod succra {
         Ok(())
     }
 
-    /// Cancel a DRAFT or ACTIVE mission and return all vault assets to
+    /// Cancel a mission and return all vault assets to
     /// the owner (native SOL by draining the vault to zero, which deletes
     /// it; mission SPL tokens via transfer plus token-vault close). Moves the mission to CANCELLED.
     /// Authority and transition rules are unchanged from Phase 1; only
     /// SPL asset coverage is added. Only callable once: a second call
     /// fails with `InvalidMissionStatus` (or account resolution, since
     /// the vaults are closed).
+    /// Phase 6 (§6 as amended): accepts Draft, Active, Quarantined,
+    /// Recovering, and ActiveRecovery. Terminal states are rejected.
     pub fn cancel(ctx: Context<Cancel>) -> Result<()> {
+        require_current_layout(&ctx.accounts.mission.to_account_info())?;
         let mission_key = ctx.accounts.mission.key();
         let vault_key = ctx.accounts.vault.key();
         let vault_bump = ctx.accounts.mission.vault_bump;
         let mission = &ctx.accounts.mission;
         require!(
-            mission.status == MissionStatus::Draft || mission.status == MissionStatus::Active,
+            mission.status == MissionStatus::Draft
+                || mission.status == MissionStatus::Active
+                || mission.status == MissionStatus::Quarantined
+                || mission.status == MissionStatus::Recovering
+                || mission.status == MissionStatus::ActiveRecovery,
             SuccraError::InvalidMissionStatus
         );
 
@@ -397,6 +447,8 @@ pub mod succra {
         }
 
         ctx.accounts.mission.status = MissionStatus::Cancelled;
+        let mission = &mut ctx.accounts.mission;
+        bump_state_version(mission)?;
         Ok(())
     }
 
@@ -410,6 +462,7 @@ pub mod succra {
     /// mission fails with `InvalidMissionStatus` (callers treat that as
     /// already-handled, making quarantine idempotent).
     pub fn quarantine(ctx: Context<Quarantine>) -> Result<()> {
+        require_current_layout(&ctx.accounts.mission.to_account_info())?;
         let mission = &ctx.accounts.mission;
         require!(
             mission.status == MissionStatus::Active,
@@ -422,9 +475,101 @@ pub mod succra {
 
         let mission = &mut ctx.accounts.mission;
         mission.status = MissionStatus::Quarantined;
+        bump_state_version(mission)?;
         emit!(MissionQuarantined {
             mission_id: mission.mission_id,
             guardian: ctx.accounts.guardian.key(),
+        });
+        Ok(())
+    }
+
+    /// Activate a pre-approved successor on a QUARANTINED mission.
+    ///
+    /// Implements PROJECT_SPEC.md FR-05/FR-06 succession on-chain (first
+    /// of the two Phase 6 instructions): requires a QUARANTINED mission
+    /// and the registered guardian's signature, verifies the successor
+    /// is pre-approved (listed in `mission.successors`) and is not the
+    /// quarantined current agent, then moves QUARANTINED → RECOVERING,
+    /// hands `current_agent` to the successor, and emits
+    /// `SuccessionActivated`. Moves no funds. The caller-observed
+    /// `expected_version` must equal `mission.state_version` (stale
+    /// activations are rejected, making double activation impossible).
+    pub fn activate_successor(
+        ctx: Context<ActivateSuccessor>,
+        successor: Pubkey,
+        expected_version: u64,
+    ) -> Result<()> {
+        require_current_layout(&ctx.accounts.mission.to_account_info())?;
+        let mission = &ctx.accounts.mission;
+        require!(
+            mission.status == MissionStatus::Quarantined,
+            SuccraError::InvalidMissionStatus
+        );
+        require!(
+            ctx.accounts.guardian.key() == GUARDIAN_PUBKEY,
+            SuccraError::UnauthorizedGuardian
+        );
+        require!(
+            mission.state_version == expected_version,
+            SuccraError::StaleStateVersion
+        );
+        require!(
+            mission.successors.contains(&successor),
+            SuccraError::SuccessorNotPreApproved
+        );
+        require!(
+            successor != mission.current_agent,
+            SuccraError::SuccessorIsCurrentAgent
+        );
+
+        let from_agent = mission.current_agent;
+        let mission = &mut ctx.accounts.mission;
+        mission.current_agent = successor;
+        mission.status = MissionStatus::Recovering;
+        bump_state_version(mission)?;
+        emit!(SuccessionActivated {
+            mission_id: mission.mission_id,
+            from_agent,
+            to_agent: successor,
+            state_version: mission.state_version,
+        });
+        Ok(())
+    }
+
+    /// Reflect the successor's acknowledged handoff on-chain.
+    ///
+    /// Second of the two Phase 6 instructions (Flow F as amended): the
+    /// successor's acknowledgement itself is an off-chain authenticated
+    /// POST; the runtime then submits this guardian-signed instruction
+    /// to move RECOVERING → ACTIVE_RECOVERY. Requires the
+    /// caller-observed `expected_version`. The successor starts
+    /// executing under the `recovery_max_action` ceiling from here.
+    pub fn acknowledge_recovery(
+        ctx: Context<AcknowledgeRecovery>,
+        expected_version: u64,
+    ) -> Result<()> {
+        require_current_layout(&ctx.accounts.mission.to_account_info())?;
+        let mission = &ctx.accounts.mission;
+        require!(
+            mission.status == MissionStatus::Recovering,
+            SuccraError::InvalidMissionStatus
+        );
+        require!(
+            ctx.accounts.guardian.key() == GUARDIAN_PUBKEY,
+            SuccraError::UnauthorizedGuardian
+        );
+        require!(
+            mission.state_version == expected_version,
+            SuccraError::StaleStateVersion
+        );
+
+        let mission = &mut ctx.accounts.mission;
+        mission.status = MissionStatus::ActiveRecovery;
+        bump_state_version(mission)?;
+        emit!(SuccessionAcknowledged {
+            mission_id: mission.mission_id,
+            agent: mission.current_agent,
+            state_version: mission.state_version,
         });
         Ok(())
     }
@@ -557,6 +702,24 @@ pub struct Cancel<'info> {
 /// accounts: quarantine moves no funds by construction.
 #[derive(Accounts)]
 pub struct Quarantine<'info> {
+    pub guardian: Signer<'info>,
+    #[account(mut)]
+    pub mission: Account<'info, Mission>,
+}
+
+/// Activate-successor context (Phase 6, FR-05/FR-06). Guardian-signed;
+/// mission-only: activation moves authority, never funds.
+#[derive(Accounts)]
+pub struct ActivateSuccessor<'info> {
+    pub guardian: Signer<'info>,
+    #[account(mut)]
+    pub mission: Account<'info, Mission>,
+}
+
+/// Acknowledge-recovery context (Phase 6, Flow F). Guardian-signed;
+/// mission-only: acknowledgement moves status, never funds.
+#[derive(Accounts)]
+pub struct AcknowledgeRecovery<'info> {
     pub guardian: Signer<'info>,
     #[account(mut)]
     pub mission: Account<'info, Mission>,
