@@ -15,6 +15,7 @@ import { PGlite } from '@electric-sql/pglite';
 import type {
   ActionRequestRow,
   AgentRow,
+  AuditEventRow,
   ChallengeRow,
   GatewayStore,
   InsertActionOutcome,
@@ -23,6 +24,7 @@ import type {
   NewActionRequest,
   NewAgent,
   NewAssignment,
+  NewAuditEvent,
   OnchainTxRow,
   OnchainTxStatus,
   PolicyRow,
@@ -45,6 +47,7 @@ export async function createGatewayTestDb(): Promise<PGlite> {
     $$`);
   await db.exec(readMigration('20260913000000_phase3_core.sql'));
   await db.exec(readMigration('20260914000000_phase4_gateway.sql'));
+  await db.exec(readMigration('20260915000000_phase5_guardian.sql'));
   return db;
 }
 
@@ -293,9 +296,9 @@ export class PGliteGatewayStore implements GatewayStore {
       const created = await this.one<Record<string, unknown>>(
         `INSERT INTO action_requests
            (mission_id, agent_id, idempotency_key, agent_nonce, action_type, payload,
-            request_hash, signature, decision, decision_reason_code,
+            request_hash, signature, decision, decision_reason_code, violation_count_after,
             unsigned_tx_hash, unsigned_tx_b64, expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
         [
           row.mission_id,
           row.agent_id,
@@ -307,6 +310,7 @@ export class PGliteGatewayStore implements GatewayStore {
           row.signature,
           row.decision,
           row.decision_reason_code,
+          row.violation_count_after,
           row.unsigned_tx_hash,
           row.unsigned_tx_b64,
           row.expires_at,
@@ -445,5 +449,77 @@ export class PGliteGatewayStore implements GatewayStore {
       [agentId, challenge, nowIso] as unknown[]
     );
     return result.rows.length > 0;
+  }
+
+  async countPolicyBlockedSince(
+    missionId: string,
+    agentId: string,
+    reasonCode: string,
+    sinceIso: string
+  ): Promise<number> {
+    const result = await this.db.query(
+      `SELECT COUNT(*)::int AS n FROM action_requests
+       WHERE mission_id = $1 AND agent_id = $2 AND decision = 'BLOCKED'
+         AND decision_reason_code = $3 AND created_at > $4`,
+      [missionId, agentId, reasonCode, sinceIso] as unknown[]
+    );
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? num(row['n']) : 0;
+  }
+
+  async lastConfirmedAt(missionId: string, agentId: string): Promise<string | null> {
+    const row = await this.one<Record<string, unknown>>(
+      `SELECT t.confirmed_at AS confirmed_at FROM onchain_transactions t
+       JOIN action_requests a ON a.id = t.action_request_id
+       WHERE t.status = 'CONFIRMED' AND a.mission_id = $1 AND a.agent_id = $2
+       ORDER BY t.confirmed_at DESC NULLS LAST LIMIT 1`,
+      [missionId, agentId]
+    );
+    return row && row['confirmed_at'] ? iso(row['confirmed_at']) : null;
+  }
+
+  async setActionViolationCount(requestId: string, count: number): Promise<void> {
+    await this.db.query('UPDATE action_requests SET violation_count_after = $2 WHERE id = $1', [
+      requestId,
+      count,
+    ] as unknown[]);
+  }
+
+  async markMissionQuarantined(missionId: string, atIso: string): Promise<boolean> {
+    const result = await this.db.query(
+      `UPDATE missions SET status = 'QUARANTINED', updated_at = $2
+       WHERE id = $1 AND status = 'ACTIVE' RETURNING id`,
+      [missionId, atIso] as unknown[]
+    );
+    return result.rows.length > 0;
+  }
+
+  async insertAuditEvent(row: NewAuditEvent): Promise<AuditEventRow> {
+    const created = await this.one<Record<string, unknown>>(
+      `INSERT INTO audit_events
+         (mission_id, event_type, actor_type, actor_id, event_hash, payload_public, onchain_signature)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING *`,
+      [
+        row.mission_id,
+        row.event_type,
+        row.actor_type,
+        row.actor_id,
+        row.event_hash,
+        JSON.stringify(row.payload_public ?? null),
+        row.onchain_signature,
+      ]
+    );
+    if (!created) throw new Error('Audit insert returned nothing.');
+    return {
+      id: String(created['id']),
+      mission_id: String(created['mission_id']),
+      event_type: String(created['event_type']),
+      actor_type: String(created['actor_type']),
+      actor_id: created['actor_id'] ? String(created['actor_id']) : null,
+      event_hash: String(created['event_hash']),
+      payload_public: created['payload_public'] ?? null,
+      onchain_signature: created['onchain_signature'] ? String(created['onchain_signature']) : null,
+      created_at: iso(created['created_at']),
+    };
   }
 }

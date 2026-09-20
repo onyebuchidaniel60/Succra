@@ -149,7 +149,7 @@ jobs:
       # URL + IDL/keypair and skips honestly without them (same pattern as
       # the Phase 2 expiry tests). No new job, no continue-on-error.
       - name: Run live Supabase integration suite
-        run: pnpm vitest run tests/integration/supabase-rls-live.test.ts tests/integration/supabase-rls-phase4.test.ts "apps/web/tests/gateway-*.test.ts" apps/web/tests/mission-state.test.ts apps/web/tests/txkit-interop.test.ts "packages/sdk/tests/*.test.ts" "packages/shared/tests/*.test.ts"
+        run: pnpm vitest run tests/integration/supabase-rls-live.test.ts tests/integration/supabase-rls-phase4.test.ts tests/integration/supabase-rls-phase5.test.ts "apps/web/tests/gateway-*.test.ts" apps/web/tests/mission-state.test.ts apps/web/tests/txkit-interop.test.ts "packages/sdk/tests/*.test.ts" "packages/shared/tests/*.test.ts"
         env:
           SUPABASE_URL: ${{ env.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
@@ -235,6 +235,15 @@ jobs:
               solana-keygen new --no-bip39-passphrase --silent -o target/deploy/succra-keypair.json
             fi
             anchor keys sync
+            # Phase 5 guardian: the GUARDIAN_PUBKEY constant is the dev key
+            # in source; CI tests need the matching secret, so generate an
+            # ephemeral guardian keypair and rewrite the constant line
+            # in-container only (same class as `anchor keys sync` above).
+            # The mocha suite reads the secret via SUCCRA_TEST_GUARDIAN_PATH.
+            solana-keygen new --no-bip39-passphrase --silent -o /tmp/guardian.json
+            GUARDIAN_PUBKEY="$(solana-keygen pubkey /tmp/guardian.json)"
+            sed -i "s|^pub const GUARDIAN_PUBKEY.*|pub const GUARDIAN_PUBKEY: Pubkey = pubkey!(\"${GUARDIAN_PUBKEY}\");|" programs/succra/src/lib.rs
+            export SUCCRA_TEST_GUARDIAN_PATH=/tmp/guardian.json
             anchor build --no-idl
             # anchor build writes the .so to the per-program target dir on this
             # toolchain; the deploy command expects it at the workspace root.

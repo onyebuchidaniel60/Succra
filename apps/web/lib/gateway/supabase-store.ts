@@ -8,6 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActionRequestRow,
   AgentRow,
+  AuditEventRow,
   ChallengeRow,
   GatewayStore,
   InsertActionOutcome,
@@ -16,6 +17,7 @@ import type {
   NewActionRequest,
   NewAgent,
   NewAssignment,
+  NewAuditEvent,
   OnchainTxRow,
   OnchainTxStatus,
   PolicyRow,
@@ -286,5 +288,63 @@ export class SupabaseGatewayStore implements GatewayStore {
       .select('id');
     if (error) throw error;
     return ((data ?? []) as unknown[]).length > 0;
+  }
+
+  async countPolicyBlockedSince(
+    missionId: string,
+    agentId: string,
+    reasonCode: string,
+    sinceIso: string
+  ): Promise<number> {
+    const { count, error } = await this.db
+      .from('action_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('mission_id', missionId)
+      .eq('agent_id', agentId)
+      .eq('decision', 'BLOCKED')
+      .eq('decision_reason_code', reasonCode)
+      .gt('created_at', sinceIso);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  async lastConfirmedAt(missionId: string, agentId: string): Promise<string | null> {
+    const { data, error } = await this.db
+      .from('onchain_transactions')
+      .select('confirmed_at, action_requests!inner(mission_id, agent_id)')
+      .eq('status', 'CONFIRMED')
+      .eq('action_requests.mission_id', missionId)
+      .eq('action_requests.agent_id', agentId)
+      .order('confirmed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const row = data as { confirmed_at: string | null } | null;
+    return row?.confirmed_at ?? null;
+  }
+
+  async setActionViolationCount(requestId: string, count: number): Promise<void> {
+    const { error } = await this.db
+      .from('action_requests')
+      .update({ violation_count_after: count })
+      .eq('id', requestId);
+    if (error) throw error;
+  }
+
+  async markMissionQuarantined(missionId: string, atIso: string): Promise<boolean> {
+    const { data, error } = await this.db
+      .from('missions')
+      .update({ status: 'QUARANTINED', updated_at: atIso })
+      .eq('id', missionId)
+      .eq('status', 'ACTIVE')
+      .select('id');
+    if (error) throw error;
+    return ((data ?? []) as unknown[]).length > 0;
+  }
+
+  async insertAuditEvent(row: NewAuditEvent): Promise<AuditEventRow> {
+    const { data, error } = await this.db.from('audit_events').insert(row).select('*').single();
+    if (error) throw error;
+    return data as AuditEventRow;
   }
 }

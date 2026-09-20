@@ -8,7 +8,7 @@ pub mod state;
 pub mod validation;
 
 use errors::SuccraError;
-use state::{ActionExecuted, ActionType, Mission, MissionStatus};
+use state::{ActionExecuted, ActionType, Mission, MissionQuarantined, MissionStatus};
 use validation::{
     validate_create_params, validate_execute_policy, ExecutePolicy,
     DEFAULT_VIOLATION_THRESHOLD, DEFAULT_VIOLATION_WINDOW_SECONDS,
@@ -17,6 +17,16 @@ use validation::{
 /// SPL vault PDA seeds, shared by every instruction that touches the
 /// token vault.
 const SPL_VAULT_SEEDS_PREFIX: &[u8] = b"spl-vault";
+
+/// Registered guardian pubkey (ARCHITECTURE.md §12, amended): the single
+/// global guardian keypair shared across missions, held server-side by
+/// the Succra runtime. Rotation happens by changing this constant and
+/// upgrading the program via the upgrade authority — never via an
+/// instruction, and never per-mission.
+/// CI note: the solana-e2e job rewrites this line in-container only to a
+/// freshly generated keypair (same class of change as `anchor keys sync`
+/// rewriting declare_id); the committed value is never altered by CI.
+pub const GUARDIAN_PUBKEY: Pubkey = pubkey!("H5rPWxyMANp1XbBqZwvvEKZUS4KYGYHLv3UujxEQDdQs");
 
 /// Resolve and validate the mission SPL token vault from an unchecked
 /// account.
@@ -389,6 +399,35 @@ pub mod succra {
         ctx.accounts.mission.status = MissionStatus::Cancelled;
         Ok(())
     }
+
+    /// Freeze an ACTIVE mission after the violation threshold.
+    ///
+    /// Implements PROJECT_SPEC.md FR-04 quarantine on-chain: requires an
+    /// ACTIVE mission and the registered guardian's signature, then moves
+    /// ACTIVE → QUARANTINED (the only Phase 5 status transition) and emits
+    /// `MissionQuarantined`. Moves no funds and touches no vault: the
+    /// guardian cannot spend, and a second call on an already-quarantined
+    /// mission fails with `InvalidMissionStatus` (callers treat that as
+    /// already-handled, making quarantine idempotent).
+    pub fn quarantine(ctx: Context<Quarantine>) -> Result<()> {
+        let mission = &ctx.accounts.mission;
+        require!(
+            mission.status == MissionStatus::Active,
+            SuccraError::InvalidMissionStatus
+        );
+        require!(
+            ctx.accounts.guardian.key() == GUARDIAN_PUBKEY,
+            SuccraError::UnauthorizedGuardian
+        );
+
+        let mission = &mut ctx.accounts.mission;
+        mission.status = MissionStatus::Quarantined;
+        emit!(MissionQuarantined {
+            mission_id: mission.mission_id,
+            guardian: ctx.accounts.guardian.key(),
+        });
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -510,4 +549,15 @@ pub struct Cancel<'info> {
     pub owner_token_account: Option<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+}
+
+/// Quarantine context (Phase 5, FR-04). The guardian signer is checked
+/// against the registered `GUARDIAN_PUBKEY` in the handler (defense in
+/// depth alongside the `Signer` constraint). No vault, token, or system
+/// accounts: quarantine moves no funds by construction.
+#[derive(Accounts)]
+pub struct Quarantine<'info> {
+    pub guardian: Signer<'info>,
+    #[account(mut)]
+    pub mission: Account<'info, Mission>,
 }

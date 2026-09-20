@@ -19,6 +19,9 @@ import {
   mintTo,
 } from '@solana/spl-token';
 import { expect } from 'chai';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Succra } from '../../../target/types/succra';
 
 describe('succra phases 1+2 — mission foundation and action execution', () => {
@@ -951,5 +954,196 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
     } catch (error) {
       expect(String(error)).to.not.include('InvalidBudget');
     }
+  });
+
+  // Phase 5 rows (§21 Phase 5 subset): guardian quarantine.
+  // The guardian keypair comes from SUCCRA_TEST_GUARDIAN_PATH (CI writes
+  // an ephemeral keypair there and patches the GUARDIAN_PUBKEY constant
+  // in-container) or from the repo .env.local dev secret (local runs).
+  // Either way it must match the GUARDIAN_PUBKEY constant the program
+  // was built with; the secret is never logged.
+  describe('succra phase 5 — guardian quarantine', () => {
+    // ts-node runs this suite as CommonJS: __dirname is available and
+    // shared sources are imported extensionless (resolved to .ts).
+    const REPO_ROOT = join(__dirname, '..', '..', '..');
+
+    function base58ToBytes(value: string): Uint8Array {
+      const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+      let num = 0n;
+      for (const char of value) {
+        const digit = alphabet.indexOf(char);
+        if (digit < 0) throw new Error('Invalid base58.');
+        num = num * 58n + BigInt(digit);
+      }
+      const out = new Uint8Array(64);
+      for (let i = 63; i >= 0; i -= 1) {
+        out[i] = Number(num & 0xffn);
+        num >>= 8n;
+      }
+      return out;
+    }
+
+    function loadGuardianKeypair(): anchor.web3.Keypair {
+      const fromPath = process.env.SUCCRA_TEST_GUARDIAN_PATH;
+      if (fromPath) {
+        const bytes = JSON.parse(readFileSync(fromPath, 'utf8')) as number[];
+        return anchor.web3.Keypair.fromSecretKey(Uint8Array.from(bytes));
+      }
+      const envText = readFileSync(join(REPO_ROOT, '.env.local'), 'utf8');
+      const line = envText
+        .split('\n')
+        .find((entry) => entry.startsWith('SUCCRA_GUARDIAN_SECRET_KEY='));
+      if (!line) {
+        throw new Error('Missing SUCCRA_GUARDIAN_SECRET_KEY (or SUCCRA_TEST_GUARDIAN_PATH).');
+      }
+      return anchor.web3.Keypair.fromSecretKey(
+        base58ToBytes(line.slice('SUCCRA_GUARDIAN_SECRET_KEY='.length).trim())
+      );
+    }
+
+    async function quarantine(
+      mission: anchor.web3.PublicKey,
+      signer: anchor.web3.Keypair
+    ): Promise<string> {
+      return program.methods
+        .quarantine()
+        .accounts({ guardian: signer.publicKey, mission })
+        .signers([signer])
+        .rpc();
+    }
+
+    function waitForQuarantined(): {
+      promise: Promise<Record<string, unknown>>;
+      cleanup: () => Promise<void>;
+    } {
+      let listener = -1;
+      const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error('MissionQuarantined event timeout')),
+          30000
+        );
+        listener = program.addEventListener('missionQuarantined', (event) => {
+          clearTimeout(timer);
+          resolve(event as unknown as Record<string, unknown>);
+        });
+      });
+      return {
+        promise,
+        cleanup: async () => {
+          await program.removeEventListener(listener);
+        },
+      };
+    }
+
+    it('quarantines an ACTIVE mission and emits MissionQuarantined', async () => {
+      const guardian = loadGuardianKeypair();
+      const { mission } = await createMission(101);
+      await fundSol(mission);
+      const watcher = waitForQuarantined();
+      try {
+        await quarantine(mission, guardian);
+        const event = await watcher.promise;
+        expect(String((event['guardian'] as anchor.web3.PublicKey).toBase58())).to.equal(
+          guardian.publicKey.toBase58()
+        );
+      } finally {
+        await watcher.cleanup();
+      }
+      const account = await program.account.mission.fetch(mission);
+      expect(statusName(account.status)).to.equal('quarantined');
+    });
+
+    it('rejects quarantine signed by a non-guardian', async () => {
+      const { mission } = await createMission(102);
+      await fundSol(mission);
+      try {
+        await quarantine(mission, agent);
+        expect.fail('non-guardian quarantine should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('UnauthorizedGuardian');
+      }
+    });
+
+    it('rejects quarantine of a non-ACTIVE mission and repeats idempotently', async () => {
+      const guardian = loadGuardianKeypair();
+      const { mission } = await createMission(103);
+      try {
+        await quarantine(mission, guardian);
+        expect.fail('DRAFT quarantine should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('InvalidMissionStatus');
+      }
+      await fundSol(mission);
+      await quarantine(mission, guardian);
+      try {
+        await quarantine(mission, guardian);
+        expect.fail('second quarantine should have been rejected');
+      } catch (error) {
+        // Already quarantined: clean terminal error, no double-write.
+        expect(String(error)).to.include('InvalidMissionStatus');
+      }
+      const account = await program.account.mission.fetch(mission);
+      expect(statusName(account.status)).to.equal('quarantined');
+    });
+
+    it('quarantine moves no funds and the agent cannot execute after', async () => {
+      const guardian = loadGuardianKeypair();
+      const { mission, vault } = await createMission(104);
+      await fundSol(mission);
+      const vaultBefore = await connection.getBalance(vault);
+      const ownerBefore = await connection.getBalance(owner);
+      await quarantine(mission, guardian);
+      const vaultAfter = await connection.getBalance(vault);
+      expect(vaultAfter).to.equal(vaultBefore);
+      const ownerAfter = await connection.getBalance(owner);
+      // Owner pays only transaction fees (dust against a 50M budget); the
+      // vault and mission funds are untouched by quarantine itself.
+      expect(ownerBefore - ownerAfter).to.be.lessThan(50_000);
+      try {
+        await executeSol(
+          mission,
+          recipientWallet.publicKey,
+          new anchor.BN(1_000_000),
+          new anchor.BN(11)
+        );
+        expect.fail('post-quarantine execution should have been rejected');
+      } catch (error) {
+        expect(String(error)).to.include('InvalidMissionStatus');
+      }
+    });
+
+    it('gateway-planned quarantine bytes match the anchor client', async () => {
+      // Independent oracle (no shared-code import: mocha's ESM loader
+      // cannot resolve workspace TS): the anchor-built instruction must
+      // carry the global:quarantine discriminator, guardian signer +
+      // writable mission in struct order, and nothing else.
+      const guardian = loadGuardianKeypair();
+      const { mission } = await createMission(105);
+      const anchorIx = await program.methods
+        .quarantine()
+        .accounts({ guardian: guardian.publicKey, mission })
+        .instruction();
+      const expectedDisc = createHash('sha256')
+        .update('global:quarantine', 'utf8')
+        .digest()
+        .subarray(0, 8);
+      expect(anchorIx.programId.toBase58()).to.equal(program.programId.toBase58());
+      const anchorKeys = anchorIx.keys as Array<{
+        pubkey: anchor.web3.PublicKey;
+        isSigner: boolean;
+        isWritable: boolean;
+      }>;
+      expect(anchorKeys.map((key) => key.pubkey.toBase58())).to.deep.equal([
+        guardian.publicKey.toBase58(),
+        mission.toBase58(),
+      ]);
+      expect(anchorKeys.map((key) => [key.isSigner, key.isWritable])).to.deep.equal([
+        [true, false],
+        [false, true],
+      ]);
+      expect(Buffer.from(anchorIx.data as Buffer).toString('hex')).to.equal(
+        Buffer.from(expectedDisc).toString('hex')
+      );
+    });
   });
 });

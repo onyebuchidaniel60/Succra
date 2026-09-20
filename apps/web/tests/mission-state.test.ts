@@ -67,6 +67,8 @@ describe('mission account decoding', () => {
     expect(state.allowedActionTypes).toEqual(['TRANSFER_SOL']);
     expect(state.allowedRecipients).toEqual([bytesToBase58(new Uint8Array(32).fill(30))]);
     expect(state.expiresAtSec).toEqual(9_999_999_999n);
+    expect(state.violationThreshold).toEqual(3);
+    expect(state.violationWindowSeconds).toEqual(900n);
     expect(state.status).toEqual('Active');
     expect(state.currentAgent).toEqual(agent);
     expect(state.agentNonce).toEqual(7n);
@@ -76,6 +78,9 @@ describe('mission account decoding', () => {
     expect(decodeMissionAccount('m', buildMission({ status: 0 }).bytes).status).toEqual('Draft');
     expect(decodeMissionAccount('m', buildMission({ status: 2 }).bytes).status).toEqual(
       'Cancelled'
+    );
+    expect(decodeMissionAccount('m', buildMission({ status: 3 }).bytes).status).toEqual(
+      'Quarantined'
     );
     expect(() => decodeMissionAccount('m', buildMission({ status: 9 }).bytes)).toThrow();
   });

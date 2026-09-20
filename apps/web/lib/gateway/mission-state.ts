@@ -5,7 +5,7 @@
 // budget u64, remaining u64, max_action u64, recovery_max u64,
 // allowed_action_types vec<u8-enum>, allowed_recipients vec<Pubkey>,
 // expires_at i64, violation_threshold u8, violation_window u64,
-// status u8 (Draft = 0, Active = 1, Cancelled = 2),
+// status u8 (Draft = 0, Active = 1, Cancelled = 2, Quarantined = 3),
 // current_agent(32), agent_nonce u64.
 // Anchor allocates the FULL Mission::LEN on init, so live accounts carry
 // zero padding past the serialized struct: the decoder verifies the
@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import { bytesToBase58 } from '@succra/shared';
 
-export type OnchainMissionStatus = 'Draft' | 'Active' | 'Cancelled';
+export type OnchainMissionStatus = 'Draft' | 'Active' | 'Cancelled' | 'Quarantined';
 
 export interface OnchainMissionState {
   address: string;
@@ -28,6 +28,10 @@ export interface OnchainMissionState {
   allowedActionTypes: string[];
   allowedRecipients: string[];
   expiresAtSec: bigint;
+  /** Per-mission consecutive-violation trigger (authoritative for Phase 5 streaks). */
+  violationThreshold: number;
+  /** Rolling window in seconds for the violation streak (authoritative). */
+  violationWindowSeconds: bigint;
   status: OnchainMissionStatus;
   currentAgent: string;
   agentNonce: bigint;
@@ -127,8 +131,8 @@ export function decodeMissionAccount(address: string, data: Uint8Array): Onchain
     allowedRecipients.push(reader.pubkey());
   }
   const expiresAtSec = reader.i64();
-  reader.take(1); // violation_threshold (Phase 5)
-  reader.u64(); // violation_window_seconds (Phase 5)
+  const violationThreshold = reader.u8();
+  const violationWindowSeconds = reader.u64();
   const statusIndex = reader.u8();
   let status: OnchainMissionStatus;
   if (statusIndex === 0) {
@@ -137,6 +141,8 @@ export function decodeMissionAccount(address: string, data: Uint8Array): Onchain
     status = 'Active';
   } else if (statusIndex === 2) {
     status = 'Cancelled';
+  } else if (statusIndex === 3) {
+    status = 'Quarantined';
   } else {
     throw new Error('Mission account has an unknown status.');
   }
@@ -160,6 +166,8 @@ export function decodeMissionAccount(address: string, data: Uint8Array): Onchain
     allowedActionTypes,
     allowedRecipients,
     expiresAtSec,
+    violationThreshold,
+    violationWindowSeconds,
     status,
     currentAgent,
     agentNonce,

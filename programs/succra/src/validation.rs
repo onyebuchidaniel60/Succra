@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn execute_rejects_non_active_status() {
         let (mut p, t, r, a, n) = execute_fixture();
-        for status in [MissionStatus::Draft, MissionStatus::Cancelled] {
+        for status in [MissionStatus::Draft, MissionStatus::Cancelled, MissionStatus::Quarantined] {
             p.status = status;
             assert!(validate_execute_policy(&p, t, r, a, n).is_err());
         }

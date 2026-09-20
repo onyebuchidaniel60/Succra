@@ -45,4 +45,7 @@ pub enum SuccraError {
     InvalidMint,
     #[msg("Token account owner is not the expected party.")]
     InvalidTokenAccountOwner,
+    // Phase 5: quarantine errors (PROJECT_SPEC.md FR-04).
+    #[msg("Signer is not the registered guardian.")]
+    UnauthorizedGuardian,
 }

@@ -45,7 +45,8 @@ pub struct Mission {
     /// Violation window in seconds (DB default 900). Applied in Phase 5.
     pub violation_window_seconds: u64,
     /// Lifecycle state. Draft/Active/Cancelled subset of the
-    /// PROJECT_SPEC.md §6 machine; later phases extend transitions.
+    /// PROJECT_SPEC.md §6 machine; Quarantined arrives in Phase 5
+    /// (ACTIVE → QUARANTINED only), later phases extend transitions.
     pub status: MissionStatus,
     /// Agent currently authorized to execute mission actions (FR-01
     /// "primary agent" input; ARCHITECTURE.md §7 `current_agent_public_key`).
@@ -89,7 +90,10 @@ pub enum ActionType {
 }
 
 /// Draft/Active/Cancelled subset of the PROJECT_SPEC.md §6 mission state
-/// machine. Later phases extend this enum as their transitions land.
+/// machine, plus Quarantined (Phase 5: ACTIVE → QUARANTINED only).
+/// Later phases extend this enum as their transitions land.
+/// The Quarantined variant is appended last so existing discriminants
+/// (Draft = 0, Active = 1, Cancelled = 2) never shift.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum MissionStatus {
     /// Created, not yet funded. Only funding or `cancel` may follow.
@@ -98,6 +102,11 @@ pub enum MissionStatus {
     Active,
     /// Terminal. Vault closed, assets returned to owner.
     Cancelled,
+    /// Frozen by the guardian after the violation threshold.
+    /// Non-executable: only succession (Phase 6) or cancel may follow.
+    /// Set only by `quarantine`, which requires an ACTIVE mission and
+    /// the registered guardian's signature.
+    Quarantined,
 }
 
 /// Program-controlled vault PDA (ARCHITECTURE.md §8, §18). A native
@@ -111,6 +120,15 @@ pub enum MissionStatus {
 /// program-owned data account could never send SOL. Client code treats
 /// the vault as a plain system PDA (`SystemAccount` on the client).
 pub struct Vault {}
+
+/// Emitted when the guardian freezes a mission. This is the Phase 5
+/// on-chain proof of quarantine; the gateway mirrors it into the DB
+/// and writes audit rows around submission and confirmation.
+#[event]
+pub struct MissionQuarantined {
+    pub mission_id: u64,
+    pub guardian: Pubkey,
+}
 
 /// Emitted after every successful `execute_action`. This is the Phase 2
 /// on-chain proof of execution; richer audit anchoring arrives with the

@@ -39,11 +39,14 @@ import {
   type ActionTypeName,
 } from '@succra/shared';
 import type { ChainGateway } from './chain';
+import type { FeePayer } from './chain';
 import { findAssociatedTokenAddress, findSplVaultPda, findVaultPda } from './pdas';
 import { evaluatePolicy, reasonMessage, type BlockReasonCode } from './policy';
+import { COUNTED_REASON_CODE, evaluateStreak, streakWindowStartMs } from './streak';
+import { quarantineMission, writeAuditEvent } from './quarantine';
 import type { ActionRequestRow, AgentRow, GatewayStore, MissionRow } from './store';
 
-function toKitRole(role: AccountRoleName): AccountRole {
+export function toKitRole(role: AccountRoleName): AccountRole {
   switch (role) {
     case 'readonly-signer':
       return AccountRole.READONLY_SIGNER;
@@ -74,6 +77,13 @@ export interface PreflightDeps {
   chain: ChainGateway;
   feePayerAddress: string;
   programId: string;
+  /**
+   * Runtime guardian key for the automatic quarantine trigger. Optional:
+   * violation counting and BLOCK responses work without it; only the
+   * automatic chain submission is skipped (manual POST /quarantine
+   * retries later — quarantine is idempotent).
+   */
+  guardian?: FeePayer;
 }
 
 function blockResponse(row: ActionRequestRow): PreflightOutcome {
@@ -142,6 +152,13 @@ export async function preflightAction(args: {
   const agentNonce = BigInt(body.agentNonce);
   const amountAtomic = BigInt(body.amountAtomic);
 
+  // 2. On-chain mission state (source of truth for agent/budget/nonce/expiry/status).
+  // A DB row whose PDA has no chain account (Phase 3 placeholder draft) is
+  // not executable: BLOCK MISSION_NOT_ACTIVE rather than 500.
+  // Fetched before the insert closures so the narrowed state is visible
+  // inside them (Phase 5 streak evaluation reads threshold/window here).
+  const onchain = await chain.getMissionState(mission.pda_address);
+
   const insertBlocked = async (reasonCode: BlockReasonCode): Promise<PreflightOutcome> => {
     const outcome = await store.insertAction({
       mission_id: mission.id,
@@ -154,6 +171,7 @@ export async function preflightAction(args: {
       signature: args.requestSignature,
       decision: 'BLOCKED',
       decision_reason_code: reasonCode,
+      violation_count_after: null,
       unsigned_tx_hash: null,
       unsigned_tx_b64: null,
       expires_at: Number.isFinite(expiresAtMs) ? new Date(expiresAtMs).toISOString() : null,
@@ -179,15 +197,111 @@ export async function preflightAction(args: {
     };
   };
 
+  // Phase 5: counted policy violation. Only POLICY_BLOCKED rows count
+  // toward the FR-04 streak (see streak.ts); the streak is evaluated
+  // against the on-chain threshold/window (authoritative), the counted
+  // value is stored on the row, and crossing the threshold fires the
+  // automatic quarantine exactly once (edge-trigger + idempotent
+  // quarantine as backstop). A quarantine failure never changes the
+  // BLOCK response: the violation stands and POST /quarantine retries.
+  const insertCountedBlock = async (counted: {
+    threshold: number;
+    windowSeconds: bigint;
+  }): Promise<PreflightOutcome> => {
+    const threshold = counted.threshold;
+    const lastConfirmed = await store.lastConfirmedAt(mission.id, agent.id);
+    const sinceIso = new Date(
+      streakWindowStartMs({
+        nowMs,
+        windowSeconds: counted.windowSeconds,
+        lastConfirmedAtMs: lastConfirmed ? Date.parse(lastConfirmed) : null,
+      })
+    ).toISOString();
+    const prior = await store.countPolicyBlockedSince(
+      mission.id,
+      agent.id,
+      COUNTED_REASON_CODE,
+      sinceIso
+    );
+    const { streakAfter, crossed } = evaluateStreak({ blockedSinceReset: prior, threshold });
+    const outcome = await store.insertAction({
+      mission_id: mission.id,
+      agent_id: agent.id,
+      idempotency_key: body.idempotencyKey,
+      agent_nonce: Number(agentNonce),
+      action_type: body.actionType,
+      payload: { recipient: body.recipient, amountAtomic: body.amountAtomic },
+      request_hash: requestHash,
+      signature: args.requestSignature,
+      decision: 'BLOCKED',
+      decision_reason_code: 'POLICY_BLOCKED',
+      violation_count_after: streakAfter,
+      unsigned_tx_hash: null,
+      unsigned_tx_b64: null,
+      expires_at: Number.isFinite(expiresAtMs) ? new Date(expiresAtMs).toISOString() : null,
+    });
+    if (!('inserted' in outcome)) {
+      const original = await onInsertConflict(store, mission.id, body.idempotencyKey);
+      if (original) return original;
+      return {
+        kind: 'block',
+        requestId: randomUUID(),
+        reasonCode: 'STALE_AGENT_NONCE',
+        reason: reasonMessage('STALE_AGENT_NONCE'),
+      };
+    }
+    const requestId = outcome.inserted.id;
+    await writeAuditEvent({
+      store,
+      missionId: mission.id,
+      eventType: 'violation.counted',
+      actor: { type: 'agent', id: agent.id },
+      signature: null,
+      payload: { request_id: requestId, streak_after: streakAfter, threshold },
+      nowMs,
+    });
+    if (crossed) {
+      await writeAuditEvent({
+        store,
+        missionId: mission.id,
+        eventType: 'violation.threshold_reached',
+        actor: { type: 'system', id: null },
+        signature: null,
+        payload: { request_id: requestId, streak: streakAfter, threshold },
+        nowMs,
+      });
+      if (deps.guardian) {
+        try {
+          await quarantineMission({
+            deps: {
+              store,
+              chain,
+              guardian: deps.guardian,
+              programId: deps.programId,
+            },
+            mission,
+            agent,
+            actor: { type: 'system', id: null },
+            nowMs,
+          });
+        } catch {
+          // BLOCK stands; manual POST /quarantine retries (idempotent).
+        }
+      }
+    }
+    return {
+      kind: 'block',
+      requestId,
+      reasonCode: 'POLICY_BLOCKED',
+      reason: reasonMessage('POLICY_BLOCKED'),
+    };
+  };
+
   // Phase 4: only PRIMARY assignments submit (successor activation is Phase 6).
   if (args.assignmentRole !== 'PRIMARY') {
     return insertBlocked('AGENT_NOT_CURRENT');
   }
 
-  // 2. On-chain mission state (source of truth for agent/budget/nonce/expiry/status).
-  // A DB row whose PDA has no chain account (Phase 3 placeholder draft) is
-  // not executable: BLOCK MISSION_NOT_ACTIVE rather than 500.
-  const onchain = await chain.getMissionState(mission.pda_address);
   if (!onchain) {
     return insertBlocked('MISSION_NOT_ACTIVE');
   }
@@ -219,6 +333,12 @@ export async function preflightAction(args: {
     nowMs,
   });
   if (decision.decision === 'BLOCK') {
+    if (decision.reasonCode === 'POLICY_BLOCKED') {
+      return insertCountedBlock({
+        threshold: onchain.violationThreshold,
+        windowSeconds: onchain.violationWindowSeconds,
+      });
+    }
     return insertBlocked(decision.reasonCode);
   }
 
@@ -280,6 +400,7 @@ export async function preflightAction(args: {
     signature: args.requestSignature,
     decision: 'APPROVED',
     decision_reason_code: null,
+    violation_count_after: null,
     unsigned_tx_hash: unsignedTxHash,
     unsigned_tx_b64: unsignedTransaction,
     expires_at: new Date(expiresAtMs).toISOString(),
