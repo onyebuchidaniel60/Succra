@@ -1286,7 +1286,10 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
       await quarantineAs(mission, guardian);
       let listener = -1;
       const eventPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('SuccessionActivated event timeout')), 30000);
+        const timer = setTimeout(
+          () => reject(new Error('SuccessionActivated event timeout')),
+          30000
+        );
         listener = program.addEventListener('successionActivated', (event) => {
           clearTimeout(timer);
           resolve(event as unknown as Record<string, unknown>);
@@ -1539,7 +1542,12 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
       const guardian = loadGuardian();
       const { mission } = await createMission(300, { successors: [beta.publicKey] });
       await fundSol(mission);
-      await executeSol(mission, recipientWallet.publicKey, new anchor.BN(1_000_000), new anchor.BN(1));
+      await executeSol(
+        mission,
+        recipientWallet.publicKey,
+        new anchor.BN(1_000_000),
+        new anchor.BN(1)
+      );
       await quarantineAs(mission, guardian);
       await activate(mission, beta.publicKey, 2, guardian);
       await acknowledge(mission, 3, guardian);

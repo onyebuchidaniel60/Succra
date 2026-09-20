@@ -23,7 +23,10 @@ import {
   type Instruction,
 } from '@solana/kit';
 import { bytesToBase58, bytesToBase64, encodeWireTransaction } from '@succra/shared';
-import { planAcknowledgeRecoveryInstruction, planActivateSuccessorInstruction } from '@succra/shared';
+import {
+  planAcknowledgeRecoveryInstruction,
+  planActivateSuccessorInstruction,
+} from '@succra/shared';
 import type { ChainGateway, FeePayer } from './chain';
 import type { OnchainMissionState } from './mission-state';
 import { toKitRole } from './preflight';
@@ -126,7 +129,11 @@ async function pollGuardianSignature(
   for (;;) {
     const status = await chain.getSignatureStatus(signature).catch(() => null);
     if (status && status.err != null) {
-      return { ok: false, code: 'CHAIN_REJECTION', message: 'Transaction rejected by the cluster.' };
+      return {
+        ok: false,
+        code: 'CHAIN_REJECTION',
+        message: 'Transaction rejected by the cluster.',
+      };
     }
     if (status && status.err == null) {
       return { ok: true, signature, slot: status.slot };
@@ -151,7 +158,11 @@ interface PlannedSend {
 
 function planGuardianMessage(
   deps: SuccessionDeps,
-  planned: { programAddress: string; accounts: Array<{ address: string; role: string }>; data: Uint8Array },
+  planned: {
+    programAddress: string;
+    accounts: Array<{ address: string; role: string }>;
+    data: Uint8Array;
+  },
   blockhash: string,
   lastValidBlockHeight: bigint
 ): PlannedSend {
@@ -240,7 +251,11 @@ export async function runSuccession(args: {
   }
   if (onchain.status !== 'Quarantined') {
     const latest = await store.latestSuccessionForMission(mission.id);
-    return { kind: 'already', status: onchain.status, signature: latest?.onchain_signature ?? null };
+    return {
+      kind: 'already',
+      status: onchain.status,
+      signature: latest?.onchain_signature ?? null,
+    };
   }
 
   const assignments = await store.listMissionAssignments(mission.id);
@@ -311,13 +326,17 @@ export async function runSuccession(args: {
   });
 
   const { blockhash, lastValidBlockHeight } = await chain.getLatestBlockhash();
-  const planned = planActivateSuccessorInstruction(deps.programId, {
-    guardian: guardian.address,
-    mission: onchain.address,
-  }, {
-    successorBase58: candidate.agent.public_key,
-    expectedVersion: onchain.stateVersion,
-  });
+  const planned = planActivateSuccessorInstruction(
+    deps.programId,
+    {
+      guardian: guardian.address,
+      mission: onchain.address,
+    },
+    {
+      successorBase58: candidate.agent.public_key,
+      expectedVersion: onchain.stateVersion,
+    }
+  );
   const send = planGuardianMessage(deps, planned, blockhash, lastValidBlockHeight);
   await writeAuditEvent({
     store,
@@ -334,7 +353,12 @@ export async function runSuccession(args: {
   });
   const terminal = await sendGuardianTransaction(chain, send, deps.poll);
   if (!terminal.ok) {
-    return { kind: 'failed', signature: terminal.signature, code: terminal.code, message: terminal.message };
+    return {
+      kind: 'failed',
+      signature: terminal.signature,
+      code: terminal.code,
+      message: terminal.message,
+    };
   }
 
   await store.updateSuccessionStatus(succession.id, {
@@ -348,7 +372,7 @@ export async function runSuccession(args: {
     atIso,
   });
   const fromAssignment = fromAgent
-    ? assignments.find((row) => row.agent_id === fromAgent.id) ?? null
+    ? (assignments.find((row) => row.agent_id === fromAgent.id) ?? null)
     : null;
   if (fromAssignment) {
     await store.updateAssignment(fromAssignment.id, { status: 'REVOKED', revoked_at: atIso });
@@ -398,10 +422,20 @@ export async function acknowledgeSuccession(args: {
 
   const succession = await store.getSuccessionById(successionId);
   if (!succession || succession.mission_id !== mission.id) {
-    return { kind: 'error', status: 404, code: 'SUCCESSION_NOT_FOUND', message: 'Succession not found.' };
+    return {
+      kind: 'error',
+      status: 404,
+      code: 'SUCCESSION_NOT_FOUND',
+      message: 'Succession not found.',
+    };
   }
   if (succession.to_agent_id !== agent.id) {
-    return { kind: 'error', status: 403, code: 'SUCCESSION_FORBIDDEN', message: 'Not the successor.' };
+    return {
+      kind: 'error',
+      status: 403,
+      code: 'SUCCESSION_FORBIDDEN',
+      message: 'Not the successor.',
+    };
   }
   if (succession.status === 'ACKNOWLEDGED' || succession.status === 'COMPLETE') {
     return { kind: 'already', status: succession.status, signature: succession.onchain_signature };
@@ -426,10 +460,14 @@ export async function acknowledgeSuccession(args: {
   }
 
   const { blockhash, lastValidBlockHeight } = await chain.getLatestBlockhash();
-  const planned = planAcknowledgeRecoveryInstruction(deps.programId, {
-    guardian: guardian.address,
-    mission: onchain.address,
-  }, { expectedVersion: onchain.stateVersion });
+  const planned = planAcknowledgeRecoveryInstruction(
+    deps.programId,
+    {
+      guardian: guardian.address,
+      mission: onchain.address,
+    },
+    { expectedVersion: onchain.stateVersion }
+  );
   const send = planGuardianMessage(deps, planned, blockhash, lastValidBlockHeight);
   await writeAuditEvent({
     store,
@@ -445,7 +483,12 @@ export async function acknowledgeSuccession(args: {
   });
   const terminal = await sendGuardianTransaction(chain, send, deps.poll);
   if (!terminal.ok) {
-    return { kind: 'failed', signature: terminal.signature, code: terminal.code, message: terminal.message };
+    return {
+      kind: 'failed',
+      signature: terminal.signature,
+      code: terminal.code,
+      message: terminal.message,
+    };
   }
 
   await store.updateSuccessionStatus(succession.id, {
@@ -468,5 +511,10 @@ export async function acknowledgeSuccession(args: {
     payload: { succession_id: succession.id, slot: terminal.slot },
     nowMs,
   });
-  return { kind: 'acknowledged', successionId: succession.id, signature: terminal.signature, slot: terminal.slot };
+  return {
+    kind: 'acknowledged',
+    successionId: succession.id,
+    signature: terminal.signature,
+    slot: terminal.slot,
+  };
 }

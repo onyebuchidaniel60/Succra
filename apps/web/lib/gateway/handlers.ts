@@ -81,7 +81,11 @@ export async function handleAttachAgent(args: {
   if ('error' in parsedBody) return parsedBody.error;
   const parsed = ATTACH_AGENT_SCHEMA.safeParse(parsedBody.ok);
   if (!parsed.success) {
-    return error(400, 'INVALID_BODY', 'Expected { publicKey, name, role?, priority?, requiredCapabilities?, capabilities? }.');
+    return error(
+      400,
+      'INVALID_BODY',
+      'Expected { publicKey, name, role?, priority?, requiredCapabilities?, capabilities? }.'
+    );
   }
   try {
     const result = await attachAgent({
@@ -759,7 +763,11 @@ export async function handleCheckpoints(args: {
   if ('error' in parsedBody) return parsedBody.error;
   const parsed = CHECKPOINTS_BODY_SCHEMA.safeParse(parsedBody.ok);
   if (!parsed.success) {
-    return error(400, 'INVALID_BODY', 'Expected { sequence, confirmedActionIds, confirmedSignatures }.');
+    return error(
+      400,
+      'INVALID_BODY',
+      'Expected { sequence, confirmedActionIds, confirmedSignatures }.'
+    );
   }
   if (!guardianAuthorized(args.guardianCredentialHeader, args.expectedGuardianCredential)) {
     return error(401, 'UNAUTHORIZED', 'Runtime credential required.');

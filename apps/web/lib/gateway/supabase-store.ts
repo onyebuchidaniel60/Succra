@@ -165,7 +165,11 @@ export class SupabaseGatewayStore implements GatewayStore {
       insert['required_capabilities'] = row.required_capabilities;
     }
     if (row.status !== undefined) insert['status'] = row.status;
-    const { data, error } = await this.db.from('mission_agents').insert(insert).select('*').single();
+    const { data, error } = await this.db
+      .from('mission_agents')
+      .insert(insert)
+      .select('*')
+      .single();
     if (error) throw error;
     return data as MissionAgentRow;
   }

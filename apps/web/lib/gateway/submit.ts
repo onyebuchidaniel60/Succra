@@ -324,7 +324,7 @@ async function pollToTerminal(
  * Mirror the confirmed on-chain remainder into missions (AGENTS.md
  * invariant #3: mirror, never authority). Best-effort with retries; the
  * chain stays authoritative and reconciliation converges on next read.
- */async function mirrorRemaining(
+ */ async function mirrorRemaining(
   store: GatewayStore,
   chain: ChainGateway,
   mission: MissionRow

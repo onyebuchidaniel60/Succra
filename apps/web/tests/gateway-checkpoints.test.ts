@@ -73,9 +73,7 @@ describe('canonical checkpoint preimage', () => {
 
   it('fails closed on out-of-range values', () => {
     expect(() => encodeCheckpointPreimage(basePreimage({ sequence: -1 }))).toThrow();
-    expect(() =>
-      encodeCheckpointPreimage(basePreimage({ remainingBudgetAtomic: -1n }))
-    ).toThrow();
+    expect(() => encodeCheckpointPreimage(basePreimage({ remainingBudgetAtomic: -1n }))).toThrow();
     expect(() =>
       encodeCheckpointPreimage(basePreimage({ remainingBudgetAtomic: 2n ** 64n }))
     ).toThrow();

@@ -42,7 +42,12 @@ class BorshWriter {
     if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
       throw new Error('Borsh u32 out of range.');
     }
-    this.bytes.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+    this.bytes.push(
+      value & 0xff,
+      (value >>> 8) & 0xff,
+      (value >>> 16) & 0xff,
+      (value >>> 24) & 0xff
+    );
   }
 
   u64(value: bigint): void {

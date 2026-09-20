@@ -20,12 +20,7 @@ import { createHash } from 'node:crypto';
 import { bytesToBase58 } from '@succra/shared';
 
 export type OnchainMissionStatus =
-  | 'Draft'
-  | 'Active'
-  | 'Cancelled'
-  | 'Quarantined'
-  | 'Recovering'
-  | 'ActiveRecovery';
+  'Draft' | 'Active' | 'Cancelled' | 'Quarantined' | 'Recovering' | 'ActiveRecovery';
 
 export interface OnchainMissionState {
   address: string;

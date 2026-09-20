@@ -170,13 +170,7 @@ export class PGliteGatewayStore implements GatewayStore {
     const created = await this.one<Record<string, unknown>>(
       `INSERT INTO agents (owner_id, name, public_key, status, capabilities)
        VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING *`,
-      [
-        row.owner_id,
-        row.name,
-        row.public_key,
-        row.status,
-        JSON.stringify(row.capabilities ?? []),
-      ]
+      [row.owner_id, row.name, row.public_key, row.status, JSON.stringify(row.capabilities ?? [])]
     );
     if (!created) throw new Error('Agent insert returned nothing.');
     return PGliteGatewayStore.agent(created);
@@ -659,9 +653,7 @@ export class PGliteGatewayStore implements GatewayStore {
       confirmed_action_ids: row['confirmed_action_ids'] ?? null,
       remaining_budget_atomic: String(row['remaining_budget_atomic']),
       state_snapshot: row['state_snapshot'] ?? null,
-      committed_signature: row['committed_signature']
-        ? String(row['committed_signature'])
-        : null,
+      committed_signature: row['committed_signature'] ? String(row['committed_signature']) : null,
       created_at: iso(row['created_at']),
     };
   }

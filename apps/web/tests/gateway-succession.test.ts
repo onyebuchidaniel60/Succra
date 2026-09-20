@@ -6,10 +6,7 @@
 // ack replay and wrong-agent ack are rejected; duplicate succession
 // returns the current state.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  handleAcknowledgeSuccession,
-  handleSuccession,
-} from '../lib/gateway/handlers.js';
+import { handleAcknowledgeSuccession, handleSuccession } from '../lib/gateway/handlers.js';
 import { selectSuccessor } from '../lib/gateway/succession.js';
 import type { AgentRow, MissionAgentRow } from '../lib/gateway/store.js';
 import type { FeePayer } from '../lib/gateway/chain.js';
@@ -183,7 +180,10 @@ describe('selectSuccessor (pure FR-05 selection)', () => {
     const beta = agentRow('beta', betaKey, []);
     const gamma = agentRow('gamma', gammaKey, []);
     const w = world(
-      [assignmentRow('a1', 'beta', { priority: null }), assignmentRow('a2', 'gamma', { priority: 5 })],
+      [
+        assignmentRow('a1', 'beta', { priority: null }),
+        assignmentRow('a2', 'gamma', { priority: 5 }),
+      ],
       [beta, gamma],
       [betaKey, gammaKey]
     );
