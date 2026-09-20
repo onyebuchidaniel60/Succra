@@ -1531,5 +1531,35 @@ describe('succra phases 1+2 — mission foundation and action execution', () => 
       await acknowledge(mission, 3, guardian);
       expect(await versionOf(mission)).to.equal(4);
     });
+
+    it('runs the full continuity golden path on one mission', async () => {
+      // create → fund → Alpha executes → quarantine → activate Beta →
+      // acknowledge → Beta recovery action. The §21 golden path at the
+      // program level (gateway audit receipt is covered by web tests).
+      const guardian = loadGuardian();
+      const { mission } = await createMission(300, { successors: [beta.publicKey] });
+      await fundSol(mission);
+      await executeSol(mission, recipientWallet.publicKey, new anchor.BN(1_000_000), new anchor.BN(1));
+      await quarantineAs(mission, guardian);
+      await activate(mission, beta.publicKey, 2, guardian);
+      await acknowledge(mission, 3, guardian);
+      await executeSol(
+        mission,
+        recipientWallet.publicKey,
+        RECOVERY_MAX_ACTION,
+        new anchor.BN(2),
+        beta
+      );
+      const account = await program.account.mission.fetch(mission);
+      expect(statusName(account.status)).to.equal('activeRecovery');
+      expect((account.currentAgent as anchor.web3.PublicKey).toBase58()).to.equal(
+        beta.publicKey.toBase58()
+      );
+      // 1M (Alpha) + 1M (Beta recovery) spent of the 50M budget.
+      expect((account.remainingBudget as anchor.BN).toNumber()).to.equal(
+        BUDGET.toNumber() - 2_000_000
+      );
+      expect((account.stateVersion as anchor.BN).toNumber()).to.equal(4);
+    });
   });
 });
