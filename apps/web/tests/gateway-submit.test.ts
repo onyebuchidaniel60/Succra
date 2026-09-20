@@ -321,6 +321,7 @@ describe('submit', () => {
       signature: 's',
       decision: 'BLOCKED',
       decision_reason_code: 'POLICY_BLOCKED',
+      violation_count_after: null,
       unsigned_tx_hash: null,
       unsigned_tx_b64: null,
       expires_at: null,

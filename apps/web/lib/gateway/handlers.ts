@@ -6,6 +6,7 @@
 // behavior below is unit-testable with a PGlite store and a fake chain,
 // and the live Alpha adapter calls these same functions (no drift).
 import { authenticateAgentRequest, readAgentHeaders, type AuthenticatedAgent } from './auth';
+import { timingSafeEqual } from 'node:crypto';
 import type { ChainGateway, FeePayer } from './chain';
 import { HEARTBEAT_MIN_INTERVAL_MS, recordHeartbeat } from './heartbeat';
 import { preflightAction, type PreflightBody } from './preflight';
@@ -20,6 +21,7 @@ import {
 } from './schemas';
 import { attachAgent, isRegistrationError, issueChallenge, verifyChallenge } from './registration';
 import { agentStatusView } from './status';
+import { quarantineMission } from './quarantine';
 import { submitAction } from './submit';
 import type { GatewayStore } from './store';
 
@@ -223,6 +225,7 @@ export async function handlePreflight(args: {
   chain: ChainGateway;
   feePayerAddress: string;
   programId: string;
+  guardian?: FeePayer;
   headers: Headers;
   method: string;
   path: string;
@@ -267,6 +270,7 @@ export async function handlePreflight(args: {
         chain: args.chain,
         feePayerAddress: args.feePayerAddress,
         programId: args.programId,
+        ...(args.guardian !== undefined ? { guardian: args.guardian } : {}),
       },
       mission: auth.mission,
       agent: auth.agent,
@@ -380,6 +384,106 @@ export async function handleSubmit(args: {
     return error(outcome.status, outcome.code, outcome.message);
   } catch {
     return error(500, 'SUBMIT_FAILED', 'Action submission failed.');
+  }
+}
+
+/**
+ * Quarantine a mission (POST /api/missions/:id/quarantine).
+ * Auth: owner session (mission must belong to the owner) OR a valid
+ * runtime guardian credential. The credential check is constant-time;
+ * the expected value comes from server-only env via the route.
+ */
+export async function handleQuarantine(args: {
+  store: GatewayStore;
+  chain: ChainGateway;
+  guardian: FeePayer;
+  programId: string;
+  ownerId: string | null;
+  guardianCredentialHeader: string | null;
+  expectedGuardianCredential: string | null;
+  missionId: string;
+  rawBody: string;
+  nowMs: number;
+}): Promise<HandlerResult> {
+  if (!UUID_SCHEMA.safeParse(args.missionId).success) {
+    return error(400, 'INVALID_BODY', 'Mission id must be a UUID.');
+  }
+  const parsedBody = parseJson(args.rawBody === '' ? '{}' : args.rawBody);
+  if ('error' in parsedBody) return parsedBody.error;
+  if (!EMPTY_BODY_SCHEMA.safeParse(parsedBody.ok).success) {
+    return error(400, 'INVALID_BODY', 'Request body must be empty.');
+  }
+  const mission = await args.store.getMissionById(args.missionId);
+  if (!mission) {
+    return error(404, 'MISSION_NOT_FOUND', 'Mission does not exist.');
+  }
+  let actor: { type: 'owner'; id: string } | { type: 'guardian'; id: null };
+  if (args.ownerId) {
+    if (mission.owner_id !== args.ownerId) {
+      return error(403, 'MISSION_FORBIDDEN', 'Mission belongs to another owner.');
+    }
+    actor = { type: 'owner', id: args.ownerId };
+  } else if (
+    args.guardianCredentialHeader &&
+    args.expectedGuardianCredential &&
+    args.guardianCredentialHeader.length === args.expectedGuardianCredential.length &&
+    timingSafeEqual(
+      Buffer.from(args.guardianCredentialHeader, 'utf8'),
+      Buffer.from(args.expectedGuardianCredential, 'utf8')
+    )
+  ) {
+    actor = { type: 'guardian', id: null };
+  } else {
+    return error(401, 'UNAUTHORIZED', 'Authentication required.');
+  }
+  try {
+    const outcome = await quarantineMission({
+      deps: {
+        store: args.store,
+        chain: args.chain,
+        guardian: args.guardian,
+        programId: args.programId,
+      },
+      mission,
+      agent: null,
+      actor,
+      nowMs: args.nowMs,
+    });
+    if (outcome.kind === 'confirmed') {
+      return {
+        status: 200,
+        json: {
+          missionId: mission.id,
+          status: 'QUARANTINED',
+          signature: outcome.signature,
+          slot: outcome.slot,
+        },
+      };
+    }
+    if (outcome.kind === 'already') {
+      return {
+        status: 200,
+        json: {
+          missionId: mission.id,
+          status: 'ALREADY_QUARANTINED',
+          signature: outcome.signature,
+        },
+      };
+    }
+    if (outcome.kind === 'failed') {
+      return {
+        status: 200,
+        json: {
+          missionId: mission.id,
+          status: 'FAILED',
+          signature: outcome.signature,
+          error: { code: outcome.code, message: outcome.message },
+        },
+      };
+    }
+    return error(outcome.status, outcome.code, outcome.message);
+  } catch {
+    return error(500, 'QUARANTINE_FAILED', 'Quarantine failed.');
   }
 }
 

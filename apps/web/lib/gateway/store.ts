@@ -110,6 +110,28 @@ export interface ChallengeRow {
   created_at: string;
 }
 
+export interface AuditEventRow {
+  id: string;
+  mission_id: string;
+  event_type: string;
+  actor_type: string;
+  actor_id: string | null;
+  event_hash: string;
+  payload_public: unknown;
+  onchain_signature: string | null;
+  created_at: string;
+}
+
+export interface NewAuditEvent {
+  mission_id: string;
+  event_type: string;
+  actor_type: string;
+  actor_id: string | null;
+  event_hash: string;
+  payload_public: unknown;
+  onchain_signature: string | null;
+}
+
 export interface NewAgent {
   owner_id: string;
   name: string;
@@ -134,6 +156,8 @@ export interface NewActionRequest {
   signature: string;
   decision: ActionDecision;
   decision_reason_code: string | null;
+  /** Streak after a counted violation; null otherwise (Phase 5 owns). */
+  violation_count_after: number | null;
   unsigned_tx_hash: string | null;
   unsigned_tx_b64: string | null;
   expires_at: string | null;
@@ -177,4 +201,21 @@ export interface GatewayStore {
   insertChallenge(agentId: string, challenge: string, expiresAtIso: string): Promise<void>;
   findChallenge(agentId: string, challenge: string): Promise<ChallengeRow | null>;
   consumeChallenge(agentId: string, challenge: string, nowIso: string): Promise<boolean>;
+  /** Counted policy-blocked rows for (mission, agent) newer than sinceIso. */
+  countPolicyBlockedSince(
+    missionId: string,
+    agentId: string,
+    reasonCode: string,
+    sinceIso: string
+  ): Promise<number>;
+  /** Latest CONFIRMED action time for (mission, agent), or null. */
+  lastConfirmedAt(missionId: string, agentId: string): Promise<string | null>;
+  /** Record the streak value on a counted violation row. */
+  setActionViolationCount(requestId: string, count: number): Promise<void>;
+  /**
+   * Compare-and-set mission to QUARANTINED. Returns true when this call
+   * flipped the row; false means already handled (idempotent quarantine).
+   */
+  markMissionQuarantined(missionId: string, atIso: string): Promise<boolean>;
+  insertAuditEvent(row: NewAuditEvent): Promise<AuditEventRow>;
 }

@@ -105,6 +105,35 @@ export interface FeePayer {
 }
 
 /**
+ * Load the runtime guardian key from SUCCRA_GUARDIAN_SECRET_KEY
+ * (base58 64-byte secret key, server-only). Same shape as the fee
+ * payer: the guardian pays its own transaction fees and signs only
+ * quarantine authority — it never signs as an agent and never touches
+ * vault PDAs. Throws a config error when absent or malformed.
+ */
+export function loadGuardian(secret?: string): FeePayer {
+  const raw = secret ?? process.env.SUCCRA_GUARDIAN_SECRET_KEY;
+  if (!raw) {
+    throw new Error('Missing SUCCRA_GUARDIAN_SECRET_KEY.');
+  }
+  let secretKey: Uint8Array;
+  try {
+    secretKey = base58ToBytes(raw.trim());
+    if (secretKey.length !== 64) {
+      throw new Error('bad length');
+    }
+  } catch {
+    throw new Error('Invalid SUCCRA_GUARDIAN_SECRET_KEY.');
+  }
+  const keypair = naclSign.keyPair.fromSecretKey(secretKey);
+  const addressValue = bytesToBase58(keypair.publicKey);
+  return {
+    address: addressValue,
+    signBytes: (message: Uint8Array): Uint8Array => naclSign.detached(message, secretKey),
+  };
+}
+
+/**
  * Load the gateway fee-payer key from SUCCRA_GATEWAY_FEE_PAYER_SECRET_KEY
  * (base58 64-byte secret key, server-only). Throws a config error when
  * absent or malformed — callers map it to 500 without details.

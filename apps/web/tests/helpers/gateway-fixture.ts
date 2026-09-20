@@ -133,6 +133,8 @@ export interface FakeChainOptions {
   agentNonce?: bigint;
   expiresAtSec?: bigint;
   mint?: string;
+  violationThreshold?: number;
+  violationWindowSeconds?: bigint;
   /** When true, getMissionState returns null (undeployed/placeholder PDA). */
   missingMission?: boolean;
   /** Script for sendRawTransaction: return signature or throw. */
@@ -167,6 +169,8 @@ export function makeFakeChain(
         allowedActionTypes: ['TRANSFER_SOL'],
         allowedRecipients: [world.recipient],
         expiresAtSec: options.expiresAtSec ?? BigInt(Math.floor(Date.now() / 1000) + 3600),
+        violationThreshold: options.violationThreshold ?? 3,
+        violationWindowSeconds: options.violationWindowSeconds ?? 900n,
         status: options.status ?? 'Active',
         currentAgent: options.currentAgent ?? world.agent.base58,
         agentNonce: options.agentNonce ?? 0n,

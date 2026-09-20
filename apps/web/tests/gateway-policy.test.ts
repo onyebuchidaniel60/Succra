@@ -41,7 +41,7 @@ describe('FR-03 policy evaluation', () => {
   });
 
   it('blocks #1 non-active missions', () => {
-    for (const status of ['Draft', 'Cancelled', 'QUARANTINED']) {
+    for (const status of ['Draft', 'Cancelled']) {
       const result = evaluatePolicy({
         policy: POLICY,
         chain: { ...CHAIN, status },
@@ -50,6 +50,16 @@ describe('FR-03 policy evaluation', () => {
       });
       expect(result).toMatchObject({ decision: 'BLOCK', reasonCode: 'MISSION_NOT_ACTIVE' });
     }
+  });
+
+  it('blocks quarantined missions with MISSION_QUARANTINED', () => {
+    const result = evaluatePolicy({
+      policy: POLICY,
+      chain: { ...CHAIN, status: 'Quarantined' },
+      intent: INTENT,
+      nowMs: Date.now(),
+    });
+    expect(result).toMatchObject({ decision: 'BLOCK', reasonCode: 'MISSION_QUARANTINED' });
   });
 
   it('blocks #2 non-current agents', () => {
