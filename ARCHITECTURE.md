@@ -2,18 +2,190 @@
 
 # 7. DATA MODEL
 
-## `profiles`
+## On-chain contracts
+
+Succra uses three Solidity contracts:
+
+- `SuccraMission.sol` — one contract per mission. Holds mission authority, policy, status, violations, successors, state version, and checkpoint commitments. It never holds funds.
+- `MissionFactory.sol` — deploys `SuccraMission` contracts and indexes them by owner.
+- `GuardianRegistry.sol` — stores the global guardian address and allows the registry owner to rotate it.
+
+### `Successor`
+
+```solidity
+struct Successor {
+    address agent;
+    uint16 priority;                   // lower wins
+    bool active;
+}
+```
+
+The on-chain list is bounded to 8 unique addresses and excludes the primary agent at creation. Capabilities and availability remain off-chain metadata in `mission_agents`. `MissionFactory` sets the mission owner to `msg.sender`; ownership is never taken from an unverified config field.
+
+### `MissionConfig`
+
+```solidity
+struct MissionConfig {
+    address paymentToken;              // native HSK sentinel or ERC-20 address
+    uint256 budgetAtomic;              // budget envelope in token atomic units
+    uint256 maxPaymentAtomic;
+    uint256 recoveryMaxPaymentAtomic;
+    address[] merchantAllowlist;
+    uint64 expiresAt;
+    bytes32 policyHash;
+    address primaryAgent;
+    Successor[] successors;            // bounded, unique, primary excluded
+    uint16 violationThreshold;         // default 3
+    uint64 violationWindowSeconds;     // default 900
+    bytes32 cartMandateHash;           // owner-signed HSP Cart Mandate
+}
+```
+
+### `AuthorityState`
+
+```solidity
+enum MissionStatus {
+    DRAFT,
+    ACTIVE,
+    DEGRADED,          // reserved; no MVP transition
+    QUARANTINED,
+    RECOVERING,
+    ACTIVE_RECOVERY,
+    COMPLETED,
+    CANCELLED,
+    EXPIRED,
+    HALTED             // off-chain mirror terminal; contract remains QUARANTINED
+}
+
+struct AuthorityState {
+    address currentAgent;
+    MissionStatus status;
+    uint64 agentNonce;
+    uint64 stateVersion;               // 0 at creation, bumped on every transition
+    uint16 violationCount;
+    uint64 lastViolationAt;
+    uint256 confirmedSpentAtomic;      // mirrored from confirmed HSP settlements
+    bytes32 lastCheckpointHash;
+    uint64 lastCheckpointSequence;
+}
+```
+
+`DEGRADED` and `HALTED` are reserved values. No MVP transition enters `DEGRADED`; `HALTED` is written only to the off-chain mirror when no eligible successor exists, while the contract remains `QUARANTINED`. The reachable MVP state machine is defined in `PROJECT_SPEC.md` §6.
+
+`DRAFT` is the off-chain pre-deployment state. A deployed mission with a committed policy and Cart Mandate hash starts `ACTIVE`; the mirror remains pending until HSP Cart Mandate registration is verified.
+
+### `Checkpoint`
+
+```solidity
+struct Checkpoint {
+    uint64 sequence;
+    bytes32 checkpointHash;
+    uint64 committedAt;
+}
+```
+
+The full deterministic snapshot lives off-chain in `mission_checkpoints`; the contract stores the sequence/hash commitment. This preserves the existing checkpoint boundary without putting agent reasoning on-chain.
+
+### `PaymentAuthorization`
+
+```solidity
+struct PaymentAuthorization {
+    bytes32 requestId;
+    address agent;
+    address merchant;
+    address token;
+    uint256 amountAtomic;
+    uint64 paymentNonce;
+    uint64 expiresAt;
+    bytes32 mandateHash;               // HSP Payment Mandate EIP-712 digest
+    bytes agentSignature;              // agent consent; required on-chain
+}
+```
+
+### `SuccessionRecord`
+
+```solidity
+struct SuccessionRecord {
+    uint64 nonce;
+    address fromAgent;
+    address toAgent;
+    bytes32 checkpointHash;
+    uint64 activatedAt;
+    uint64 acknowledgedAt;
+    bool acknowledged;
+}
+```
+
+### Events
+
+- `MissionCreated(address indexed owner, address indexed mission, bytes32 policyHash)`
+- `PolicyUpdated(bytes32 indexed policyHash, uint64 stateVersion)`
+- `AgentAuthorized(address indexed agent, uint8 role, uint64 stateVersion)`
+- `AgentRevoked(address indexed agent, uint64 stateVersion)`
+- `PaymentAuthorized(bytes32 indexed requestId, address indexed merchant, uint256 amountAtomic, bytes32 mandateHash)`
+- `PaymentSettlementRecorded(bytes32 indexed paymentId, uint256 amountAtomic, bytes32 transactionHash)`
+- `ViolationRecorded(bytes32 indexed requestId, uint16 violationCount, uint64 stateVersion)`
+- `MissionQuarantined(address indexed guardian, uint64 stateVersion)`
+- `MissionStatusChanged(MissionStatus previous, MissionStatus next, uint64 stateVersion)`
+- `SuccessorActivated(address indexed successor, bytes32 checkpointHash, uint64 stateVersion)`
+- `RecoveryAcknowledged(address indexed successor, uint64 stateVersion)`
+- `CheckpointCommitted(uint64 sequence, bytes32 checkpointHash)`
+- `MissionCancelled(address indexed owner, uint64 stateVersion)`
+- `GuardianRotated(address indexed previousGuardian, address indexed nextGuardian)`
+
+Every state-changing function takes or checks an expected `stateVersion` so a stale owner/guardian transaction cannot overwrite a newer transition.
+
+### Mutating functions
+
+Owner-authorized:
+- `MissionFactory.createMission(MissionConfig)` — deploys a mission; the owner is `msg.sender`;
+- `updateDraftPolicy(...)` — `DRAFT` only;
+- `quarantine(uint64 expectedVersion)` — owner-initiated quarantine;
+- `cancel(expectedVersion)` — allowed non-terminal states;
+- `activateSuccessor(address successor, uint64 expectedVersion)` — owner fallback when the guardian is unavailable, using the same eligibility checks.
+
+Guardian-authorized:
+- `recordViolation(bytes32 requestId, uint64 expectedVersion)`;
+- `quarantine(uint64 expectedVersion)`;
+- `activateSuccessor(address successor, uint64 expectedVersion)`;
+- `acknowledgeRecovery(uint64 expectedVersion)`;
+- `recordSettlement(bytes32 paymentId, uint256 amountAtomic, bytes32 txHash, uint64 expectedVersion)`;
+- `commitCheckpoint(uint64 sequence, bytes32 checkpointHash, uint64 expectedVersion)`.
+
+Runtime-submitted, agent-signed:
+- `authorizePayment(PaymentAuthorization calldata authorization, uint64 expectedVersion)` — requires the agent's EIP-712 signature over the Payment Mandate digest.
+
+`authorizePayment` checks status, current agent, action type, merchant/token allowlist, per-payment ceiling, mirrored cumulative spend, expiry, payment nonce, state version, and the agent signature. It then emits `PaymentAuthorized` and advances `agentNonce`. It does not move funds. The guardian key may relay the call, but the guardian cannot authorize or spend alone.
+
+`GuardianRegistry.rotateGuardian(address nextGuardian)` is owner-authorized by the registry owner (deployer/owner multisig).
+
+The workflow names `activate_successor` and `acknowledge_recovery` map to the Solidity methods `activateSuccessor` and `acknowledgeRecovery`.
+
+### Contract authority boundary
+
+`SuccraMission` is authoritative for:
+- mission existence, owner, current agent, status, and successor membership;
+- policy configuration and per-payment eligibility;
+- the recovery per-payment ceiling selected by status;
+- guardian authorization and state-version checks;
+- checkpoint hash commitments.
+
+`SuccraMission` is **not** the custodian of funds and does not execute ERC-20 transfers. HSP is authoritative for settlement and for the aggregate Cart Mandate envelope. The contract's `confirmedSpentAtomic` is a mirrored value updated only from confirmed HSP settlements; it is used for checkpoints and race detection, never as permission to move funds.
+
+## Off-chain Supabase mirror
+
+### `profiles`
 - `id` UUID PK → auth.users.id
-- `wallet_address` TEXT UNIQUE NOT NULL
+- `wallet_address` TEXT UNIQUE NOT NULL (EVM address)
 - `display_name` TEXT NULL
 - `created_at`
 - `updated_at`
 
-## `agents`
+### `agents`
 - `id` UUID PK
 - `owner_id` UUID FK profiles.id
 - `name` TEXT NOT NULL
-- `public_key` TEXT UNIQUE NOT NULL
+- `address` TEXT UNIQUE NOT NULL (EVM address)
 - `endpoint_url` TEXT NULL
 - `capabilities` JSONB NOT NULL DEFAULT '[]'
 - `status` TEXT NOT NULL
@@ -21,26 +193,29 @@
 - `created_at`
 - `updated_at`
 
-## `missions`
+### `missions`
 - `id` UUID PK
 - `owner_id` UUID FK profiles.id
 - `name` TEXT NOT NULL
 - `objective` TEXT NOT NULL
-- `pda_address` TEXT UNIQUE NOT NULL
-- `vault_address` TEXT UNIQUE NOT NULL
-- `mint_address` TEXT NOT NULL
+- `contract_address` TEXT UNIQUE NOT NULL
+- `factory_address` TEXT NOT NULL
+- `owner_address` TEXT NOT NULL
+- `payment_token_address` TEXT NOT NULL
 - `budget_atomic` NUMERIC(78,0) NOT NULL
 - `remaining_budget_atomic` NUMERIC(78,0) NOT NULL
 - `status` TEXT NOT NULL
 - `current_agent_id` UUID FK agents.id NULL
-- `current_agent_public_key` TEXT NOT NULL
+- `current_agent_address` TEXT NOT NULL
 - `policy_version` INTEGER NOT NULL DEFAULT 1
 - `policy_hash` TEXT NOT NULL
+- `cart_mandate_id` TEXT NULL
+- `cart_mandate_hash` TEXT NOT NULL
 - `expires_at` TIMESTAMPTZ NOT NULL
 - `created_at`
 - `updated_at`
 
-## `mission_agents`
+### `mission_agents`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `agent_id` UUID FK
@@ -52,34 +227,37 @@
 - `revoked_at` NULL
 - unique `(mission_id, agent_id)`
 
-## `mission_policies`
+### `mission_policies`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `version` INTEGER
-- `max_action_atomic` NUMERIC(78,0)
-- `recovery_max_action_atomic` NUMERIC(78,0)
-- `allowed_action_types` JSONB
-- `allowed_recipients` JSONB
+- `max_payment_atomic` NUMERIC(78,0)
+- `recovery_max_payment_atomic` NUMERIC(78,0)
+- `allowed_action_types` JSONB (`["HSP_PAYMENT"]`)
+- `allowed_merchants` JSONB
+- `allowed_token_addresses` JSONB (MVP: one settlement token)
 - `violation_threshold` INTEGER DEFAULT 3
 - `violation_window_seconds` INTEGER DEFAULT 900
 - `policy_json` JSONB NOT NULL
 - `policy_hash` TEXT NOT NULL
 - `created_at`
 
-## `mission_checkpoints`
+### `mission_checkpoints`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `sequence` BIGINT
 - `status` TEXT (`CANDIDATE`,`VERIFIED`,`SUPERSEDED`)
 - `checkpoint_hash` TEXT NOT NULL
-- `confirmed_action_ids` JSONB
+- `confirmed_payment_ids` JSONB
+- `confirmed_transaction_hashes` JSONB
+- `hsp_mandate_ids` JSONB
 - `remaining_budget_atomic` NUMERIC(78,0)
 - `state_snapshot` JSONB
-- `committed_signature` TEXT NULL
+- `committed_tx_hash` TEXT NULL
 - `created_at`
 - unique `(mission_id, sequence)`
 
-## `action_requests`
+### `action_requests`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `agent_id` UUID FK
@@ -92,23 +270,45 @@
 - `decision` TEXT
 - `decision_reason_code` TEXT
 - `violation_count_after` INTEGER
+- `hsp_payment_id` UUID NULL
 - `submitted_at`
 - `created_at`
 - unique `(mission_id, idempotency_key)`
 - unique `(mission_id, agent_nonce)`
 
-## `onchain_transactions`
+### `hsp_payments`
+- `id` UUID PK
+- `mission_id` UUID FK
+- `action_request_id` UUID FK
+- `hsp_payment_mandate_id` TEXT UNIQUE NOT NULL
+- `mandate_hash` TEXT NOT NULL
+- `amount_atomic` NUMERIC(78,0) NOT NULL
+- `token_address` TEXT NOT NULL
+- `merchant_address` TEXT NOT NULL
+- `status` TEXT (`PREFLIGHTED`,`SIGNED`,`AUTHORIZED`,`SUBMITTED`,`CONFIRMED`,`FAILED`)
+- `authorization_tx_hash` TEXT NULL
+- `settlement_tx_hash` TEXT UNIQUE NULL
+- `block_number` BIGINT NULL
+- `raw_error` JSONB NULL
+- `submitted_at`
+- `settled_at`
+- `created_at`
+
+### `onchain_transactions`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `action_request_id` UUID NULL
-- `signature` TEXT UNIQUE
-- `slot` BIGINT NULL
+- `hsp_payment_id` UUID NULL
+- `tx_hash` TEXT UNIQUE
+- `block_number` BIGINT NULL
 - `status` TEXT
 - `raw_error` JSONB NULL
 - `confirmed_at` TIMESTAMPTZ NULL
 - `created_at`
 
-## `succession_events`
+This table mirrors contract calls (create, quarantine, succession, checkpoint commitment) that are not HSP settlements.
+
+### `succession_events`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `from_agent_id` UUID NULL
@@ -117,10 +317,10 @@
 - `checkpoint_id` UUID NULL
 - `recovery_limit_atomic` NUMERIC(78,0)
 - `status` TEXT
-- `onchain_signature` TEXT NULL
+- `onchain_tx_hash` TEXT NULL
 - `created_at`
 
-## `audit_events`
+### `audit_events`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `event_type` TEXT
@@ -128,110 +328,147 @@
 - `actor_id` UUID NULL
 - `event_hash` TEXT
 - `payload_public` JSONB
-- `onchain_signature` TEXT NULL
+- `onchain_tx_hash` TEXT NULL
 - `created_at`
 
-`audit_events` is created by the Phase 5 migration. Every material mission event writes an immutable audit event. Public audit reads (via GET /api/missions/:id/audit) are added in a later phase.
+Every material mission event writes an immutable audit event. Public audit reads are added in Phase 7.
 
-Phase 6 resolution (spec amendment): Phase 6 writes `checkpoint.verified`, `succession.triggered`, `succession.candidate_selected`, `succession.activate.submitted`, `succession.activate.confirmed`, `succession.acknowledge.submitted`, `succession.acknowledge.confirmed` (full list in PROJECT_SPEC.md FR-08). Phase 7 reads these rows only and writes none.
+### Supporting tables
 
-## `agent_challenges`
-- `id` UUID PK
-- `agent_id` UUID FK agents.id
-- `challenge` TEXT NOT NULL UNIQUE
-- `expires_at` TIMESTAMPTZ NOT NULL
-- `consumed_at` TIMESTAMPTZ NULL
-- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
-RLS enabled, no policies (service-role only). Single-use enforced via UPDATE … WHERE `consumed_at` IS NULL AND `expires_at` > now() RETURNING.
+- `agent_challenges` — single-use EIP-712 registration challenge; RLS enabled with no policies (service-role only).
+- `agent_request_nonces` — single-use request nonces; unique `(agent_id, nonce)`; service-role only.
+- `hsp_webhook_events` — unique `event_id`, payment mandate ID, payload hash, signature-verified flag, processed timestamp; service-role only.
 
-## `agent_request_nonces`
-- `id` UUID PK
-- `agent_id` UUID FK agents.id
-- `nonce` TEXT NOT NULL
-- `expires_at` TIMESTAMPTZ NOT NULL
-- `consumed_at` TIMESTAMPTZ NULL
-- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
-- unique `(agent_id, nonce)`
-RLS enabled, no policies (service-role only).
+### Sensitive data
 
-## Mission account layout (end of Phase 6)
-On-chain `Mission` fields at end of Phase 6: owner, vault, mint, budget_atomic, remaining_budget_atomic, max_action, recovery_max_action, allowed_recipients, allowed_action_types, current_agent, agent_nonce, status, expires_at, policy_hash, successors: Vec<Pubkey> (bounded ≤8, unique, primary excluded), state_version: u64 (0 at creation, bumped on every status transition), plus any Anchor bookkeeping fields.
-
-Phase 6 resolution (spec amendment): `create()` is extended in Phase 6 to accept successors; the instruction signature change and account-size change are accepted as breaking. Any account whose size does not match the current `Mission::LEN` must be rejected as "needs recreation." Pre-Phase-6 devnet missions are test-only.
-
-Sensitive data:
-- no private keys;
-- no wallet seeds;
-- no agent bearer credentials;
-- no raw model chain-of-thought;
-- no user auth tokens.
+Never store:
+- private keys or wallet seeds;
+- HSP API secrets, HMAC secrets, or JWTs beyond their verification window;
+- Supabase service-role keys in the browser;
+- raw model chain-of-thought;
+- user auth tokens in logs;
+- agent bearer credentials.
 
 Public data:
-- mission ID;
+- mission contract address;
 - public mission status;
-- public on-chain transaction signatures;
+- HashKey transaction hashes;
+- HSP payment mandate IDs;
 - public audit events explicitly marked public.
 
 Private data:
-- endpoint URLs if user chooses private;
+- endpoint URLs if the user chooses private;
 - user metadata;
 - internal runtime logs;
 - agent operational metadata.
+
+## EIP-712 canonical data
+
+Agent requests use:
+
+```text
+SuccraRequest(
+  address missionId,
+  bytes32 requestId,
+  uint256 nonce,
+  uint256 timestamp,
+  bytes32 methodHash,
+  bytes32 bodyHash
+)
+```
+
+- `missionId` is the `SuccraMission` contract address.
+- `requestId` is the client-generated action request UUID (also the idempotency scope) hashed to `bytes32`.
+- `nonce` is the single-use request nonce (distinct from the on-chain `agentNonce`).
+- `timestamp` is Unix seconds; stale requests are rejected.
+- `methodHash = keccak256(UTF8(method + " " + path))`.
+- `bodyHash = keccak256(raw request body bytes)`.
+
+The EIP-712 domain is:
+
+```json
+{
+  "name": "Succra",
+  "version": "1",
+  "chainId": 177,
+  "verifyingContract": "<SuccraMission address>"
+}
+```
+
+Testnet uses chain ID `133`. Wallet login uses a separate `SuccraLogin` typed-data domain without a verifying contract. HSP Payment Mandates use the domain and types supplied by HSP; Succra binds the resulting mandate hash into its own request record.
 
 ---
 
 # 8. SYSTEM ARCHITECTURE
 
 ```text
-┌───────────────────────────────────────────┐
-│                 USER                      │
-│   Solana wallet + Succra web dashboard    │
-└─────────────────────┬─────────────────────┘
-                      │
-                      ▼
-┌───────────────────────────────────────────┐
-│        NEXT.JS / TYPESCRIPT WEB APP       │
-│ UI + Route Handlers + session-aware API   │
-└───────────────┬───────────────────────────┘
+┌───────────────────────────────────────────────┐
+│                    USER                       │
+│   EVM wallet + Succra web dashboard           │
+└──────────────────────┬────────────────────────┘
+                       │
+                       ▼
+┌───────────────────────────────────────────────┐
+│         NEXT.JS / TYPESCRIPT WEB APP          │
+│ UI + Route Handlers + session-aware API       │
+└───────────────┬───────────────────────────────┘
                 │
-       ┌────────┴────────┐
-       ▼                 ▼
-┌──────────────┐  ┌──────────────────┐
-│  SUPABASE    │  │ SUCCRA RUNTIME   │
-│ Auth/Postgres│  │ Node/TypeScript  │
-│ + RLS        │  │ Guardian/monitor │
-└──────────────┘  └─────────┬────────┘
+       ┌────────┴─────────┐
+       ▼                  ▼
+┌──────────────┐   ┌────────────────────┐
+│  SUPABASE    │   │  SUCCRA RUNTIME    │
+│ Auth/Postgres│   │ Node/TypeScript    │
+│ + RLS        │   │ Guardian/monitor   │
+└──────────────┘   └─────────┬──────────┘
                              │
-                             ▼
-                    ┌─────────────────┐
-                    │ SUCCRA PROGRAM  │
-                    │ Rust + Anchor   │
-                    │ Solana          │
-                    └────────┬────────┘
-                             │
-                   ┌─────────┴─────────┐
-                   ▼                   ▼
-             Mission PDA           Vault PDA
-                   │                   │
-                   └─────────┬─────────┘
-                             ▼
-                    Solana Token/System
-                       Program actions
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+   ┌─────────────────────┐       ┌──────────────────┐
+   │ SUCCRA CONTRACTS    │       │  HSP GATEWAY     │
+   │ SuccraMission       │       │ Cart/Payment     │
+   │ MissionFactory      │       │ Mandates         │
+   │ GuardianRegistry    │       │ HMAC + ES256K    │
+   └──────────┬──────────┘       └────────┬─────────┘
+              │                           │
+              └─────────────┬─────────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │   HASHKEY CHAIN     │
+                 │  authority state    │
+                 │  HSP settlement     │
+                 └─────────────────────┘
 ```
 
 ## Architectural principle
-**On-chain = authority and money.**
 
-**Off-chain = orchestration, monitoring, indexing, UI, agent communication.**
+**On-chain = authority and policy.**
 
-The runtime can detect and recommend, but the Solana program is the final authority over mission state and assets.
+**HSP = payment execution and settlement.**
 
-Solana PDAs are suitable for program-controlled mission/vault authorities because they have no private key and can only be program-signed through `invoke_signed`. citeturn321459search0
+**Off-chain = orchestration, monitoring, indexing, UI, and agent communication.**
 
-Solana token delegation provides a non-custodial precedent for bounded spending where the owner retains custody and may revoke delegation; for Succra, the preferred MVP design is stronger: the Mission Vault is program-controlled, and the agent never receives direct custody. citeturn321459search3turn564420search4
+The runtime can detect, preflight, and recommend, but it cannot override `SuccraMission` policy or HSP settlement. The database is a mirror and index, never the financial source of truth.
+
+## Non-custodial model (Model B)
+
+- Funds remain in the owner's wallet.
+- The owner signs an HSP Multi-Pay Cart Mandate that constrains the budget envelope.
+- The Payment Agent constructs per-payment HSP Payment Mandates inside that envelope.
+- Succra controls **which agent may sign** and **what limits apply**; it never holds or moves funds.
+- HSP executes settlement; `SuccraMission` records authority and policy.
+
+This is the core positioning: Succra is the safety and continuity layer around HSP, not a replacement for it.
 
 ## Off-chain failure boundary
-Succra Cloud is not a cryptographic root of trust. If Succra Cloud is offline, mission funds remain constrained by the program. Automatic succession pauses; the owner can still invoke owner-controlled recovery/cancel paths.
+
+Succra Cloud is not a cryptographic root of trust. If the runtime is offline:
+- no new Payment Mandate can be preflighted or submitted by Succra;
+- automatic succession pauses;
+- the owner can still call `cancel` directly on the contract;
+- the owner can still use the pre-approved successor path when the guardian is unavailable, subject to the same eligibility and state-version checks;
+- existing on-chain authority and HSP mandate constraints remain intact.
+
+The owner cannot use the fallback to bypass policy, change successors, or move funds directly.
 
 ---
 
@@ -240,47 +477,56 @@ Succra Cloud is not a cryptographic root of trust. If Succra Cloud is offline, m
 ## Frontend
 **Next.js App Router + TypeScript + Tailwind CSS**
 
-Why: current Next.js App Router supports server/client components and Route Handlers, keeping a small full-stack surface. citeturn564420search0turn564420search3
+Why: server/client components and Route Handlers keep a small full-stack surface.
 
-## Solana frontend/client
-**`@solana/kit` + Solana React hooks**
+## EVM frontend/client
+**wagmi + viem + WalletConnect**
 
-Why: current Solana documentation positions Kit as the current low-level client, with wallet-standard support through the React stack. citeturn832169search0turn832169search7
-
-Do not introduce `@solana/web3.js` into new code unless a required dependency forces compatibility; Solana's current frontend documentation marks it deprecated and recommends the Kit migration path. citeturn832169search2
+Why: wagmi provides React wallet hooks, viem provides typed EVM primitives, and WalletConnect covers mobile wallets. MVP target wallets: MetaMask, OKX, TokenPocket, ImToken.
 
 ## Wallet authentication
-**Supabase Auth + Solana wallet signature login**
+**Supabase Auth + EIP-712 wallet signature login**
 
-Why: Supabase supports JWT sessions and RLS, and Solana provides current guidance for Supabase wallet authentication. citeturn564420search8turn832169search4
+Why: Supabase supplies JWT sessions and RLS; EIP-712 gives typed, human-readable signing for login and agent requests.
 
 ## Backend API
 **Next.js Route Handlers**
 
-Why: eliminates an unnecessary second HTTP API service for ordinary request/response flows. citeturn564420search0
+Why: eliminates an unnecessary second HTTP API service for ordinary request/response flows.
 
 ## Runtime/guardian
 **Node.js 24 + TypeScript + `tsx`**
 
-Responsibilities: agent gateway, heartbeat monitor, succession engine, blockchain event monitor, checkpoint verification.
+Responsibilities: agent gateway, heartbeat monitor, HSP client, succession engine, HashKey event monitor, checkpoint verification, webhook processing.
 
 ## Database
 **Supabase Postgres**
 
-Use RLS for user-level resource isolation. Supabase explicitly recommends RLS on exposed tables and keeping service-role access server-side. citeturn564420search2
+Use RLS for user-level resource isolation. The service-role key stays server-side.
 
-## Solana program
-**Rust + Anchor 0.32.1 + Solana 2.3.0**
+## Contracts
+**Solidity ^0.8.24 + Hardhat**
 
-Anchor 0.32.1 is the current patch level in the retrieved release notes, with Solana 2.3.0 as the recommended Solana version. citeturn663417search2
+`SuccraMission`, `MissionFactory`, and `GuardianRegistry`. Contracts are tested locally, deployed to HashKey testnet first, and verified on Blockscout.
 
-## RPC/indexing
-**Helius RPC + Webhooks**
+## Chain
+**HashKey Chain**
 
-Why: webhooks can deliver real-time Solana transaction/account notifications, including both raw and enhanced formats, and support duplicate-delivery retries. citeturn663417search1turn663417search3turn663417search4
+- Mainnet: chain ID `177`, RPC `https://mainnet.hsk.xyz`, native token HSK.
+- Testnet: chain ID `133`.
+- Explorer: Blockscout.
+
+## Payments
+**HSP Merchant API**
+
+- HMAC-SHA256 request signing.
+- ES256K JWT authentication.
+- EIP-712 Cart Mandates and Payment Mandates.
+- Signed settlement webhooks.
+- HashKey RPC polling fallback.
 
 ## AI
-**OpenAI API as non-authoritative recommendation layer**
+**OpenAI API as a non-authoritative recommendation layer**
 
 Only used for successor explanation/recommendation. Deterministic rules remain authoritative.
 
@@ -288,10 +534,13 @@ Only used for successor explanation/recommendation. Deterministic rules remain a
 - Web: Vercel
 - Runtime: Railway
 - Database/Auth: Supabase
-- Solana program: devnet first; production/mainnet deployment only after explicit security verification
-- RPC: Helius
+- Contracts: HashKey testnet first; mainnet only after explicit security verification
+- Payments: HSP Merchant API
 
 ## Rejected alternatives
+- Custodial vault model: violates the non-custodial authority thesis.
+- Direct ERC-20 transfers or arbitrary contract calls: bypasses HSP and expands the attack surface.
+- Multi-chain support in MVP: dilutes the HashKey/HSP focus.
 - Redis: unnecessary for MVP.
 - Kafka/queues: unnecessary for MVP.
 - Microservices: unnecessary for MVP.
@@ -303,6 +552,7 @@ Only used for successor explanation/recommendation. Deterministic rules remain a
 # 10. API SPECIFICATION
 
 All JSON errors use:
+
 ```json
 {
   "error": {
@@ -314,21 +564,54 @@ All JSON errors use:
 ```
 
 ## `POST /api/auth/nonce`
-Purpose: create wallet login nonce.
+Purpose: create a wallet login nonce.
 Auth: none.
-Request: `{ "walletAddress": "..." }`
-Success: `{ "nonce": "...", "message": "...", "expiresAt": "..." }`
+Request: `{ "walletAddress": "0x..." }`
+Success:
+```json
+{
+  "nonce": "...",
+  "typedData": { "domain": {}, "types": {}, "primaryType": "SuccraLogin", "message": {} },
+  "expiresAt": "..."
+}
+```
 
 ## `POST /api/auth/verify`
-Purpose: verify wallet signature and establish Supabase session.
+Purpose: verify the EIP-712 wallet signature and establish a Supabase session.
 Request: `{ walletAddress, nonce, signature }`
+Success: `{ user, session }`
 
 ## `POST /api/missions`
 Auth: user session.
-Purpose: create mission draft + prepare on-chain instructions.
-Request: mission metadata + policy.
-Validation: all mission creation rules.
-Success: draft ID, PDA, unsigned transaction payload.
+Purpose: create a mission draft and prepare the on-chain create call plus the HSP Cart Mandate payload.
+Request: mission metadata + policy:
+```json
+{
+  "name": "...",
+  "objective": "...",
+  "paymentTokenAddress": "0x...",
+  "budgetAtomic": "1000000000000000000",
+  "maxPaymentAtomic": "100000000000000000",
+  "recoveryMaxPaymentAtomic": "50000000000000000",
+  "merchantAllowlist": ["0x..."],
+  "expiresAt": "...",
+  "primaryAgentAddress": "0x...",
+  "successors": [{ "address": "0x...", "priority": 1 }],
+  "violationThreshold": 3,
+  "violationWindowSeconds": 900
+}
+```
+Success:
+```json
+{
+  "missionId": "<uuid>",
+  "contractAddress": "<predicted address>",
+  "policyHash": "0x...",
+  "unsignedTransaction": { "chainId": 177, "to": "<factory>", "data": "0x...", "value": "0" },
+  "cartMandate": { "typedData": {}, "mandateHash": "0x..." }
+}
+```
+The runtime reconciles the `MissionCreated` event and the HSP Cart Mandate registration before setting the mirror to `ACTIVE`.
 
 ## `GET /api/missions`
 Auth: user session.
@@ -336,77 +619,89 @@ Purpose: list owned missions.
 
 ## `GET /api/missions/:id`
 Auth: owner or public audit mode.
-Purpose: mission detail.
+Purpose: mission detail, contract state, policy, Cart Mandate status.
+
+## `PATCH /api/missions/:id`
+Auth: owner session + owner EIP-712 signature.
+Purpose: update a `DRAFT` mission policy before activation. Returns an unsigned contract call. Activated policy changes require a new policy version and explicit owner transaction.
 
 ## `POST /api/missions/:id/agents`
 Auth: owner.
-Purpose: attach primary/successor.
+Purpose: attach primary/successor agent addresses.
 
 ## `POST /api/agents/:id/challenge`
 Auth: owner session.
-Purpose: issue registration challenge.
-Request: `{}` (empty).
+Purpose: issue an EIP-712 registration challenge.
 Response:
 ```json
 {
   "challenge": "<hex, 32 random bytes>",
+  "typedData": {},
   "expiresAt": "<iso8601, 5 minutes from issue>"
 }
 ```
 
 ## `POST /api/agents/:id/verify`
 Auth: owner session.
-Purpose: prove agent key possession.
+Purpose: prove agent address possession.
 Request:
 ```json
 {
   "challenge": "<hex>",
-  "signature": "<base64 Ed25519 signature over the raw challenge bytes>"
+  "signature": "<0x-prefixed EIP-712 signature>"
 }
 ```
 Response:
 ```json
 {
   "agentId": "<uuid>",
+  "address": "0x...",
   "status": "VERIFIED"
 }
 ```
 Errors: `CHALLENGE_EXPIRED`, `CHALLENGE_UNKNOWN`, `INVALID_SIGNATURE`.
 
 ## `POST /api/agents/:id/heartbeat`
-Auth: agent signature.
+Auth: agent EIP-712 request.
 Purpose: liveness signal.
-Heartbeat minimum interval: 30 seconds. The gateway rejects heartbeats received less than 30s after the previous accepted heartbeat for the same agent. This value is a named constant in code, not an env var.
+Heartbeat minimum interval: 30 seconds. The gateway rejects heartbeats received less than 30s after the previous accepted heartbeat for the same agent. This is a named constant in code, not an env var.
 
 Headers:
-- `x-succra-agent-id`
+- `x-succra-agent-address`
 - `x-succra-timestamp`
 - `x-succra-nonce`
 - `x-succra-signature`
 
 ## `POST /api/missions/:id/actions`
-Auth: registered current agent signature (§12).
-Purpose: pre-flight policy evaluation + unsigned transaction construction. Gateway partially signs as fee payer. Does NOT touch the chain.
-Request body (unchanged):
+Auth: registered current agent EIP-712 signature.
+Purpose: preflight policy evaluation and construct the unsigned HSP Payment Mandate. Does NOT submit to HSP and does NOT move funds.
+Request:
 ```json
 {
+  "requestId": "<client-generated UUID>",
   "idempotencyKey": "...",
   "agentNonce": 14,
-  "actionType": "TRANSFER_SOL",
+  "actionType": "HSP_PAYMENT",
   "payload": {
-    "recipient": "...",
-    "amountAtomic": "1000000"
-  },
-  "expiresAt": "..."
+    "merchantAddress": "0x...",
+    "tokenAddress": "0x...",
+    "amountAtomic": "100000000000000000",
+    "paymentReference": "...",
+    "expiresAt": "..."
+  }
 }
 ```
+`requestId` is the client-generated UUID used in the `SuccraRequest` typed data; it becomes the action request ID and must be unique per mission.
+
 Response (ALLOW):
 ```json
 {
   "decision": "ALLOW",
-  "requestId": "<action_requests.id uuid>",
-  "unsignedTransaction": "<base64 serialized message>",
-  "expiresAt": "<iso8601>"
+  "requestId": "<uuid>",
+  "paymentMandate": {},
+  "mandateHash": "0x...",
+  "typedData": { "domain": {}, "types": {}, "primaryType": "...", "message": {} },
+  "expiresAt": "..."
 }
 ```
 Response (BLOCK):
@@ -418,15 +713,16 @@ Response (BLOCK):
   "reason": "<human-readable>"
 }
 ```
-Errors (with §10 envelope): `DUPLICATE_REQUEST`, `INVALID_BODY`, `AGENT_NOT_CURRENT`, `MISSION_NOT_ACTIVE`.
+Errors: `DUPLICATE_REQUEST`, `INVALID_BODY`, `AGENT_NOT_CURRENT`, `MISSION_NOT_ACTIVE`.
 
 ## `POST /api/missions/:id/actions/:requestId/submit`
-Auth: registered current agent signature.
-Purpose: submit the agent-signed transaction, confirm on-chain, mirror result to DB.
-Request body:
+Auth: registered current agent EIP-712 signature.
+Purpose: verify the signed mandate, record on-chain authorization, submit it to HSP, wait for settlement, and mirror the result.
+Request:
 ```json
 {
-  "signedTransaction": "<base64 serialized transaction>"
+  "mandateHash": "0x...",
+  "signature": "0x..."
 }
 ```
 Response (CONFIRMED):
@@ -434,8 +730,10 @@ Response (CONFIRMED):
 {
   "decision": "ALLOW",
   "requestId": "<uuid>",
-  "signature": "<base58>",
-  "slot": "<number>",
+  "authorizationTxHash": "0x...",
+  "hspPaymentMandateId": "...",
+  "transactionHash": "0x...",
+  "blockNumber": 123,
   "status": "CONFIRMED"
 }
 ```
@@ -444,41 +742,37 @@ Response (FAILED):
 {
   "decision": "ALLOW",
   "requestId": "<uuid>",
-  "signature": "<base58 or null>",
+  "transactionHash": "0x... or null",
   "status": "FAILED",
   "error": { "code": "...", "message": "..." }
 }
 ```
-Errors (with §10 envelope): `TRANSACTION_MISMATCH`, `TRANSACTION_EXPIRED`, `ALREADY_SUBMITTED`, `CHAIN_REJECTION`.
+Errors: `MANDATE_MISMATCH`, `INVALID_SIGNATURE`, `ALREADY_SUBMITTED`, `REQUEST_EXPIRED`, `HSP_REJECTION`, `HSP_UNAVAILABLE`.
 
-The gateway acts as Solana fee payer. It holds a single operational Ed25519 keypair whose public key is the fee payer of every constructed transaction. This key never signs as the agent (agent signature is required by the program's execute_action); never signs for the mission vault (vault is a program PDA); never custodies mission funds; co-signs only as fee payer.
-
-The fee-payer secret is server-only. It is not shipped to the browser and is not used outside the gateway's submit path.
-
-### Wire format
-Transactions are serialized using @solana/kit's canonical wire serialization. `unsignedTransaction` is the base64 encoding of the serialized message (the unsigned transaction, not the versioned transaction). The agent SDK deserializes, verifies, signs, and returns a fully signed transaction as base64 in `signedTransaction`.
-
-Hashing: `unsigned_tx_hash` stored on action_requests is SHA-256 of the decoded message bytes, hex-encoded. On submit, the gateway recomputes the message hash from the submitted transaction's message and compares to `unsigned_tx_hash`. Mismatch → `TRANSACTION_MISMATCH`.
-
-The gateway uses SUCCRA_RPC_URL for chain reads, transaction submission, and confirmation polling. In Phase 4 this is a direct Solana RPC endpoint. Helius webhooks are deferred (see §16).
+The runtime verifies:
+1. the EIP-712 signature recovers the registered agent address;
+2. the signed mandate hash equals the preflighted mandate hash;
+3. the request has not expired and its nonce/idempotency key is unused;
+4. `SuccraMission.authorizePayment` confirms before any HSP submission;
+5. HSP and the resulting HashKey settlement are authoritative.
 
 ## `POST /api/missions/:id/quarantine`
 Auth: runtime guardian credential OR owner.
 Purpose: request quarantine.
-Business rule: guardian can only quarantine; cannot spend.
+Business rule: guardian can only quarantine; cannot spend or create a Payment Mandate.
 
 ## `POST /api/missions/:id/succession`
-Auth: runtime guardian.
+Auth: runtime guardian or owner fallback.
 Purpose: activate an eligible pre-approved successor.
 Idempotency: succession nonce unique.
 
 ## `POST /api/missions/:id/succession/:successionId/acknowledge`
 Auth: successor agent signature.
-Purpose: successor acknowledges the handoff; runtime then submits the guardian-signed `acknowledge_recovery` instruction (`RECOVERING` → `ACTIVE_RECOVERY`).
+Purpose: successor acknowledges the handoff; runtime then submits the guardian-signed `acknowledgeRecovery` call (workflow name `acknowledge_recovery`; `RECOVERING` → `ACTIVE_RECOVERY`).
 
 ## `POST /api/missions/:id/checkpoints`
 Auth: runtime internal.
-Purpose: persist a verified checkpoint and compute its deterministic hash (canonical preimage below). On-chain hash commitment is deferred to Phase 9; the `committed_signature` column remains NULL through Phase 6.
+Purpose: persist a verified checkpoint and commit its hash on-chain. The full snapshot stays off-chain; the contract stores sequence/hash.
 
 ## `GET /api/missions/:id/audit`
 Auth: owner or public audit mode for public events.
@@ -486,7 +780,7 @@ Purpose: audit timeline.
 
 ## `POST /api/missions/:id/cancel`
 Auth: owner wallet signature.
-Purpose: cancel/close mission and reclaim funds according to program rules.
+Purpose: cancel the mission and revoke the HSP Cart Mandate. Funds remain in the owner's wallet.
 
 ## `GET /api/agents/:id/status`
 Auth: owner or mission-scoped agent.
@@ -495,7 +789,7 @@ Response:
 ```json
 {
   "agentId": "<uuid>",
-  "publicKey": "<base58>",
+  "address": "0x...",
   "status": "<REGISTERED | ACTIVE_PRIMARY | ...>",
   "lastHeartbeatAt": "<iso8601 or null>",
   "missions": [{ "missionId": "<uuid>", "role": "PRIMARY | SUCCESSOR" }]
@@ -511,113 +805,157 @@ Response:
 ### Idempotency
 Required for:
 - mission creation finalization;
-- action execution;
+- payment preflight and submission;
 - quarantine;
 - succession;
-- checkpoint commit.
+- checkpoint commit;
+- HSP webhook processing.
 
 ### Canonical checkpoint serialization
-The checkpoint preimage is a fixed-layout struct Borsh-serialized with field order {mission_id, sequence, confirmed_action_ids, confirmed_signatures, remaining_budget_atomic, max_action_at_checkpoint, recovery_max_action_at_checkpoint, policy_version, policy_hash, created_at}. checkpoint_hash = SHA-256 over those bytes, hex-encoded. This is the only canonical preimage; JSON-stringify hashing is forbidden for checkpoint hashes.
+The checkpoint preimage is:
+
+```text
+keccak256(abi.encode(
+  missionId,
+  sequence,
+  keccak256(confirmedPaymentIds),
+  keccak256(confirmedTransactionHashes),
+  keccak256(hspMandateIds),
+  remainingBudgetAtomic,
+  maxPaymentAtCheckpoint,
+  recoveryMaxPaymentAtCheckpoint,
+  policyVersion,
+  policyHash,
+  createdAt
+))
+```
+
+Field order is fixed. `checkpoint_hash` is the hex-encoded keccak256 over those bytes. JSON-stringify hashing is forbidden for checkpoint hashes.
 
 ---
 
 # 11. DATABASE BEHAVIOR
 
 ## Create mission
-Transaction:
-1. validate owner;
-2. insert mission draft;
-3. insert policy version 1;
-4. insert agent assignments;
-5. after on-chain confirmation, atomically update mission to `ACTIVE` and create audit event.
+1. validate the owner and policy;
+2. insert the mission draft and policy version 1;
+3. insert agent assignments;
+4. return the unsigned `MissionFactory` create call and Cart Mandate typed data;
+5. after the `MissionCreated` event confirms the committed Cart Mandate hash, verify HSP mandate registration, then atomically update the mission to `ACTIVE` and create an audit event.
 
-## Action approval
+## Preflight
 Database transaction:
-1. insert request using unique idempotency key;
-2. lock/read mission state;
+1. insert the request using the unique idempotency key;
+2. lock/read the mission mirror and contract state;
 3. evaluate policy;
-4. update violation streak;
-5. record decision;
-6. only after approval submit chain transaction.
+4. update the violation streak only when the decision is `BLOCK`;
+5. record the decision and mandate hash;
+6. return the unsigned Payment Mandate. Do not submit to HSP.
 
-Do not hold a DB transaction open while waiting for blockchain confirmation. Use an explicit `SUBMITTED → CONFIRMED/FAILED` transition.
+## Submit
+1. verify the EIP-712 signature and mandate hash;
+2. lock the approved request with a compare-and-set;
+3. call `SuccraMission.authorizePayment` and wait for confirmation;
+4. mark the request `SUBMITTED` only after authorization confirms;
+5. submit to HSP;
+6. process the signed webhook or poll HashKey RPC;
+7. update `hsp_payments` and the mission mirror only after authoritative confirmation;
+8. write the checkpoint and audit event.
+
+Do not hold a database transaction open while waiting for HSP or HashKey confirmation. Use an explicit `SUBMITTED → CONFIRMED/FAILED` transition.
 
 ## Quarantine
 Use compare-and-set semantics:
 `UPDATE missions SET status='QUARANTINED' WHERE id=? AND status='ACTIVE'`.
-If affected rows = 0, quarantine was already handled or mission state changed.
+Then submit the guardian contract call. If affected rows = 0, quarantine was already handled or mission state changed. The contract remains the ultimate arbiter.
 
 ## Succession
-Use database lock/transaction on the mission row to prevent two successor jobs from activating simultaneously. On-chain state/version remains the ultimate arbiter.
+Use a database lock/transaction on the mission row to prevent two successor jobs from activating simultaneously. The contract `state_version` remains the ultimate arbiter.
 
 ## Race scenarios
-### Double action submission
-Unique `(mission_id, idempotency_key)` prevents duplicate execution.
 
-### Two actions consume last budget
-Database must not be the sole source of truth. Program enforces remaining budget atomically on-chain; backend treats chain rejection as authoritative failure.
-
-### Quarantine races with action
-Program checks mission status during execution, so action after quarantine fails even if it was approved in the UI immediately before quarantine.
-
-### Double succession
-On-chain mission state includes a `succession_nonce`/state version so the same transition cannot execute twice.
-
-### Stale successor activation
-Program rejects activation if mission current agent/status does not match expected values.
+| Scenario | Handling |
+|---|---|
+| Double action submission | Unique `(mission_id, idempotency_key)` and single-use nonce. |
+| Two payments consume last budget | HSP Cart Mandate allows only the valid payment(s); the contract mirrors confirmed spend and treats rejection as authoritative failure. |
+| Quarantine races with payment | Contract checks status during authorization; a payment authorized immediately before quarantine may still settle if already submitted, so the runtime records the race explicitly. |
+| Double succession | Contract `state_version` and succession nonce allow only one transition. |
+| Stale successor activation | Contract rejects activation if status/current agent/version does not match expected values. |
+| Duplicate HSP webhook | Unique `event_id`; second delivery is a no-op. |
+| Webhook arrives before RPC receipt | Store pending, poll HashKey, then confirm; never confirm from the webhook alone. |
+| HSP rejects after wallet signature | Record `FAILED`; do not retry with a different mandate silently. |
 
 ---
 
 # 12. AUTHENTICATION & AUTHORIZATION
 
 ## User authentication
-Wallet signature → Supabase Web3/JWT session.
+EIP-712 wallet signature → Supabase JWT session. The nonce is single-use and expires. A switched wallet requires re-authentication.
 
 ## Agent authentication
-Registered Ed25519 key signs canonical request payloads.
+The registered agent EVM address signs the canonical `SuccraRequest` typed data:
 
-Canonical signing string:
 ```text
-SUCCRA-V1\n{timestamp}\n{nonce}\n{missionId}\n{method}\n{path}\n{sha256(body)}
+SuccraRequest(
+  address missionId,
+  bytes32 requestId,
+  uint256 nonce,
+  uint256 timestamp,
+  bytes32 methodHash,
+  bytes32 bodyHash
+)
 ```
 
-`{nonce}` in the signing string is a request-level replay-protection value, stored single-use in agent_request_nonces. It never advances on-chain state. `agentNonce` in the §10 request body is a distinct value passed to the program's monotonic on-chain counter and enforced by execute_action. The two values MUST NOT be the same variable.
+Headers:
+- `x-succra-agent-address`
+- `x-succra-timestamp`
+- `x-succra-nonce`
+- `x-succra-signature`
+
+`{nonce}` is the request-level replay-protection value, stored single-use in `agent_request_nonces`. It never advances on-chain state. `agentNonce` in the action request body is a distinct value passed to the contract's monotonic counter. The two values MUST NOT be the same variable.
 
 ## Resource authorization
 Every API request performs both:
 1. session authentication;
 2. ownership/resource authorization.
 
-Supabase RLS is the database backstop. The service-role key is server-only and never shipped to the browser. citeturn564420search2
+Supabase RLS is the database backstop. The service-role key is server-only and never shipped to the browser. Every query is scoped to the authenticated owner or mission membership; a UUID alone is never sufficient authorization.
 
 ## Guardian authorization
-A dedicated guardian public key is registered in program configuration. The guardian is a single global keypair shared across missions, held server-side by the Succra runtime. It is not per-mission. Rotation is performed via the program upgrade authority. A decentralized guardian set (multisig or keeper network) is explicitly out of MVP scope and noted as a future direction. The guardian can only perform:
-- quarantine;
-- activate one of the pre-approved successors;
-- commit approved recovery state.
+`GuardianRegistry` stores a single global guardian address. The guardian key is held server-side by the Succra runtime. The registry owner can rotate the guardian; rotation emits `GuardianRotated`. A decentralized guardian set (multisig or keeper network) is explicitly out of MVP scope.
 
-Guardian cannot:
-- withdraw;
-- change owner;
-- add recipients;
-- change max budget;
-- add successor outside pre-approved list.
+The guardian can only:
+- quarantine;
+- report a policy violation for the on-chain counter;
+- activate one of the pre-approved successors;
+- acknowledge recovery;
+- commit an approved checkpoint hash.
+
+The guardian cannot:
+- withdraw or move funds;
+- change the owner;
+- change policy or add merchants;
+- change the budget;
+- add a successor outside the pre-approved list;
+- bypass the recovery ceiling.
 
 ## Owner authority
 Owner can:
-- create mission;
-- update future policy subject to program rules;
-- add successors;
-- cancel/close;
-- reclaim assets after allowed terminal states.
+- create the mission;
+- update future policy subject to contract rules and state version;
+- add successors before activation;
+- cancel;
+- revoke the HSP Cart Mandate;
+- use the pre-approved successor fallback when the guardian is unavailable.
 
-Owner does not have a hidden API shortcut; owner authority is backed by wallet signatures/on-chain checks.
+Owner does not have a hidden API shortcut; owner authority is backed by wallet signatures and on-chain checks.
 
 ---
 
 # 13. SECURITY ARCHITECTURE
 
 ## Threat model
+
 Assume:
 - primary agent can become malicious;
 - primary agent key can be compromised;
@@ -625,74 +963,180 @@ Assume:
 - attacker can replay signed requests;
 - attacker can modify API inputs;
 - webhook deliveries can duplicate or arrive out of order;
-- user can be phished into signing malicious data;
+- user can be phished into signing malicious typed data;
 - LLM output can be manipulated;
-- clients can attempt cross-user resource access.
+- clients can attempt cross-user resource access;
+- HSP or HashKey RPC can be unavailable or return inconsistent results.
 
 ## Security controls
+
 ### Authority isolation
-Agents never hold the mission vault private key. Mission assets are controlled by the program.
+Agents never hold owner funds. Funds remain in the owner's wallet constrained by the HSP Cart Mandate. `SuccraMission` controls mission authority, not custody.
 
 ### Least privilege
-Successors start with lower recovery limits. Allowed recipients and action types are explicit.
+Successors start with lower recovery limits. Merchant and token allowlists are explicit. Guardian powers are limited to quarantine, activation, acknowledgement, and checkpoint commitment.
 
 ### Replay protection
-Signed requests include timestamp + nonce + unique idempotency key.
+Signed requests include timestamp + single-use nonce + unique idempotency key. EIP-712 typed data binds the mission, request ID, method, and body hash.
+
+### Mandate binding
+The signed HSP Payment Mandate hash must equal the preflighted mandate hash, and the signed mandate fields must match the authorization fields. A mismatch is rejected before on-chain authorization or HSP submission.
 
 ### On-chain enforcement
-The backend cannot override program policy.
+The backend cannot override `SuccraMission` policy. `authorizePayment` checks status, current agent, per-payment ceiling, merchant/token allowlist, expiry, recovery ceiling, state version, and the agent's EIP-712 signature before the runtime may submit to HSP.
+
+### HSP enforcement
+HSP enforces the Cart Mandate envelope at settlement. A payment outside the envelope is rejected even if the Succra mirror is stale.
 
 ### IDOR protection
-Every resource lookup is ownership-scoped; never load a resource solely by UUID before authorization. Database RLS reinforces this. Supabase recommends RLS on exposed tables and tests for allow/deny behavior. citeturn564420search2
+Every resource lookup is ownership-scoped; never load a resource solely by UUID before authorization. Database RLS reinforces this.
 
 ### Injection
 - parameterized SQL via Supabase SDK;
 - validated JSON schemas;
-- no shell execution from agent input.
+- no shell execution from agent input;
+- no agent-supplied calldata is executed directly.
 
 ### XSS
 Use React escaping; do not render agent-supplied HTML; sanitize any future markdown/HTML rendering.
 
 ### CSRF
-Mutating browser operations require authenticated session plus wallet-signature confirmation where financial authority changes.
+Mutating browser operations require an authenticated session plus wallet-signature confirmation where financial authority changes.
 
 ### SSRF
 Agent endpoint URLs are not fetched arbitrarily by the browser. Server-side endpoint fetching must use HTTPS, restrict private-network destinations, enforce timeouts, and cap redirects.
 
 ### Webhooks
-Helius webhook signatures/secret headers must be verified; duplicates are expected and processed idempotently. Helius documents that webhook delivery can retry and duplicate events can occur. citeturn663417search3turn663417search4
+HSP webhook HMAC-SHA256 signatures must be verified before any state change. Duplicates are expected and processed idempotently by event ID. A webhook alone never confirms settlement; HashKey state is checked.
 
 ### Prompt injection
 AI successor recommendation receives structured mission metadata only. It MUST NOT receive arbitrary agent-originated instructions as trusted system instructions.
 
 ### AI authority boundary
-LLM can recommend or explain; only deterministic policy and on-chain program can authorize money movement.
+LLM can recommend or explain; only deterministic policy, `SuccraMission`, and HSP can authorize or settle money movement.
 
 ### Secrets
 Store:
 - Supabase service key;
-- Helius API key;
-- guardian key;
+- HSP API secret, HMAC secret, and webhook secret;
+- guardian private key;
 - OpenAI key
 only in server/runtime secret stores. Never in browser variables unless explicitly public.
 
 ### Race conditions
-On-chain state transitions and DB row locks/compare-and-set prevent duplicate succession and inconsistent status.
+Contract `state_version`, database row locks/compare-and-set, unique mandate hashes, and single-use nonces prevent duplicate succession, duplicate payments, and inconsistent status.
 
 ### Financial abuse
 Hard caps:
-- per-action limit;
-- total mission budget;
-- allowed recipients;
-- allowed mints;
+- per-payment limit;
+- total Cart Mandate budget;
+- merchant allowlist;
+- token allowlist;
 - expiry;
-- recovery cap.
+- recovery cap;
+- no direct ERC-20 path.
 
 ### Admin abuse
-No admin funds access.
+No admin funds access. No operator can withdraw, change the owner, or bypass policy.
 
 ### Emergency stop
-Owner can cancel/close the mission through the on-chain program when allowed.
+Owner can cancel directly through the contract when allowed. The guardian can quarantine. Neither can move funds.
+
+---
+
+# 14. UI/UX ARCHITECTURE
+
+## Screen 1 — Landing `/`
+Purpose: explain Succra in <30 seconds.
+Components:
+- headline: `Agents can fail. Missions continue.`
+- animated continuity lifecycle;
+- concise proof points;
+- Connect Wallet CTA;
+- demo mission link.
+
+## Screen 2 — Dashboard `/dashboard`
+Shows:
+- active missions;
+- current agent status;
+- mission health;
+- remaining budget envelope;
+- latest HSP settlement;
+- succession state.
+
+Empty state: `Create your first mission`.
+
+## Screen 3 — New Mission `/missions/new`
+Wizard:
+1. Mission
+2. Authority
+3. Primary agent
+4. Successors
+5. Review + sign (mission create and HSP Cart Mandate)
+
+No advanced protocol jargon unless expanded.
+
+## Screen 4 — Mission detail `/missions/:id`
+Primary hero:
+- mission status;
+- current agent;
+- remaining budget;
+- per-payment authority limit;
+- next checkpoint.
+
+Centerpiece: **Mission Timeline**
+```text
+✓ Mission created
+✓ Alpha authorized
+✓ HSP payment settled
+⚠ Policy violation
+⚠ Policy violation
+🔒 Alpha quarantined
+↪ Beta selected
+✓ Beta authorized
+✓ Mission continued
+```
+
+## Screen 5 — Agent page `/agents/:id`
+- identity (EVM address);
+- capabilities;
+- health;
+- last heartbeat;
+- missions;
+- current role.
+
+## Screen 6 — Succession event `/missions/:id/succession`
+Shows:
+- why succession occurred;
+- last verified checkpoint;
+- candidates;
+- selected successor;
+- recovery authority;
+- acknowledgement status.
+
+## Screen 7 — Audit `/missions/:id/audit`
+Two-column layout:
+- event timeline;
+- selected decision receipt.
+
+Every receipt has `View on Blockscout` when a HashKey transaction hash exists, plus the HSP payment mandate ID.
+
+## Screen 8 — Settings `/settings`
+- connected wallet;
+- network (HashKey mainnet/testnet);
+- notification preferences;
+- developer integration details.
+
+## Loading/empty/error states
+Every screen must have explicit:
+- skeleton;
+- empty state;
+- inline error;
+- retry action;
+- optimistic states only for non-authoritative UI.
+
+## Responsive behavior
+Desktop-first dashboard, but all core actions work on mobile width. Tables become stacked cards. Timeline remains readable without horizontal scroll.
 
 ---
 
@@ -719,9 +1163,9 @@ Use a near-black/graphite base, high-contrast text, cool neutral surfaces, and r
 
 ## Typography
 Use a clean modern sans for UI; optional compact monospace for:
-- transaction signatures;
-- hashes;
-- agent keys;
+- transaction hashes;
+- mandate hashes;
+- agent addresses;
 - numeric limits.
 
 ## Components
@@ -741,7 +1185,7 @@ Use a clean modern sans for UI; optional compact monospace for:
 - ConfirmDialog
 
 ## Interaction rules
-- financial actions always show amount, recipient, token, and authority impact before signing;
+- financial actions always show amount, merchant, token, and authority impact before signing;
 - destructive actions require explicit confirmation;
 - never hide mission status transitions;
 - use animation only to communicate state transitions.
@@ -760,29 +1204,29 @@ Use a clean modern sans for UI; optional compact monospace for:
 ## Supabase
 Purpose: auth + Postgres + RLS.
 Credentials: public URL/key in browser where permitted; service role server-only.
-Failure: UI degrades to retry state; on-chain funds remain safe.
+Failure: UI degrades to retry state; on-chain authority and funds remain safe.
 
-## Helius
-Purpose: RPC + webhook event monitoring.
-Credential: `HELIUS_API_KEY` server-only.
-Webhook secret: `HELIUS_WEBHOOK_SECRET`.
-Failure: fall back to direct RPC polling for critical state; do not block on-chain action validity.
+## HSP
+Purpose: payment execution and settlement. HSP accepts owner-signed Cart Mandates and agent-signed Payment Mandates, authenticates Succra with HMAC-SHA256 request signing and ES256K JWT, and sends signed settlement webhooks.
+Credentials: `HSP_API_BASE_URL`, `HSP_MERCHANT_ID`, `HSP_API_SECRET`, `HSP_HMAC_SECRET`, `HSP_WEBHOOK_SECRET`; all server-only.
+Failure: retry with backoff, fall back to HashKey RPC polling for settlement status, and never confirm a payment without an authoritative chain result. HSP webhook duplicate delivery is expected; use event/payment IDs for idempotency.
 
-Helius webhooks can notify on transaction/account activity and may retry duplicate deliveries; the runtime must use event IDs/signatures for idempotent processing. citeturn663417search1turn663417search3
+## HashKey Chain RPC
+Purpose: contract reads/writes and settlement confirmation.
+Networks: mainnet chain ID 177 (`https://mainnet.hsk.xyz`); testnet chain ID 133.
+Failure: retry with backoff; do not treat an RPC timeout as a successful settlement.
 
-Phase 4 uses direct RPC polling for transaction confirmation via SUCCRA_RPC_URL. Helius webhook integration is deferred to Phase 9. Do not add both mechanisms.
+## Blockscout
+Purpose: public contract and transaction verification.
+Failure: UI shows the transaction hash even when the explorer link is temporarily unavailable.
 
-## Solana Wallet Standard
-Purpose: wallet connection/signing.
-MVP target: Phantom, Solflare, Backpack or any Wallet Standard wallet supported by the client stack. Solana's current React guidance uses Wallet Standard discovery. citeturn832169search1turn832169search7
+## EVM wallets
+Purpose: wallet connection and EIP-712 signing.
+MVP target: MetaMask, OKX, TokenPocket, ImToken, and other wagmi/viem-compatible wallets through WalletConnect.
 
 ## OpenAI
 Purpose: optional successor recommendation/explanation.
 Failure: succession still works using deterministic eligibility rules.
-
-## A2A
-MVP: compatibility-ready, not required for first integration.
-The current A2A model defines Agent Cards, tasks and explicit authorization, which can later be used for Succra agent discovery and task continuation. citeturn321459search4turn321459search6
 
 ---
 
@@ -841,34 +1285,79 @@ The agent receives a verified checkpoint, policy, and explicit instruction to re
 
 # 18. PAYMENT / FINANCIAL ARCHITECTURE
 
-Succra MVP uses **on-chain mission assets**, not Stripe or custodial balances.
+Succra uses a **non-custodial authority model (Model B)**. Funds remain in the owner's wallet. Succra never holds, receives, or transfers mission funds.
 
 ## Supported value types
-- native SOL;
-- one selected SPL token mint per mission.
+- native HSK;
+- one allowlisted ERC-20 settlement token per mission.
 
-## Vault model
-The mission vault is controlled by the Succra program PDA, not the agent.
+## Custody model
+The owner retains custody at all times. The HSP Cart Mandate constrains the mission budget envelope; `SuccraMission` constrains which agent may request a payment and what policy applies.
 
-## Deposits
-Owner transfers funds into mission vault.
+## HSP Cart Mandate
+The owner signs an HSP Multi-Pay Cart Mandate authorizing:
+- total budget;
+- per-payment limit;
+- merchant allowlist;
+- token address;
+- expiry;
+- mission reference.
+
+Succra stores the Cart Mandate ID/hash and uses it as the budget envelope. HSP is authoritative for whether a settlement fits the mandate.
+
+## HSP Payment Mandate
+For each payment, the Payment Agent constructs an HSP Payment Mandate inside the Cart Mandate envelope. Succra preflights the mandate against `SuccraMission` policy and the mission mirror, returns it unsigned with EIP-712 typed data, the agent signs it, and Succra submits it to the HSP Gateway.
 
 ## Execution
-Current agent invokes Succra program with action details; program checks state/policy and performs transfer through Solana programs.
+1. Agent requests a payment.
+2. Succra preflights policy and the Cart Mandate envelope.
+3. Succra returns the unsigned Payment Mandate and EIP-712 typed data.
+4. Agent signs the mandate.
+5. Succra verifies the signature, the mandate hash, and that the mandate fields match the authorization fields.
+6. Succra calls `SuccraMission.authorizePayment` and waits for confirmation.
+7. Succra submits to HSP Gateway.
+8. HSP executes settlement on HashKey Chain.
+9. Succra verifies the webhook or polls the chain.
+10. Succra mirrors the confirmed settlement and writes a checkpoint.
+
+## On-chain enforcement boundary
+`SuccraMission` enforces:
+- mission status and current agent;
+- `HSP_PAYMENT` action type;
+- per-payment ceiling (`maxPayment` or `recoveryMaxPayment`);
+- mirrored cumulative spend against `budgetAtomic`;
+- merchant and token allowlists;
+- expiry;
+- recovery ceiling;
+- payment nonce and state version;
+- guardian-only transitions.
+
+The runtime may submit to HSP only after `authorizePayment` confirms. The contract verifies the agent's EIP-712 signature, records the authorization, and advances `agentNonce`; it does not move funds.
+
+HSP enforces:
+- Cart Mandate total budget;
+- Cart Mandate per-payment limit;
+- Cart Mandate merchant/token allowlist;
+- Cart Mandate expiry;
+- settlement execution.
+
+The contract's `confirmedSpentAtomic` is a mirror used for checkpoints and race detection. It never authorizes a transfer. If the mirror and HSP disagree, HSP/HashKey settlement is authoritative and the discrepancy is an incident.
+
+## Residual trust boundary
+
+HSP does not verify `SuccraMission` state in MVP. A compromised runtime could submit a signed Payment Mandate directly to HSP inside the Cart Mandate envelope. The Cart Mandate still caps total budget, merchants, token, and expiry; the audit trail and reconciliation alerts detect anomalies. Moving the authorization check into HSP, or requiring an HSP-verified Succra authorization proof, is a future hardening item and is not claimed for MVP.
 
 ## Remaining budget
-The program tracks remaining budget and rejects actions that would exceed it.
+The Cart Mandate is authoritative for the aggregate budget envelope. The runtime reconciles confirmed HSP settlements against the mirror and updates `remaining_budget_atomic`. A stale mirror can block a valid payment conservatively; it must never permit an invalid one.
 
 ## Recovery limit
-Successor receives a smaller `recovery_max_action`.
-
-Phase 6 resolution (spec amendment): the recovery limit is enforced on-chain, in the program, selected by mission state — per-action ceiling `max_action` when `Active`, ceiling `recovery_max_action` when `ActiveRecovery`. Off-chain-only enforcement is forbidden by §13 (on-chain enforcement) and AGENTS.md invariant #4.
+Successor receives a smaller `recovery_max_payment`, enforced on-chain by mission state.
 
 ## Refund/cancel
-Owner can cancel/close according to terminal-state rules and reclaim remaining assets.
+Owner can cancel and revoke the Cart Mandate according to terminal-state rules. Funds remain in the owner's wallet; there is no vault refund.
 
 ## Reconciliation
-On-chain state is authoritative. Supabase is a mirror/index, never the financial source of truth.
+HashKey settlement and HSP mandate state are authoritative. Supabase is a mirror/index, never the financial source of truth.
 
 ## Fees
 No Succra protocol fee in MVP. Future fee model may be introduced after the continuity primitive is validated.
@@ -885,17 +1374,18 @@ No general admin dashboard in MVP.
 Internal operational controls:
 - runtime health endpoint;
 - guardian signer health;
-- Solana program ID/network;
-- Helius webhook health;
+- `SuccraMission`/`MissionFactory`/`GuardianRegistry` addresses and HashKey network;
+- HSP webhook health;
 - failed job counter;
-- recent succession events.
+- recent succession events;
+- contract/HSP mirror reconciliation alerts.
 
 No operator can directly withdraw mission funds.
 
 Emergency operational action is limited to:
 - disable automatic succession globally for new missions;
 - pause runtime processing;
-- revoke the guardian key through on-chain owner-controlled update once designed.
+- rotate the guardian through `GuardianRegistry`'s owner-controlled update.
 
 ---
 
@@ -905,29 +1395,33 @@ Emergency operational action is limited to:
 |---|---|
 | Invalid user wallet signature | 401, no session |
 | Expired login nonce | 401 |
-| Unknown agent key | 403 |
+| Unknown agent address | 403 |
 | Replayed action nonce | 409 |
 | Duplicate idempotency key | Return original result |
 | Wrong mission | 403/404 without leaking existence |
 | Wrong current agent | 403 |
-| Recipient not allowed | BLOCKED |
+| Merchant not allowed | BLOCKED |
 | Amount too large | BLOCKED |
-| Budget insufficient | BLOCKED |
+| Budget envelope exhausted | BLOCKED |
 | Mission quarantined | BLOCKED |
-| Chain transaction fails | action FAILED, no false success |
-| Helius webhook duplicated | ignored after idempotency check |
-| Helius unavailable | fallback to polling |
+| HSP submission fails | action FAILED, no false success |
+| HashKey settlement reverts | action FAILED, no false success |
+| HSP webhook duplicated | ignored after idempotency check |
+| HSP webhook signature invalid | rejected, no state change |
+| HSP unavailable | fallback to HashKey RPC polling; no confirmation without chain |
+| Mandate hash mismatch | rejected before HSP submission |
+| Direct ERC-20 bypass attempt | rejected; payments only via HSP |
 | Succession triggered twice | only one succeeds |
 | No eligible successor | HALTED + owner notification |
 | Successor unavailable during activation | succession remains pending/failed safely |
 | Agent endpoint unreachable | no authority expansion; may trigger liveness rule if enabled |
-| DB unavailable while chain action exists | reconcile from chain later |
-| Runtime crashes after submit | transaction reconciliation recovers status |
+| DB unavailable while chain/HSP action exists | reconcile from chain/HSP later |
+| Runtime crashes after submit | settlement reconciliation recovers status |
 | AI unavailable | deterministic successor selection |
 | AI recommends ineligible agent | ignored |
 | User changes wallet account | session re-authentication required |
-| Mission expiry during request | chain state decides; expired request rejected |
-| Two actions spend remaining budget | program atomically allows only valid one(s) |
+| Mission expiry during request | contract state decides; expired request rejected |
+| Two payments spend remaining budget | HSP Cart Mandate allows only the valid payment(s); the contract mirrors confirmed spend |
 
 ---
 
@@ -939,45 +1433,49 @@ Must cover:
 - violation streak;
 - successor eligibility;
 - checkpoint hashing;
-- canonical request signing/verification;
+- EIP-712 canonical signing/verification;
 - state transition guards;
-- authority limit calculation.
+- authority limit calculation;
+- mandate hash binding.
 
-## Solana program tests
+## Solidity contract tests
 Must cover:
 - create mission;
-- fund vault;
-- authorized transfer;
-- blocked transfer;
-- budget exhaustion;
+- activate Cart Mandate policy;
+- authorized HSP payment;
+- blocked HSP payment;
+- budget envelope exhaustion;
 - quarantine;
 - successor activation;
-- restricted successor transfer;
-- cancel/refund;
+- restricted successor payment;
+- cancel;
 - stale state/version rejection;
 - unauthorized guardian attempt;
-- unauthorized agent attempt.
+- unauthorized agent attempt;
+- direct ERC-20 bypass rejection;
+- mandate hash mismatch.
 
-Anchor's current 0.32.1 toolchain supports standard program workflows; tests must be run before moving checkpoints. citeturn663417search2
+Solidity contract tests must run before moving checkpoints.
 
 ## Integration tests
 - Supabase auth + RLS;
 - agent registration;
-- signed action submission;
-- blockchain confirmation mirror;
-- webhook idempotency.
+- EIP-712 payment submission;
+- HSP mock flow;
+- settlement confirmation mirror;
+- webhook idempotency and signature verification.
 
 ## E2E tests
 Required golden path:
 ```text
 Create mission
-→ fund
+→ sign HSP Cart Mandate
 → register Alpha
-→ execute valid action
+→ execute valid HSP payment
 → 3 blocked actions
 → quarantine
 → activate Beta
-→ Beta executes valid recovery action
+→ Beta executes valid recovery payment
 → audit receipt shows full chain
 ```
 
@@ -987,10 +1485,12 @@ Create mission
 - duplicate succession;
 - malformed payloads;
 - owner/agent role confusion;
-- unauthorized recipient;
+- unauthorized merchant;
 - policy race;
-- chain rejection spoofing;
-- webhook replay;
+- HSP/chain rejection spoofing;
+- mandate hash mismatch;
+- direct ERC-20 bypass;
+- webhook replay and signature forgery;
 - prompt injection into successor recommender.
 
 ## Acceptance definition
@@ -1001,7 +1501,7 @@ A feature is complete only when:
 4. evidence is recorded;
 5. checkpoint commit created.
 
-This follows the workflow rule that implementation must be followed by test, inspection, fixes, and commit rather than trusting an agent's claim that something works. fileciteturn0file0L305-L369
+A checkpoint is not complete until tests pass and changed files are inspected.
 
 ---
 
@@ -1017,6 +1517,13 @@ succra/
 ├── SUCCRA_BLUEPRINT.md
 ├── pnpm-workspace.yaml
 ├── package.json
+├── contracts/
+│   ├── src/
+│   │   ├── SuccraMission.sol
+│   │   ├── MissionFactory.sol
+│   │   └── GuardianRegistry.sol
+│   ├── test/
+│   └── hardhat.config.ts
 ├── apps/
 │   ├── web/
 │   │   ├── app/
@@ -1030,18 +1537,13 @@ succra/
 │       │   ├── agents/
 │       │   ├── succession/
 │       │   ├── checkpoints/
-│       │   ├── chain/
+│       │   ├── hsp/
 │       │   └── monitor/
 │       └── tests/
 ├── packages/
 │   ├── sdk/
 │   ├── shared/
-│   └── program-client/
-├── programs/
-│   └── succra/
-│       ├── src/
-│       ├── tests/
-│       └── Cargo.toml
+│   └── hsp-client/
 ├── supabase/
 │   ├── migrations/
 │   └── seed/
@@ -1055,7 +1557,7 @@ succra/
     └── runbooks/
 ```
 
-Directory rule: product UI stays in `apps/web`; persistent orchestration in `apps/runtime`; blockchain authority in `programs/succra`; shared contracts/types in packages.
+Directory rule: product UI stays in `apps/web`; persistent orchestration in `apps/runtime`; on-chain authority in `contracts/`; HSP integration and shared contracts/types in `packages/`.
 
 ---
 
@@ -1064,15 +1566,18 @@ Directory rule: product UI stays in `apps/web`; persistent orchestration in `app
 ## Web/server
 ```text
 NEXT_PUBLIC_APP_URL=
-NEXT_PUBLIC_SOLANA_CLUSTER=devnet
+NEXT_PUBLIC_HASHKEY_CHAIN_ID=177
+NEXT_PUBLIC_HASHKEY_RPC_URL=https://mainnet.hsk.xyz
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-HELIUS_API_KEY=
-HELIUS_WEBHOOK_SECRET=
-SUCCRA_PROGRAM_ID=
-SUCCRA_GUARDIAN_PUBLIC_KEY=
-SUCCRA_GUARDIAN_SECRET_KEY=
+SUCCRA_MISSION_FACTORY_ADDRESS=
+SUCCRA_GUARDIAN_ADDRESS=
+HSP_API_BASE_URL=
+HSP_MERCHANT_ID=
+HSP_API_SECRET=
+HSP_HMAC_SECRET=
+HSP_WEBHOOK_SECRET=
 OPENAI_API_KEY=
 OPENAI_MODEL=
 ```
@@ -1081,12 +1586,15 @@ OPENAI_MODEL=
 ```text
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-HELIUS_API_KEY=
-HELIUS_WEBHOOK_SECRET=
-SUCCRA_PROGRAM_ID=
 SUCCRA_RPC_URL=
+SUCCRA_MISSION_FACTORY_ADDRESS=
+SUCCRA_GUARDIAN_ADDRESS=
 SUCCRA_GUARDIAN_SECRET_KEY=
-SUCCRA_GATEWAY_FEE_PAYER_SECRET_KEY=
+HSP_API_BASE_URL=
+HSP_MERCHANT_ID=
+HSP_API_SECRET=
+HSP_HMAC_SECRET=
+HSP_WEBHOOK_SECRET=
 OPENAI_API_KEY=
 OPENAI_MODEL=
 ```
@@ -1095,8 +1603,8 @@ Rules:
 - `NEXT_PUBLIC_*` must never contain secrets;
 - guardian secret is runtime-only;
 - Supabase service role is server-only;
+- HSP API, HMAC, and webhook secrets are server-only;
 - agent private keys live with agents and never in Succra;
 - `.env*` excluded from git except `.env.example`.
 
 ---
-
