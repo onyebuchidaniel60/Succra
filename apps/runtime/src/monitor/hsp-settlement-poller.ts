@@ -30,6 +30,7 @@ export interface SettlementPollerDeps {
     status: HspPaymentStatus;
     nowIso: string;
   }): Promise<void>;
+  postSettlement?(missionId: string): Promise<void>;
   now?: () => number;
   intervalMs?: number;
   ageMs?: number;
@@ -72,6 +73,13 @@ export async function pollHspSettlements(deps: SettlementPollerDeps): Promise<Po
           status,
           nowIso: new Date(nowMs).toISOString(),
         });
+        if (deps.postSettlement) {
+          try {
+            await deps.postSettlement(payment.mission_id);
+          } catch {
+            // Settlement remains authoritative; reconciliation can retry.
+          }
+        }
         result.confirmed += 1;
       } catch {
         // Leave the row SUBMITTED; the next interval retries.

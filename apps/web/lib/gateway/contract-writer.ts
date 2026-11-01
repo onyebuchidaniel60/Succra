@@ -68,6 +68,37 @@ export const SUCCRA_MISSION_WRITE_ABI = [
     inputs: [{ name: 'expectedVersion', type: 'uint64' }],
     outputs: [],
   },
+  {
+    type: 'function',
+    name: 'commitCheckpoint',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'sequence', type: 'uint64' },
+      { name: 'checkpointHash', type: 'bytes32' },
+      { name: 'expectedVersion', type: 'uint64' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'activateSuccessor',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'successor', type: 'address' },
+      { name: 'expectedVersion', type: 'uint64' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'acknowledgeRecovery',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'expectedVersion', type: 'uint64' },
+      { name: 'signature', type: 'bytes' },
+    ],
+    outputs: [],
+  },
 ] as const;
 
 export interface PaymentAuthorizationInput {
@@ -251,6 +282,97 @@ export async function sendQuarantine(args: {
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     if (receipt.status !== 'success') {
       throw new MissionTransactionError('quarantine receipt was not successful.');
+    }
+    return { txHash, blockNumber: receipt.blockNumber };
+  } catch (error) {
+    if (error instanceof MissionTransactionError) throw error;
+    throw missionError(error);
+  }
+}
+
+export async function sendCommitCheckpoint(args: {
+  missionAddress: `0x${string}`;
+  sequence: bigint;
+  checkpointHash: `0x${string}`;
+  expectedVersion: bigint;
+  account?: PrivateKeyAccount;
+  publicClient?: PublicClient;
+}): Promise<MissionWriteResult> {
+  const account = args.account ?? loadGuardianSigner();
+  const wallet = walletFor(account);
+  const publicClient = args.publicClient ?? getPublicClient();
+  try {
+    const txHash = await wallet.writeContract({
+      address: args.missionAddress,
+      abi: SUCCRA_MISSION_WRITE_ABI,
+      functionName: 'commitCheckpoint',
+      args: [args.sequence, args.checkpointHash, args.expectedVersion],
+      account,
+      chain: wallet.chain,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
+      throw new MissionTransactionError('commitCheckpoint receipt was not successful.');
+    }
+    return { txHash, blockNumber: receipt.blockNumber };
+  } catch (error) {
+    if (error instanceof MissionTransactionError) throw error;
+    throw missionError(error);
+  }
+}
+
+export async function sendActivateSuccessor(args: {
+  missionAddress: `0x${string}`;
+  successor: `0x${string}`;
+  expectedVersion: bigint;
+  account?: PrivateKeyAccount;
+  publicClient?: PublicClient;
+}): Promise<MissionWriteResult> {
+  const account = args.account ?? loadGuardianSigner();
+  const wallet = walletFor(account);
+  const publicClient = args.publicClient ?? getPublicClient();
+  try {
+    const txHash = await wallet.writeContract({
+      address: args.missionAddress,
+      abi: SUCCRA_MISSION_WRITE_ABI,
+      functionName: 'activateSuccessor',
+      args: [args.successor, args.expectedVersion],
+      account,
+      chain: wallet.chain,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
+      throw new MissionTransactionError('activateSuccessor receipt was not successful.');
+    }
+    return { txHash, blockNumber: receipt.blockNumber };
+  } catch (error) {
+    if (error instanceof MissionTransactionError) throw error;
+    throw missionError(error);
+  }
+}
+
+export async function sendAcknowledgeRecovery(args: {
+  missionAddress: `0x${string}`;
+  expectedVersion: bigint;
+  signature: `0x${string}`;
+  account?: PrivateKeyAccount;
+  publicClient?: PublicClient;
+}): Promise<MissionWriteResult> {
+  const account = args.account ?? loadGuardianSigner();
+  const wallet = walletFor(account);
+  const publicClient = args.publicClient ?? getPublicClient();
+  try {
+    const txHash = await wallet.writeContract({
+      address: args.missionAddress,
+      abi: SUCCRA_MISSION_WRITE_ABI,
+      functionName: 'acknowledgeRecovery',
+      args: [args.expectedVersion, args.signature],
+      account,
+      chain: wallet.chain,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
+      throw new MissionTransactionError('acknowledgeRecovery receipt was not successful.');
     }
     return { txHash, blockNumber: receipt.blockNumber };
   } catch (error) {

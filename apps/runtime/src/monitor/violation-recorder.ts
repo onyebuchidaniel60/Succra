@@ -19,6 +19,10 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import {
+  createProductionSuccessionEngineDeps,
+  runSuccessionEngine,
+} from '../succession/succession-engine.js';
 
 export const COUNTABLE_VIOLATION_REASON_CODES = [
   'INVALID_ACTION_TYPE',
@@ -88,8 +92,10 @@ export interface ViolationRecorderDeps {
   markAttemptFailed(actionRequestId: string, attempts: number, poisoned: boolean): Promise<void>;
   insertAuditEvent(row: RecorderAuditEvent): Promise<void>;
   getRecentAuditEvents(missionId: string, limit: number): Promise<Array<{ event_type: string }>>;
+  getAgentAddress(agentId: string): Promise<string | null>;
   updateMissionStatusToQuarantined(missionId: string): Promise<void>;
   updateCurrentAgentStatusToQuarantined(missionId: string): Promise<void>;
+  triggerSuccession?(missionId: string): Promise<void>;
   now?: () => number;
   intervalMs?: number;
   maxAttempts?: number;
@@ -147,6 +153,11 @@ async function quarantineCrossedMission(args: {
   if (state.status === 'QUARANTINED') {
     await deps.updateMissionStatusToQuarantined(mission.id);
     await deps.updateCurrentAgentStatusToQuarantined(mission.id);
+    try {
+      await deps.triggerSuccession?.(mission.id);
+    } catch {
+      // Quarantine is authoritative; succession can retry independently.
+    }
     return { quarantined: true, txHash: null };
   }
 
@@ -213,6 +224,11 @@ async function quarantineCrossedMission(args: {
   }
   await deps.updateMissionStatusToQuarantined(mission.id);
   await deps.updateCurrentAgentStatusToQuarantined(mission.id);
+  try {
+    await deps.triggerSuccession?.(mission.id);
+  } catch {
+    // Quarantine is authoritative; succession can retry independently.
+  }
   return { quarantined: true, txHash };
 }
 
@@ -288,6 +304,28 @@ export async function runViolationRecorder(
       result.failed += 1;
       continue;
     }
+
+    await deps.insertAuditEvent({
+      mission_id: mission.id,
+      event_type: 'violation.recorded',
+      actor_type: 'runtime',
+      actor_id: null,
+      event_hash: eventHash([
+        mission.id,
+        'violation.recorded',
+        row.request_id,
+        latest.violationCount,
+      ]),
+      payload_public: {
+        requestId: row.request_id,
+        reasonCode: row.decision_reason_code,
+        agentAddress: (await deps.getAgentAddress(row.agent_id)) ?? '',
+        onchainViolationCount: latest.violationCount,
+        threshold: latest.violationThreshold,
+        txHash,
+      },
+      onchain_tx_hash: txHash,
+    });
 
     if (latest.violationCount >= latest.violationThreshold) {
       const quarantine = await quarantineCrossedMission({
@@ -368,6 +406,7 @@ const MISSION_ABI = [
       { name: 'confirmedSpentAtomic', type: 'uint256' },
       { name: 'lastCheckpointHash', type: 'bytes32' },
       { name: 'lastCheckpointSequence', type: 'uint64' },
+      { name: 'checkpointCount', type: 'uint64' },
     ],
   },
   {
@@ -577,6 +616,16 @@ export function createProductionViolationRecorderDeps(): ViolationRecorderDeps {
       return (data as Array<{ event_type: string }> | null) ?? [];
     },
 
+    async getAgentAddress(agentId) {
+      const { data, error } = await db
+        .from('agents')
+        .select('address')
+        .eq('id', agentId)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as { address?: string } | null)?.address ?? null;
+    },
+
     async updateMissionStatusToQuarantined(missionId) {
       const { error } = await db
         .from('missions')
@@ -601,6 +650,12 @@ export function createProductionViolationRecorderDeps(): ViolationRecorderDeps {
       query = currentAgentId ? query.eq('agent_id', currentAgentId) : query.eq('role', 'PRIMARY');
       const result = await query;
       if (result.error) throw result.error;
+    },
+
+    async triggerSuccession(missionId) {
+      await runSuccessionEngine(createProductionSuccessionEngineDeps(), missionId, {
+        triggerType: 'quarantine',
+      });
     },
 
     intervalMs: Number(process.env.VIOLATION_RECORDER_INTERVAL_MS ?? DEFAULT_INTERVAL_MS),

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-error';
 import { handleHspWebhook } from '@/lib/gateway/hsp-webhook';
 import { createWebhookChain, createWebhookPersistence } from '@/lib/gateway/hsp-webhook-production';
+import { postSettlementHook } from '@/lib/gateway/post-settlement';
 import { admin } from '@/lib/supabase';
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -27,6 +28,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       secret,
       persistence: createWebhookPersistence(admin()),
       chain: createWebhookChain(),
+      postSettlement: (missionId) => postSettlementHook(missionId).then(() => undefined),
     });
     return NextResponse.json(result.json, { status: result.status });
   } catch {

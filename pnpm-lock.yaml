@@ -181,12 +181,15 @@ importers:
       '@succra/hsp-client':
         specifier: workspace:*
         version: link:../../packages/hsp-client
+      '@succra/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@supabase/supabase-js':
         specifier: ^2.116.0
         version: 2.116.0
       viem:
         specifier: ^2.57.13
-        version: 2.57.13
+        version: 2.57.13(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
     devDependencies:
       typescript:
         specifier: ^5.9.0
@@ -339,6 +342,9 @@ importers:
       tweetnacl:
         specifier: ^1.0.3
         version: 1.0.3
+      viem:
+        specifier: ^2.57.13
+        version: 2.57.13(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
     devDependencies:
       typescript:
         specifier: ^5.9.0

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@succra/hsp-client": "workspace:*",
+    "@succra/shared": "workspace:*",
     "@supabase/supabase-js": "^2.116.0",
     "viem": "^2.57.13"
   },

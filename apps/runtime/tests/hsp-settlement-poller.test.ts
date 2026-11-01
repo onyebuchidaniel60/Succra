@@ -54,6 +54,13 @@ describe('HSP settlement poller', () => {
     );
   });
 
+  it('runs the shared post-settlement checkpoint hook after confirmation', async () => {
+    const postSettlement = vi.fn(async () => undefined);
+    const d = deps({ postSettlement });
+    await pollHspSettlements(d);
+    expect(postSettlement).toHaveBeenCalledWith(payment.mission_id);
+  });
+
   it('marks a failed settlement failed without recording it', async () => {
     const d = deps({
       getStatus: vi.fn(async () => ({

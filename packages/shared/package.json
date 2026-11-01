@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "viem": "^2.57.13"
   },
   "devDependencies": {
     "typescript": "^5.9.0"

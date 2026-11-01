@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 5 — Violations, quarantine, audit: complete on branch `phase-5-quarantine` (pending review/merge). Phase 4 is complete and merged to `main` @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Phase 6 — Checkpoints and succession: complete on branch `phase-6-succession-evm` (pending review/merge). Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
@@ -58,7 +58,7 @@ Phase 4 delivery (merged @ `1a93662`):
 
 Phase 4 checkpoint: merged @ `1a93662`.
 
-Phase 5 delivery on this branch (complete, pending review/merge):
+Phase 5 delivery (merged @ `3865500`):
 - `SuccraMission.recordViolation` is guardian-only, idempotent by request id, window-aware, and guarded by `stateVersion`; `quarantine` accepts owner or guardian with no threshold requirement for manual freezes;
 - `recordSettlement` resets `violationCount` and `lastViolationAt` after a confirmed settlement;
 - migration `20261104000000_phase5_audit_events.sql` adds `audit_events.onchain_tx_hash`, removes owner audit writes (owner SELECT only), adds action-request recorder bookkeeping, and enforces the `agents.status` CHECK set;
@@ -68,9 +68,21 @@ Phase 5 delivery on this branch (complete, pending review/merge):
 - Phase 4 review notes folded in: `agents.status` CHECK, on-chain-first quarantine mirroring, and successor heartbeats still accepted while `QUARANTINED`;
 - tests: **304 passing**, 1 skipped live Supabase suite; contracts **71 passing** (20 new Phase 5 contract tests).
 
-Phase 5 checkpoint: branch `phase-5-quarantine` (pending review/merge).
+Phase 5 checkpoint: merged @ `3865500`.
 
-Next assigned task: **Phase 6 — Checkpoints and succession; not yet authorized.**
+Phase 6 delivery on this branch (complete, pending review/merge):
+- `SuccraMission` adds strict checkpoint sequences (0, 1, 2, ... via `checkpointCount`), guardian-only `activateSuccessor`, and `acknowledgeRecovery` with direct-agent or guardian-submitted signed ACK;
+- canonical checkpoint preimage is `keccak256(abi.encode(...))` over the fixed FR-07 field order; the full snapshot lives in `mission_checkpoints`;
+- `succession_events` mirrors activation/ACK state, including nullable pre-confirmation `activation_tx_hash` and one pending activation per mission;
+- the runtime initializes sequence=0 checkpoints, auto-commits the next checkpoint after every CONFIRMED settlement, and runs the priority/capability-based succession engine on quarantine;
+- `POST/GET /api/missions/:id/succession`, `POST /api/missions/:id/succession/:id/acknowledge`, and guardian-only `POST /api/missions/:id/checkpoints` are implemented;
+- Phase 5 review notes folded in: real-Hardhat Phase 6 E2E and `violation.recorded` audit rows (FR-08 permits material Phase 5 events); poisoned-row surfacing remains Phase 9;
+- audit names follow the frozen FR-08 Phase 6 list exactly, and no-eligible-successor is represented as `succession.triggered` with `outcome: no_eligible_successor`;
+- tests: **334 passing**, 1 skipped live Supabase suite; contracts **101 passing** (30 new Phase 6 contract tests).
+
+Phase 6 checkpoint: branch `phase-6-succession-evm` (pending review/merge).
+
+Next assigned task: **Phase 7 — Audit and polished UX; not yet authorized.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
