@@ -1,0 +1,17 @@
+{
+  "name": "@succra/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Succra HashKey Chain contracts workspace (Phase 0 scaffold; no product logic).",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "clean": "hardhat clean"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "hardhat": "^2.29.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.0"
+  }
+}
