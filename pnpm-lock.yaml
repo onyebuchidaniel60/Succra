@@ -181,6 +181,12 @@ importers:
       '@succra/hsp-client':
         specifier: workspace:*
         version: link:../../packages/hsp-client
+      '@supabase/supabase-js':
+        specifier: ^2.116.0
+        version: 2.116.0
+      viem:
+        specifier: ^2.57.13
+        version: 2.57.13
     devDependencies:
       typescript:
         specifier: ^5.9.0

@@ -573,6 +573,21 @@ A blocked request counts toward the streak only when:
 
 Malformed/unauthenticated requests do not increase the agent's policy violation count because they may be network abuse rather than agent behavior.
 
+Countable policy violations (streak increments) are:
+- `INVALID_ACTION_TYPE`
+- `MERCHANT_NOT_ALLOWED`
+- `TOKEN_NOT_ALLOWED`
+- `AMOUNT_EXCEEDS_MAX`
+- `BUDGET_EXHAUSTED`
+
+Non-countable rejections (streak does NOT increment):
+- authentication failures (`AGENT_NOT_CURRENT`, `INVALID_SIGNATURE`)
+- replay protection (`STALE_TIMESTAMP`, `STALE_NONCE`, `DUPLICATE_REQUEST`)
+- environmental (`MISSION_NOT_ACTIVE`, `MISSION_EXPIRED`, `REQUEST_EXPIRED`)
+- any future reason code not explicitly listed above
+
+A violation counts only when it is (a) authenticated, (b) signed by the current agent, (c) rejected by one of the countable policy rules.
+
 ## Duplicate prevention
 - Every action has client-generated `idempotency_key`.
 - `(mission_id, idempotency_key)` unique.

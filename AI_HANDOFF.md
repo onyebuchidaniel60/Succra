@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 4 — Agent registration and liveness: complete on branch `phase-4-agents` (pending review/merge). Phase 3 is complete and merged to `main` @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Phase 5 — Violations, quarantine, audit: complete on branch `phase-5-quarantine` (pending review/merge). Phase 4 is complete and merged to `main` @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
@@ -46,7 +46,7 @@ Phase 3 delivery (merged @ `4bb1641`):
 
 Phase 3 checkpoint: merged @ `4bb1641`.
 
-Phase 4 delivery on this branch (complete, pending review/merge):
+Phase 4 delivery (merged @ `1a93662`):
 - `agents.address` added (backfilled from legacy `public_key`; compatibility trigger retained until Phase 7), with owner-readable/service-role-write status transitions;
 - `mission_agents` role/status/required-capabilities tightened; `agent_challenges` indexed for EVM single-use challenges;
 - `AgentChallenge` EIP-712 typed data with purpose binding and no verifying contract;
@@ -56,9 +56,21 @@ Phase 4 delivery on this branch (complete, pending review/merge):
 - Phase 3 review notes folded in: migration TODO(phase-7), mirror separation comment, HSP_API_SECRET provisional comment, Phase 3 e2e hashPaymentMandate finding;
 - tests: **282 passing**, 1 skipped live Supabase suite; contracts unchanged at 51 passing.
 
-Phase 4 checkpoint: branch `phase-4-agents` (pending review/merge).
+Phase 4 checkpoint: merged @ `1a93662`.
 
-Next assigned task: **Phase 5 — Violations, quarantine, audit; not yet authorized.**
+Phase 5 delivery on this branch (complete, pending review/merge):
+- `SuccraMission.recordViolation` is guardian-only, idempotent by request id, window-aware, and guarded by `stateVersion`; `quarantine` accepts owner or guardian with no threshold requirement for manual freezes;
+- `recordSettlement` resets `violationCount` and `lastViolationAt` after a confirmed settlement;
+- migration `20261104000000_phase5_audit_events.sql` adds `audit_events.onchain_tx_hash`, removes owner audit writes (owner SELECT only), adds action-request recorder bookkeeping, and enforces the `agents.status` CHECK set;
+- preflight writes `violation.counted` only for the PROJECT_SPEC §6 countable reason codes;
+- runtime recorder polls unprocessed counted BLOCKs, submits `recordViolation`, detects the threshold, submits quarantine, mirrors mission/agent status, and poisons a row after three failed attempts;
+- `POST /api/missions/:id/quarantine` supports owner sessions and the `HASHKEY_GUARDIAN_CREDENTIAL` bearer mode; already-quarantined missions return idempotent 200;
+- Phase 4 review notes folded in: `agents.status` CHECK, on-chain-first quarantine mirroring, and successor heartbeats still accepted while `QUARANTINED`;
+- tests: **304 passing**, 1 skipped live Supabase suite; contracts **71 passing** (20 new Phase 5 contract tests).
+
+Phase 5 checkpoint: branch `phase-5-quarantine` (pending review/merge).
+
+Next assigned task: **Phase 6 — Checkpoints and succession; not yet authorized.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.

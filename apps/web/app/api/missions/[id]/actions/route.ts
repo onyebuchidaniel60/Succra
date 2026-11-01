@@ -34,6 +34,11 @@ import {
   listActionRequestKeys,
   type PreflightActionRequestRow,
 } from '@/lib/gateway/store-preflight';
+import {
+  auditEventHash,
+  insertAuditEvent,
+  isCountableViolationReasonCode,
+} from '@/lib/gateway/store-quarantine';
 import { admin } from '@/lib/supabase';
 
 const bodySchema = z.object({
@@ -292,6 +297,34 @@ export async function POST(
         }
         throw error;
       }
+
+      // Phase 5: only the enumerated policy rules count toward the streak.
+      // Auth/replay/environmental BLOCKs stay out of audit_events.
+      if (isCountableViolationReasonCode(policy.reasonCode)) {
+        const windowExpired =
+          onchain.lastViolationAt > 0n &&
+          submittedAt - onchain.lastViolationAt > onchain.violationWindowSeconds;
+        const violationCountAfter = windowExpired ? 1 : onchain.violationCount + 1;
+        await insertAuditEvent(db, {
+          mission_id: id,
+          event_type: 'violation.counted',
+          actor_type: 'agent',
+          actor_id: agent.id,
+          event_hash: auditEventHash([
+            parsed.data.requestId,
+            policy.reasonCode,
+            submittedAt.toString(),
+          ]),
+          payload_public: {
+            requestId: parsed.data.requestId,
+            reasonCode: policy.reasonCode,
+            agentAddress: agent.public_key,
+            violationCountAfter,
+          },
+          onchain_tx_hash: null,
+        });
+      }
+
       return NextResponse.json({
         decision: 'BLOCK',
         requestId: parsed.data.requestId,

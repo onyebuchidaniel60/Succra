@@ -97,3 +97,28 @@ export async function createMission(
 export function signMandate(wallet: ethers.Wallet, mandateHash: string): string {
   return wallet.signingKey.sign(mandateHash).serialized;
 }
+
+/**
+ * Test-only helper: Phase 5 has no public transition to ACTIVE_RECOVERY (that
+ * arrives with Phase 6 succession), so tests write the enum directly into the
+ * AuthorityState storage slot. The slot is discovered by matching the current
+ * agent address plus the ACTIVE status byte, avoiding a hard-coded layout.
+ */
+export async function setAuthorityStatus(mission: Contract, status: number): Promise<void> {
+  const authority = await mission.authority();
+  const address = (authority.currentAgent as string).toLowerCase().slice(2);
+  const missionAddress = await mission.getAddress();
+  for (let slot = 0; slot < 40; slot += 1) {
+    const word = (await ethers.provider.getStorage(missionAddress, slot)).toLowerCase();
+    if (word.endsWith(address) && word.slice(24, 26) === '01') {
+      const next = `${word.slice(0, 24)}${status.toString(16).padStart(2, '0')}${word.slice(26)}`;
+      await ethers.provider.send('hardhat_setStorageAt', [
+        missionAddress,
+        `0x${slot.toString(16)}`,
+        next,
+      ]);
+      return;
+    }
+  }
+  throw new Error('AuthorityState storage slot not found.');
+}

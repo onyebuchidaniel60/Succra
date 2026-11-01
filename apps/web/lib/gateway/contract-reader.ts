@@ -72,6 +72,8 @@ export interface MissionOnChainState {
   status: HspMissionStatus;
   agentNonce: bigint;
   stateVersion: bigint;
+  violationCount: number;
+  lastViolationAt: bigint;
   confirmedSpentAtomic: bigint;
   paymentToken: string;
   budgetAtomic: bigint;
@@ -80,6 +82,8 @@ export interface MissionOnChainState {
   expiresAt: bigint;
   policyHash: string;
   cartMandateHash: string;
+  violationThreshold: number;
+  violationWindowSeconds: bigint;
   allowedMerchants: Set<string>;
 }
 
@@ -140,6 +144,8 @@ export async function readMissionState(
       status,
       agentNonce: authority[2],
       stateVersion: authority[3],
+      violationCount: Number(authority[4]),
+      lastViolationAt: authority[5],
       confirmedSpentAtomic: authority[6],
       paymentToken: config[0],
       budgetAtomic: config[1],
@@ -148,6 +154,8 @@ export async function readMissionState(
       expiresAt: config[4],
       policyHash: config[5],
       cartMandateHash: config[9],
+      violationThreshold: Number(config[7]),
+      violationWindowSeconds: config[8],
       allowedMerchants: new Set(allowlist.map((merchant) => merchant.toLowerCase())),
     };
   } catch (error) {

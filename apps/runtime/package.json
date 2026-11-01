@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@succra/hsp-client": "workspace:*"
+    "@succra/hsp-client": "workspace:*",
+    "@supabase/supabase-js": "^2.116.0",
+    "viem": "^2.57.13"
   },
   "devDependencies": {
     "typescript": "^5.9.0"

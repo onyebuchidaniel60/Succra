@@ -94,6 +94,8 @@ contract SuccraMission {
     error NotAuthorized();
     error AmountMismatch();
     error AlreadyRecorded();
+    error ViolationAlreadyRecorded();
+    error AlreadyQuarantined();
     error ZeroAddress();
 
     event MissionCreated(address indexed owner, address indexed mission, bytes32 policyHash);
@@ -137,6 +139,7 @@ contract SuccraMission {
     mapping(bytes32 => bool) public authorizedRequests;
     mapping(bytes32 => uint256) public authorizedAmount;
     mapping(bytes32 => bool) public recordedSettlements;
+    mapping(bytes32 => bool) public recordedViolations;
     mapping(address => bool) public allowedMerchants;
     mapping(address => uint16) public successorPriority;
     mapping(address => bool) public successorActive;
@@ -151,6 +154,16 @@ contract SuccraMission {
     ///      is guardian-authorized.
     modifier onlyGuardian() {
         if (msg.sender != guardianRegistry.guardian()) revert NotGuardian();
+        _;
+    }
+
+    /// @dev Manual quarantine is owner- or guardian-authorized. The owner may
+    ///      quarantine at any time; the guardian may also quarantine when the
+    ///      runtime crosses the configured violation threshold.
+    modifier onlyOwnerOrGuardian() {
+        if (msg.sender != owner && msg.sender != guardianRegistry.guardian()) {
+            revert NotGuardian();
+        }
         _;
     }
 
@@ -323,7 +336,68 @@ contract SuccraMission {
         authority.confirmedSpentAtomic += amountAtomic;
         authority.stateVersion = expectedVersion + 1;
 
+        // FR-04: any CONFIRMED settlement resets the consecutive violation
+        // streak. Both the counter and its window anchor are cleared.
+        authority.violationCount = 0;
+        authority.lastViolationAt = 0;
+
         emit PaymentSettlementRecorded(paymentId, amountAtomic, txHash);
+    }
+
+    /// @notice Records one authenticated, current-agent policy violation.
+    /// @dev Guardian-only. The guardian reports off-chain preflight rejections;
+    ///      the contract remains authoritative for the streak and threshold.
+    ///      Violations are idempotent by request id, and a violation older than
+    ///      the configured window is discarded before the next increment.
+    function recordViolation(
+        bytes32 requestId,
+        uint64 expectedVersion
+    ) external onlyGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (
+            authority.status != MissionStatus.ACTIVE &&
+            authority.status != MissionStatus.ACTIVE_RECOVERY
+        ) {
+            revert InvalidStatus();
+        }
+        if (recordedViolations[requestId]) revert ViolationAlreadyRecorded();
+
+        if (
+            authority.lastViolationAt > 0 &&
+            block.timestamp - uint256(authority.lastViolationAt) >
+            uint256(config.violationWindowSeconds)
+        ) {
+            authority.violationCount = 0;
+        }
+
+        recordedViolations[requestId] = true;
+        authority.violationCount += 1;
+        authority.lastViolationAt = uint64(block.timestamp);
+        authority.stateVersion = expectedVersion + 1;
+
+        emit ViolationRecorded(requestId, authority.violationCount, authority.stateVersion);
+    }
+
+    /// @notice Manually quarantines an executable mission.
+    /// @dev Owner or guardian. There is no threshold requirement: the owner can
+    ///      always freeze a mission, and the guardian's automatic threshold path
+    ///      calls the same method. Quarantine does not move funds.
+    function quarantine(uint64 expectedVersion) external onlyOwnerOrGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (authority.status == MissionStatus.QUARANTINED) revert AlreadyQuarantined();
+        if (
+            authority.status != MissionStatus.ACTIVE &&
+            authority.status != MissionStatus.ACTIVE_RECOVERY
+        ) {
+            revert InvalidStatus();
+        }
+
+        MissionStatus previous = authority.status;
+        authority.status = MissionStatus.QUARANTINED;
+        authority.stateVersion = expectedVersion + 1;
+
+        emit MissionStatusChanged(previous, MissionStatus.QUARANTINED, authority.stateVersion);
+        emit MissionQuarantined(msg.sender, authority.stateVersion);
     }
 
     /// @notice The live global guardian from GuardianRegistry.
