@@ -319,6 +319,9 @@ export async function verifyAgentChallenge(args: {
   if (agent.owner_id !== args.ownerId) {
     return error(403, 'AGENT_FORBIDDEN', 'Agent belongs to another owner.');
   }
+  // ARCHITECTURE.md §10 uses "VERIFIED" as the verification outcome word;
+  // the persistent status is REGISTERED per PROJECT_SPEC's agent assignment
+  // state machine. There is no durable VERIFIED state.
   if (agent.status === 'REGISTERED') {
     return {
       status: 200,
