@@ -18,6 +18,24 @@ export interface PreflightMissionRow {
   expires_at: string;
   created_at: string;
   updated_at: string;
+  // Phase 3 HashKey columns. Optional so legacy rows/tests remain readable.
+  contract_address?: string | null;
+  factory_address?: string | null;
+  owner_address?: string | null;
+  payment_token_address?: string | null;
+  current_agent_address?: string | null;
+}
+
+export function missionContractAddress(mission: PreflightMissionRow): string {
+  return mission.contract_address ?? mission.pda_address;
+}
+
+export function missionCurrentAgentAddress(mission: PreflightMissionRow): string {
+  return mission.current_agent_address ?? mission.current_agent_public_key;
+}
+
+export function missionPaymentTokenAddress(mission: PreflightMissionRow): string {
+  return mission.payment_token_address ?? mission.mint_address;
 }
 
 export interface PreflightAgentRow {
@@ -196,4 +214,32 @@ export async function getOwnerWalletAddress(
     .maybeSingle();
   if (error) throw error;
   return (data as { wallet_address?: string } | null)?.wallet_address ?? null;
+}
+
+export async function getActionRequestByRequestId(
+  db: SupabaseClient,
+  missionId: string,
+  requestId: string
+): Promise<PreflightActionRequestRow | null> {
+  const { data, error } = await db
+    .from('action_requests')
+    .select('*')
+    .eq('mission_id', missionId)
+    .eq('request_id', requestId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as PreflightActionRequestRow | null) ?? null;
+}
+
+export async function markActionRequestSubmitted(
+  db: SupabaseClient,
+  actionRequestId: string,
+  signature: string,
+  submittedAt: string
+): Promise<void> {
+  const { error } = await db
+    .from('action_requests')
+    .update({ signature, submitted_at: submittedAt })
+    .eq('id', actionRequestId);
+  if (error) throw error;
 }

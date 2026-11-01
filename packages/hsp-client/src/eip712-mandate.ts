@@ -3,7 +3,7 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils';
 import { SUCCRA_EIP712_DOMAIN } from '@succra/shared';
 import type { HspPaymentMandate } from './types.js';
 
-// PROVISIONAL — validate against live HSP docs before Phase 3.
+// PROVISIONAL — validate against live HSP docs in Phase 9.
 export const HSP_PAYMENT_MANDATE_TYPES = {
   PaymentMandate: [
     { name: 'cartMandateHash', type: 'bytes32' },

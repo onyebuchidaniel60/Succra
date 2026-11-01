@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Succra HSP client: PROVISIONAL mandate types, HMAC-SHA256, ES256K JWT, and EIP-712 mandate hashing (Phase 2).",
+  "description": "Succra HSP client: PROVISIONAL mandate types, HMAC-SHA256, ES256K JWT, EIP-712 mandate hashing, and mock settlement client (Phase 3).",
   "exports": {
     ".": "./src/index.ts"
   },

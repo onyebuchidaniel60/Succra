@@ -36,7 +36,7 @@ function readMigration(name: string): string {
   return readFileSync(join(HERE, '..', '..', '..', '..', 'supabase', 'migrations', name), 'utf8');
 }
 
-export async function createGatewayTestDb(): Promise<PGlite> {
+async function createTestDb(withPreflightMigrations: boolean): Promise<PGlite> {
   const { pgcrypto } = await import('@electric-sql/pglite/contrib/pgcrypto');
   const db = new PGlite({ extensions: { pgcrypto } });
   await db.query('CREATE SCHEMA IF NOT EXISTS auth');
@@ -48,7 +48,21 @@ export async function createGatewayTestDb(): Promise<PGlite> {
   await db.exec(readMigration('20260913000000_phase3_core.sql'));
   await db.exec(readMigration('20260914000000_phase4_gateway.sql'));
   await db.exec(readMigration('20260915000000_phase5_guardian.sql'));
+  if (withPreflightMigrations) {
+    await db.exec(readMigration('20261101000000_phase2_preflight.sql'));
+    await db.exec(readMigration('20261102000000_phase3_hashkey_missions.sql'));
+  }
   return db;
+}
+
+/** Original Phase 4/5 fixture schema (keeps legacy Solana tests valid). */
+export async function createGatewayTestDb(): Promise<PGlite> {
+  return createTestDb(false);
+}
+
+/** Phase 2/3 fixture schema: preflight columns + HSP settlement tables. */
+export async function createHashkeyTestDb(): Promise<PGlite> {
+  return createTestDb(true);
 }
 
 function iso(value: unknown): string {

@@ -34,6 +34,8 @@ export interface AgentAuthInput {
   agent: { id: string; address: string };
   store: AgentAuthStore;
   nowMs?: number;
+  /** Path-bound request id for routes whose body does not carry requestId. */
+  requestId?: string;
 }
 
 export type AgentAuthResult = { ok: true } | { ok: false; reason: AgentAuthReason };
@@ -80,7 +82,7 @@ export async function verifyAgentRequest(input: AgentAuthInput): Promise<AgentAu
     return { ok: false, reason: 'REPLAY_DETECTED' };
   }
 
-  const requestId = input.body['requestId'];
+  const requestId = input.requestId ?? input.body['requestId'];
   if (typeof requestId !== 'string' || requestId.length === 0) {
     return { ok: false, reason: 'UNAUTHENTICATED' };
   }
