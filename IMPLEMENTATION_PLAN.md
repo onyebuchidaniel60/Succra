@@ -29,7 +29,8 @@ Tasks:
 - implement `MissionFactory.sol` to deploy one mission contract per mission and index missions by owner;
 - implement `GuardianRegistry.sol` with a global guardian address rotatable by the registry owner;
 - implement mission creation, policy validation, owner/guardian access control, and status transitions for `DRAFT`, `ACTIVE`, `CANCELLED`, and `EXPIRED`;
-- emit `MissionCreated`, `MissionStatusChanged`, `PolicyUpdated`, `AgentAuthorized`, `AgentRevoked`, and `GuardianRotated` events;
+- implement `authorizePayment` in `SuccraMission` (agent-signed, policy-enforcing, records `PaymentAuthorization`, advances `agentNonce`; does not move funds);
+- emit `MissionCreated`, `MissionStatusChanged`, `PolicyUpdated`, `AgentAuthorized`, `AgentRevoked`, `MissionCancelled`, and `GuardianRotated` events;
 - add `state_version` to every state-changing path;
 - add contract unit tests for creation, validation, authorization, and state transitions.
 

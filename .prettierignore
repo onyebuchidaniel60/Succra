@@ -9,6 +9,10 @@ coverage
 target
 .anchor
 .vercel
+contracts/artifacts
+contracts/cache
+contracts/typechain-types
+contracts/coverage
 .DS_Store
 pnpm-lock.yaml
 # Source-of-truth spec documents are human-owned; do not reformat.

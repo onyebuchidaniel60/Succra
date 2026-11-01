@@ -1,0 +1,17 @@
+{
+  "name": "@succra/hsp-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Succra HSP client placeholder (Phase 0, no product logic). HSP mandates, auth, and HTTP land in Phase 2 per IMPLEMENTATION_PLAN.md.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,10 +1,13 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'contracts'
 
 # pnpm 10+ requires explicit approval for postinstall build scripts.
 # esbuild's postinstall validates its platform binary (needed by vitest/vite).
 allowBuilds:
+  '@reown/appkit': false
+  keccak: true
   bigint-buffer: true
   bufferutil: true
   esbuild: true
