@@ -80,7 +80,8 @@ const ACTIVE_STATUSES = new Set(['ACTIVE', 'ACTIVE_RECOVERY']);
  * Deterministic off-chain mirror of the Phase 1 SuccraMission policy.
  * It does not call HSP and does not move funds.
  *
- * TODO(phase-3): running-budget test once confirmedSpentAtomic can be non-zero.
+ * The running-budget branch is exercised in policy-hsp.test.ts with a
+ * non-zero confirmedSpentAtomic (Phase 3).
  */
 export function evaluateHspPaymentPolicy(input: HspPolicyInput): HspPolicyDecision {
   const { missionOnChain, missionMirror, request } = input;

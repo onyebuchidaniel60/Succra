@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { HSP_CLIENT_PHASE } from '../src/index.js';
 
-describe('hsp-client foundation (Phase 2)', () => {
-  it('exposes the Phase 2 marker and nothing else', () => {
-    expect(HSP_CLIENT_PHASE).toBe('phase-2');
+describe('hsp-client foundation (Phase 3)', () => {
+  it('exposes the Phase 3 marker', () => {
+    expect(HSP_CLIENT_PHASE).toBe('phase-3');
   });
 });

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {GuardianRegistry} from './GuardianRegistry.sol';
 import {SuccraMission} from './SuccraMission.sol';
 
 /// @title MissionFactory
@@ -24,8 +23,7 @@ contract MissionFactory {
     function createMission(
         SuccraMission.MissionConfig calldata config
     ) external returns (address missionAddress) {
-        address guardian = GuardianRegistry(guardianRegistry).guardian();
-        SuccraMission mission = new SuccraMission(msg.sender, config, guardian);
+        SuccraMission mission = new SuccraMission(msg.sender, config, guardianRegistry);
         missionAddress = address(mission);
 
         allMissions.push(missionAddress);

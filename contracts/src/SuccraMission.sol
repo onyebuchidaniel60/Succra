@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import {GuardianRegistry} from './GuardianRegistry.sol';
 
 /// @title SuccraMission
 /// @notice Authoritative mission authority and policy for one Succra mission.
@@ -90,6 +91,9 @@ contract SuccraMission {
     error PrimaryAgentInSuccessors();
     error InvalidViolationThreshold();
     error InvalidViolationWindow();
+    error NotAuthorized();
+    error AmountMismatch();
+    error AlreadyRecorded();
     error ZeroAddress();
 
     event MissionCreated(address indexed owner, address indexed mission, bytes32 policyHash);
@@ -127,9 +131,12 @@ contract SuccraMission {
     MissionConfig public config;
     AuthorityState public authority;
     address public owner;
-    address public immutable guardian;
+    GuardianRegistry public immutable guardianRegistry;
 
     mapping(bytes32 => bool) public usedRequestIds;
+    mapping(bytes32 => bool) public authorizedRequests;
+    mapping(bytes32 => uint256) public authorizedAmount;
+    mapping(bytes32 => bool) public recordedSettlements;
     mapping(address => bool) public allowedMerchants;
     mapping(address => uint16) public successorPriority;
     mapping(address => bool) public successorActive;
@@ -139,16 +146,24 @@ contract SuccraMission {
         _;
     }
 
+    /// @dev Reads the live global guardian from GuardianRegistry so registry
+    ///      rotation applies to existing missions. Runtime settlement reporting
+    ///      is guardian-authorized.
+    modifier onlyGuardian() {
+        if (msg.sender != guardianRegistry.guardian()) revert NotGuardian();
+        _;
+    }
+
     /// @notice Deployed by MissionFactory. The mission starts ACTIVE; DRAFT is
     ///         reserved for the off-chain mirror state only.
     /// @dev Policies are immutable after creation. The Cart Mandate hash is
     ///      committed here; HSP remains authoritative for settlement.
-    constructor(address owner_, MissionConfig memory config_, address guardian_) {
-        if (owner_ == address(0) || guardian_ == address(0)) revert ZeroAddress();
+    constructor(address owner_, MissionConfig memory config_, address guardianRegistry_) {
+        if (owner_ == address(0) || guardianRegistry_ == address(0)) revert ZeroAddress();
         _validateConfig(config_);
 
         owner = owner_;
-        guardian = guardian_;
+        guardianRegistry = GuardianRegistry(guardianRegistry_);
 
         config.paymentToken = config_.paymentToken;
         config.budgetAtomic = config_.budgetAtomic;
@@ -266,6 +281,8 @@ contract SuccraMission {
         }
 
         usedRequestIds[auth.requestId] = true;
+        authorizedRequests[auth.requestId] = true;
+        authorizedAmount[auth.requestId] = auth.amountAtomic;
         authority.agentNonce = auth.paymentNonce;
         authority.stateVersion = expectedVersion + 1;
 
@@ -275,6 +292,43 @@ contract SuccraMission {
             auth.amountAtomic,
             auth.mandateHash
         );
+    }
+
+    /// @notice Mirrors one HSP/HashKey-confirmed settlement into mission state.
+    /// @dev Guardian-only. The contract cannot verify HSP settlement itself, so
+    ///      the guardian is the trusted reporting role. The payment must have
+    ///      been authorized by this mission with exactly the same amount, and
+    ///      each payment may be recorded only once. No funds move here.
+    function recordSettlement(
+        bytes32 paymentId,
+        uint256 amountAtomic,
+        bytes32 txHash,
+        uint64 expectedVersion
+    ) external onlyGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (
+            authority.status != MissionStatus.ACTIVE &&
+            authority.status != MissionStatus.ACTIVE_RECOVERY
+        ) {
+            revert InvalidStatus();
+        }
+        if (!authorizedRequests[paymentId]) revert NotAuthorized();
+        if (authorizedAmount[paymentId] != amountAtomic) revert AmountMismatch();
+        if (recordedSettlements[paymentId]) revert AlreadyRecorded();
+        if (authority.confirmedSpentAtomic + amountAtomic > config.budgetAtomic) {
+            revert InvalidAmount();
+        }
+
+        recordedSettlements[paymentId] = true;
+        authority.confirmedSpentAtomic += amountAtomic;
+        authority.stateVersion = expectedVersion + 1;
+
+        emit PaymentSettlementRecorded(paymentId, amountAtomic, txHash);
+    }
+
+    /// @notice The live global guardian from GuardianRegistry.
+    function guardian() external view returns (address) {
+        return guardianRegistry.guardian();
     }
 
     function getMerchantAllowlist() external view returns (address[] memory) {

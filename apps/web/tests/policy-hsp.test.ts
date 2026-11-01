@@ -142,5 +142,28 @@ describe('HSP payment policy evaluator', () => {
     expect(result).toEqual({ decision: 'BLOCK', reasonCode: 'BUDGET_EXHAUSTED' });
   });
 
-  // TODO(phase-3): running-budget test once confirmedSpentAtomic can be non-zero.
+  it('blocks a second payment once confirmed spend exhausts the budget', () => {
+    // A 900-atomic settlement is already confirmed. The next 200-atomic
+    // payment is individually within maxPaymentAtomic (400) but would push
+    // confirmed spend past the 1000-atomic envelope.
+    const result = evaluateHspPaymentPolicy(
+      baseInput({
+        mission: { confirmedSpentAtomic: 900n },
+        mirror: { remainingBudgetAtomic: 100n },
+        payload: { amountAtomic: 200n },
+      })
+    );
+    expect(result).toEqual({ decision: 'BLOCK', reasonCode: 'BUDGET_EXHAUSTED' });
+  });
+
+  it('allows a second payment while confirmed spend leaves room', () => {
+    const result = evaluateHspPaymentPolicy(
+      baseInput({
+        mission: { confirmedSpentAtomic: 500n },
+        mirror: { remainingBudgetAtomic: 500n },
+        payload: { amountAtomic: 400n },
+      })
+    );
+    expect(result.decision).toEqual('ALLOW');
+  });
 });

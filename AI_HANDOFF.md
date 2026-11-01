@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 2 — HSP client and payment preflight: in progress on branch `phase-2-preflight` (not merged to `main`). Phase 1 is complete and merged to `main` @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Phase 3 — Payment submission and settlement: in progress on branch `phase-3-settlement`. Phase 2 is complete and merged to `main` @ `40abe03`. Phase 1 is complete and merged to `main` @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
@@ -14,7 +14,7 @@ Phase 1 delivery (merged @ `fbce1c2`):
 - `SuccraMission` with policy enforcement, `authorizePayment`, `cancel`, and state-version guards;
 - 36 contract tests passing; `contracts` CI job required.
 
-Phase 2 delivery on this branch:
+Phase 2 delivery (merged @ `40abe03`):
 - migration `20261101000000_phase2_preflight.sql` extends `action_requests` with request/on-chain/mandate fields and tightens RLS to owner SELECT + service-role writes;
 - `agent_request_nonces` remains service-role only;
 - `packages/shared` adds the EIP-712 domain, `SuccraRequest` typed data, canonical body hash, method/path hash, and request-id binding;
@@ -34,9 +34,19 @@ Open questions before Phase 3:
 - Demo recording plan: testnet + mock vs live mainnet.
 - `@tanstack/react-query` remains deferred to Phase 4 wallet UI.
 
-Phase 2 checkpoint: branch `phase-2-preflight` (pending review/merge).
+Phase 3 delivery on this branch (in progress):
+- mission schema migrated to HashKey columns (`contract_address`, `factory_address`, `owner_address`, `payment_token_address`, `current_agent_address`), with legacy Solana columns retained until Phase 7;
+- `hsp_payments` and `hsp_webhook_events` tables added; owner SELECT / service-role writes;
+- `SuccraMission.recordSettlement` added as guardian-only, guarded by `authorizedRequests`, `authorizedAmount`, and `recordedSettlements`;
+- submit endpoint now authorizes on-chain via the runtime signer, submits to the mock HSP, waits for settlement, records settlement via the guardian, and returns CONFIRMED/FAILED (202 only on bounded timeout);
+- HSP webhook receiver verifies HMAC, deduplicates events, verifies HashKey RPC before recording, and is idempotent against the submit wait;
+- runtime settlement poller is the 30s fallback;
+- old Solana submit route and its Solana-specific tests deleted;
+- Phase 2 running-budget TODO replaced by non-zero-spend tests.
 
-Next assigned task: **Phase 3 — Payment submission and settlement; not yet authorized.**
+Phase 3 checkpoint: branch `phase-3-settlement` (pending review/merge).
+
+Next assigned task: **Phase 4 — Agent registration and liveness; not yet authorized.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.

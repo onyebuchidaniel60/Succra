@@ -152,10 +152,11 @@ export async function POST(
     if (!mission) {
       return apiError(404, 'MISSION_NOT_FOUND', 'Mission not found.');
     }
-    if (!isAddress(mission.pda_address)) {
+    const missionAddressValue = mission.contract_address ?? mission.pda_address;
+    if (!isAddress(missionAddressValue)) {
       return apiError(500, 'MISSION_CONTRACT_INVALID', 'Mission contract address is invalid.');
     }
-    const missionAddress = mission.pda_address as `0x${string}`;
+    const missionAddress = missionAddressValue as `0x${string}`;
     const headerAgent = request.headers.get('x-succra-agent-address');
     if (!headerAgent) {
       return apiError(401, 'UNAUTHENTICATED', 'Agent authentication is required.');
@@ -173,7 +174,7 @@ export async function POST(
       missionId: id,
       missionAddress,
       chainId: Number(process.env.NEXT_PUBLIC_HASHKEY_CHAIN_ID ?? 177),
-      currentAgent: mission.current_agent_public_key,
+      currentAgent: mission.current_agent_address ?? mission.current_agent_public_key,
       agent: { id: agent.id, address: agent.public_key },
       store: {
         consumeAgentNonce: (agentId, nonce, expiresAt) =>

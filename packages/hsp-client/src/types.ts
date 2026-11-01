@@ -1,6 +1,6 @@
-// PROVISIONAL — validate against live HSP docs before Phase 3.
+// PROVISIONAL — validate against live HSP docs in Phase 9.
 // HSP's exact typed-data schema is not published in a verifiable form yet.
-// The mock server and Phase 2 tests use this schema; Phase 3 reconciles it.
+// Phase 3 uses the mock server; live HSP reconciliation is Phase 9.
 
 export interface HspCartMandateRef {
   cartMandateId: string;
@@ -39,4 +39,24 @@ export interface BuildPaymentMandateInput {
   paymentNonce: number;
   expiresAt: string;
   paymentReference?: string;
+}
+
+/** PROVISIONAL — mock HSP settlement status shape. Reconcile in Phase 9. */
+export type HspPaymentStatusValue = 'SUBMITTED' | 'CONFIRMED' | 'FAILED';
+
+export interface HspPaymentStatus {
+  hspPaymentMandateId: string;
+  status: HspPaymentStatusValue;
+  transactionHash?: string;
+  blockNumber?: number;
+  error?: {
+    code?: string;
+    message?: string;
+    raw?: unknown;
+  };
+}
+
+export interface HspSubmitPaymentRequest {
+  paymentMandate: HspPaymentMandate;
+  signature: string;
 }
