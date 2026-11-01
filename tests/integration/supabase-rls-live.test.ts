@@ -450,19 +450,22 @@ if (!LIVE) {
         throw new Error(`mission: ${mission.error?.message ?? 'unknown'}`);
       }
       missionA = (mission.data as { id: string }).id;
-      const action = await userA.client
+      const action = await admin
         .from('action_requests')
         .insert({
           mission_id: missionA,
           agent_id: agentA,
           idempotency_key: `live-${randomUUID()}`,
+          request_id: randomUUID(),
+          onchain_request_id: `0x${randomBytes(32).toString('hex')}`,
           agent_nonce: 1,
-          action_type: 'TRANSFER_SOL',
+          action_type: 'HSP_PAYMENT',
           payload: {},
           request_hash: 'hash',
           signature: 'sig',
-          decision: 'BLOCKED',
+          decision: 'BLOCK',
           decision_reason_code: 'POLICY_BLOCKED',
+          expires_at: new Date(Date.now() + 3600_000).toISOString(),
         })
         .select('id')
         .single();
@@ -474,19 +477,39 @@ if (!LIVE) {
       await cleanupUser(userB).catch(() => undefined);
     });
 
-    it('B sees no action rows of A and cannot write for A’s mission', async () => {
+    it('owners can read but cannot write action rows; B cannot write for A’s mission', async () => {
       const seen = await userB.client.from('action_requests').select('id');
       expect(seen.data ?? []).toEqual([]);
+
+      const ownerWrite = await userA.client.from('action_requests').insert({
+        mission_id: missionA,
+        agent_id: agentA,
+        idempotency_key: `owner-${randomUUID()}`,
+        request_id: randomUUID(),
+        onchain_request_id: `0x${randomBytes(32).toString('hex')}`,
+        agent_nonce: 100,
+        action_type: 'HSP_PAYMENT',
+        payload: {},
+        request_hash: 'h',
+        signature: 's',
+        decision: 'ALLOW',
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      expect(ownerWrite.error).not.toBeNull();
+
       const written = await userB.client.from('action_requests').insert({
         mission_id: missionA,
         agent_id: agentA,
         idempotency_key: `evil-${randomUUID()}`,
+        request_id: randomUUID(),
+        onchain_request_id: `0x${randomBytes(32).toString('hex')}`,
         agent_nonce: 99,
-        action_type: 'TRANSFER_SOL',
+        action_type: 'HSP_PAYMENT',
         payload: {},
         request_hash: 'h',
         signature: 's',
-        decision: 'APPROVED',
+        decision: 'ALLOW',
+        expires_at: new Date(Date.now() + 3600_000).toISOString(),
       });
       expect(written.error).not.toBeNull();
     });
