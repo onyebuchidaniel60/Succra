@@ -98,6 +98,28 @@ export function signMandate(wallet: ethers.Wallet, mandateHash: string): string 
   return wallet.signingKey.sign(mandateHash).serialized;
 }
 
+export function recoveryAckDigest(missionAddress: string, expectedVersion: bigint): string {
+  const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
+    ['string', 'address', 'uint64'],
+    ['succra.recovery.ack.v1', missionAddress, expectedVersion]
+  );
+  return ethers.keccak256(encoded);
+}
+
+export function signRecoveryAck(
+  wallet: ethers.Wallet,
+  missionAddress: string,
+  expectedVersion: bigint
+): string {
+  return wallet.signingKey.sign(recoveryAckDigest(missionAddress, expectedVersion)).serialized;
+}
+
+export async function impersonate(address: string): Promise<Signer> {
+  await ethers.provider.send('hardhat_impersonateAccount', [address]);
+  await ethers.provider.send('hardhat_setBalance', [address, '0x1000000000000000000']);
+  return ethers.getSigner(address);
+}
+
 /**
  * Test-only helper: Phase 5 has no public transition to ACTIVE_RECOVERY (that
  * arrives with Phase 6 succession), so tests write the enum directly into the

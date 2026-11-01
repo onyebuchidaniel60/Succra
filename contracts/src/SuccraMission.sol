@@ -53,6 +53,7 @@ contract SuccraMission {
         uint256 confirmedSpentAtomic;
         bytes32 lastCheckpointHash;
         uint64 lastCheckpointSequence;
+        uint64 checkpointCount;
     }
 
     struct Checkpoint {
@@ -96,6 +97,10 @@ contract SuccraMission {
     error AlreadyRecorded();
     error ViolationAlreadyRecorded();
     error AlreadyQuarantined();
+    error NotActiveSuccessor();
+    error CannotReactivatePrimary();
+    error NotInRecovering();
+    error InvalidAcknowledgement();
     error ZeroAddress();
 
     event MissionCreated(address indexed owner, address indexed mission, bytes32 policyHash);
@@ -140,6 +145,7 @@ contract SuccraMission {
     mapping(bytes32 => uint256) public authorizedAmount;
     mapping(bytes32 => bool) public recordedSettlements;
     mapping(bytes32 => bool) public recordedViolations;
+    mapping(uint64 => bytes32) public checkpoints;
     mapping(address => bool) public allowedMerchants;
     mapping(address => uint16) public successorPriority;
     mapping(address => bool) public successorActive;
@@ -217,7 +223,8 @@ contract SuccraMission {
             lastViolationAt: 0,
             confirmedSpentAtomic: 0,
             lastCheckpointHash: bytes32(0),
-            lastCheckpointSequence: 0
+            lastCheckpointSequence: 0,
+            checkpointCount: 0
         });
 
         emit MissionCreated(owner_, address(this), config_.policyHash);
@@ -398,6 +405,119 @@ contract SuccraMission {
 
         emit MissionStatusChanged(previous, MissionStatus.QUARANTINED, authority.stateVersion);
         emit MissionQuarantined(msg.sender, authority.stateVersion);
+    }
+
+    /// @notice Commits one verified checkpoint hash.
+    /// @dev Guardian-only. Sequences are strict: 0, 1, 2, ... matching
+    ///      checkpointCount. The full snapshot lives off-chain; this contract
+    ///      stores only the hash commitment.
+    function commitCheckpoint(
+        uint64 sequence,
+        bytes32 checkpointHash,
+        uint64 expectedVersion
+    ) external onlyGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (
+            authority.status != MissionStatus.ACTIVE &&
+            authority.status != MissionStatus.ACTIVE_RECOVERY
+        ) {
+            revert InvalidStatus();
+        }
+        if (sequence != authority.checkpointCount) revert InvalidVersion();
+
+        checkpoints[sequence] = checkpointHash;
+        authority.lastCheckpointHash = checkpointHash;
+        authority.lastCheckpointSequence = sequence;
+        authority.checkpointCount = sequence + 1;
+        authority.stateVersion = expectedVersion + 1;
+
+        emit CheckpointCommitted(sequence, checkpointHash);
+    }
+
+    /// @notice Activates a caller-supplied, pre-approved successor.
+    /// @dev Guardian-only. Eligibility (capabilities, availability, priority)
+    ///      is the off-chain runtime's decision; the contract only verifies
+    ///      membership and the active flag. From RECOVERING a different
+    ///      successor may be tried; the previous pending activation is
+    ///      replaced implicitly by the currentAgent update.
+    function activateSuccessor(
+        address successor,
+        uint64 expectedVersion
+    ) external onlyGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (
+            authority.status != MissionStatus.QUARANTINED &&
+            authority.status != MissionStatus.RECOVERING
+        ) {
+            revert InvalidStatus();
+        }
+        if (!isActiveSuccessor(successor)) revert NotActiveSuccessor();
+        if (successor == authority.currentAgent) revert CannotReactivatePrimary();
+
+        MissionStatus previous = authority.status;
+        authority.currentAgent = successor;
+        authority.status = MissionStatus.RECOVERING;
+        authority.agentNonce = 0;
+        authority.stateVersion = expectedVersion + 1;
+
+        emit SuccessorActivated(successor, authority.lastCheckpointHash, authority.stateVersion);
+        emit MissionStatusChanged(previous, MissionStatus.RECOVERING, authority.stateVersion);
+    }
+
+    /// @notice Acknowledges recovery and moves RECOVERING to ACTIVE_RECOVERY.
+    /// @dev The current agent may call directly. The guardian may submit on the
+    ///      successor's behalf with an EIP-712/raw digest signature over
+    ///      keccak256(abi.encode("succra.recovery.ack.v1", address(this),
+    ///      expectedVersion)).
+    function acknowledgeRecovery(
+        uint64 expectedVersion,
+        bytes calldata signature
+    ) external {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (authority.status != MissionStatus.RECOVERING) revert NotInRecovering();
+
+        if (msg.sender != authority.currentAgent) {
+            if (msg.sender != guardianRegistry.guardian()) revert NotAuthorized();
+            bytes32 digest = recoveryAckDigest(expectedVersion);
+            (address recovered, ECDSA.RecoverError recoverError, ) = ECDSA.tryRecoverCalldata(
+                digest,
+                signature
+            );
+            if (
+                recoverError != ECDSA.RecoverError.NoError ||
+                recovered != authority.currentAgent
+            ) {
+                revert InvalidAcknowledgement();
+            }
+        }
+
+        authority.status = MissionStatus.ACTIVE_RECOVERY;
+        authority.stateVersion = expectedVersion + 1;
+
+        emit RecoveryAcknowledged(authority.currentAgent, authority.stateVersion);
+        emit MissionStatusChanged(
+            MissionStatus.RECOVERING,
+            MissionStatus.ACTIVE_RECOVERY,
+            authority.stateVersion
+        );
+    }
+
+    /// @notice Digest the successor signs for guardian-submitted acknowledgement.
+    function recoveryAckDigest(uint64 expectedVersion) public view returns (bytes32) {
+        return
+            keccak256(
+                abi.encode('succra.recovery.ack.v1', address(this), expectedVersion)
+            );
+    }
+
+    /// @notice Whether an address is a pre-approved successor with active=true.
+    function isActiveSuccessor(address successor) public view returns (bool) {
+        return successorActive[successor];
+    }
+
+    /// @notice Number of pre-approved successors on this mission.
+    function successorCount() external view returns (uint256) {
+        return config.successors.length;
     }
 
     /// @notice The live global guardian from GuardianRegistry.
