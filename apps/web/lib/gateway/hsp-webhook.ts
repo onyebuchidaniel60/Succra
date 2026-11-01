@@ -219,6 +219,9 @@ export async function handleHspWebhook(args: WebhookArgs): Promise<WebhookResult
       settled_at: nowIso,
     });
     if (confirmed) {
+      // Separate statement by design: the on-chain confirmedSpentAtomic is
+      // authoritative, so a stale mirror can only block conservatively and
+      // reconciliation can replay it. No overspend is possible.
       await persistence.mirrorConfirmedSpend(payment.mission_id, payment.amount_atomic);
     } else {
       const current = await persistence.getPaymentByMandateId(mandateId);

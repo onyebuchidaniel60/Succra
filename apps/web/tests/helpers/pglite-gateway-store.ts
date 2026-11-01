@@ -65,6 +65,13 @@ export async function createHashkeyTestDb(): Promise<PGlite> {
   return createTestDb(true);
 }
 
+/** Phase 4 fixture schema: HashKey columns plus EVM agent migrations. */
+export async function createPhase4TestDb(): Promise<PGlite> {
+  const db = await createTestDb(true);
+  await db.exec(readMigration('20261103000000_phase4_agents.sql'));
+  return db;
+}
+
 function iso(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
   return String(value);

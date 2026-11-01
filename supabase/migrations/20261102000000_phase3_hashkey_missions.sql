@@ -42,6 +42,7 @@ WHERE owner_address IS NULL OR factory_address IS NULL;
 
 -- Compatibility bridge for old inserts/tests that only know the legacy
 -- columns. New code writes the HashKey columns explicitly.
+-- TODO(phase-7): remove this trigger when Solana columns are dropped from missions.
 CREATE OR REPLACE FUNCTION public.missions_sync_hashkey_columns()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -68,6 +69,7 @@ BEGIN
 END;
 $$;
 
+-- TODO(phase-7): remove this trigger when Solana columns are dropped from missions.
 DROP TRIGGER IF EXISTS missions_sync_hashkey_columns ON public.missions;
 CREATE TRIGGER missions_sync_hashkey_columns
   BEFORE INSERT OR UPDATE ON public.missions
@@ -151,6 +153,9 @@ ALTER TABLE public.hsp_webhook_events ENABLE ROW LEVEL SECURITY;
 
 -- Atomic budget mirror for confirmed settlements. HSP remains authoritative;
 -- this only keeps the off-chain mirror conservative and race-safe.
+-- NOTE: hsp_payments status and this mirror are updated by separate statements
+-- in the web/runtime flow. That is safe because SuccraMission.confirmedSpentAtomic
+-- is the authoritative spend check; a stale mirror can only block conservatively.
 CREATE OR REPLACE FUNCTION public.mirror_confirmed_spend(
   p_mission_id UUID,
   p_amount NUMERIC
