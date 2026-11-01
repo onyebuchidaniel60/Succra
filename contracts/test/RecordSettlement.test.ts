@@ -172,6 +172,27 @@ describe('SuccraMission.recordSettlement', () => {
     expect((await mission.authority()).confirmedSpentAtomic).to.equal(before);
   });
 
+  it('resets violationCount to zero after a confirmed settlement', async () => {
+    await mission.connect(guardian).recordViolation(ethers.id('violation-1'), 0);
+    await mission.connect(guardian).recordViolation(ethers.id('violation-2'), 1);
+    expect((await mission.authority()).violationCount).to.equal(2);
+
+    const auth = await authorize({ amountAtomic: 100n });
+    await mission.connect(guardian).recordSettlement(auth.requestId, 100n, ethers.id('tx'), 3);
+
+    expect((await mission.authority()).violationCount).to.equal(0);
+  });
+
+  it('resets lastViolationAt to zero after a confirmed settlement', async () => {
+    await mission.connect(guardian).recordViolation(ethers.id('violation-1'), 0);
+    expect((await mission.authority()).lastViolationAt).to.be.greaterThan(0n);
+
+    const auth = await authorize({ amountAtomic: 100n });
+    await mission.connect(guardian).recordSettlement(auth.requestId, 100n, ethers.id('tx'), 2);
+
+    expect((await mission.authority()).lastViolationAt).to.equal(0n);
+  });
+
   it('accepts a custom budget/max config without changing the guardian rule', async () => {
     const config: MissionConfigInput = await baseConfig(
       primary.address,
