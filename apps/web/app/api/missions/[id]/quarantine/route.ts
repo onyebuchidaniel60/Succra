@@ -1,44 +1,80 @@
-// POST /api/missions/:id/quarantine — freeze an ACTIVE mission (owner or guardian).
-// Thin transport shell: session/credential + params in, handler result out.
+// POST /api/missions/:id/quarantine — owner session or guardian credential.
+//
+// Both modes submit the same guardian-authorized SuccraMission.quarantine
+// call. The chain is authoritative; the database mirror is written only after
+// the transaction confirms. Already-quarantined missions return 200
+// idempotently without a second transaction.
+import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { apiError } from '@/lib/api-error';
-import { createKitChainGateway, loadGuardian, programId } from '@/lib/gateway/chain';
-import { handleQuarantine } from '@/lib/gateway/handlers';
-import { SupabaseGatewayStore } from '@/lib/gateway/supabase-store';
+import { z } from 'zod';
+import { apiError, unauthorized } from '@/lib/api-error';
+import { readMissionState } from '@/lib/gateway/contract-reader';
+import { sendQuarantine } from '@/lib/gateway/contract-writer';
+import { requestQuarantine } from '@/lib/gateway/quarantine-evm';
+import {
+  getQuarantineMission,
+  insertAuditEvent as insertAuditEventRow,
+  updateCurrentAgentStatusToQuarantined,
+  updateMissionStatusToQuarantined,
+} from '@/lib/gateway/store-quarantine';
 import { admin, server } from '@/lib/supabase';
+
+function guardianCredentialMatches(request: Request): boolean {
+  const header = request.headers.get('authorization');
+  const expected = process.env.HASHKEY_GUARDIAN_CREDENTIAL;
+  if (!header?.startsWith('Bearer ') || !expected) return false;
+  const presented = header.slice('Bearer '.length).trim();
+  if (presented.length === 0) return false;
+  const presentedBytes = Buffer.from(presented);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    presentedBytes.length === expectedBytes.length && timingSafeEqual(presentedBytes, expectedBytes)
+  );
+}
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   const { id } = await context.params;
-  const supabase = await server();
-  const { data: auth } = await supabase.auth.getUser();
-  let rawBody: string;
-  try {
-    rawBody = await request.text();
-  } catch {
-    rawBody = '';
+  if (!z.string().uuid().safeParse(id).success) {
+    return apiError(400, 'INVALID_BODY', 'Mission id must be a UUID.');
   }
-  let guardian;
-  let chainProgramId: string;
-  try {
-    guardian = loadGuardian();
-    chainProgramId = programId();
-  } catch {
-    return apiError(500, 'GATEWAY_CONFIG', 'Gateway chain configuration is missing.');
+
+  const db = admin();
+  let actor: { type: 'owner' | 'guardian'; id: string | null };
+
+  if (guardianCredentialMatches(request)) {
+    actor = { type: 'guardian', id: null };
+  } else {
+    const supabase = await server();
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) return unauthorized();
+
+    const mission = await getQuarantineMission(db, id);
+    if (!mission || mission.owner_id !== auth.user.id) {
+      return apiError(404, 'MISSION_NOT_FOUND', 'Mission not found.');
+    }
+    actor = { type: 'owner', id: auth.user.id };
   }
-  const result = await handleQuarantine({
-    store: new SupabaseGatewayStore(admin()),
-    chain: createKitChainGateway(),
-    guardian,
-    programId: chainProgramId,
-    ownerId: auth.user?.id ?? null,
-    guardianCredentialHeader: request.headers.get('x-succra-guardian-credential'),
-    expectedGuardianCredential: process.env.SUCCRA_GUARDIAN_CREDENTIAL ?? null,
-    missionId: id,
-    rawBody,
-    nowMs: Date.now(),
-  });
-  return NextResponse.json(result.json, { status: result.status });
+
+  try {
+    const result = await requestQuarantine({
+      deps: {
+        getMission: (missionId) => getQuarantineMission(db, missionId),
+        readState: (address) => readMissionState(address),
+        submitQuarantine: (args) => sendQuarantine(args),
+        insertAuditEvent: async (row) => {
+          await insertAuditEventRow(db, row);
+        },
+        updateMissionStatus: (missionId) => updateMissionStatusToQuarantined(db, missionId),
+        updateAgentStatus: (missionId) => updateCurrentAgentStatusToQuarantined(db, missionId),
+      },
+      missionId: id,
+      actor,
+    });
+    return NextResponse.json(result.json, { status: result.status });
+  } catch {
+    return apiError(500, 'INTERNAL_ERROR', 'The quarantine request could not be completed.');
+  }
 }

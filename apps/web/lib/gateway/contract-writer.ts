@@ -61,6 +61,13 @@ export const SUCCRA_MISSION_WRITE_ABI = [
     inputs: [{ name: '', type: 'bytes32' }],
     outputs: [{ name: '', type: 'bool' }],
   },
+  {
+    type: 'function',
+    name: 'quarantine',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'expectedVersion', type: 'uint64' }],
+    outputs: [],
+  },
 ] as const;
 
 export interface PaymentAuthorizationInput {
@@ -211,6 +218,39 @@ export async function sendRecordSettlement(args: {
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
     if (receipt.status !== 'success') {
       throw new MissionTransactionError('recordSettlement receipt was not successful.');
+    }
+    return { txHash, blockNumber: receipt.blockNumber };
+  } catch (error) {
+    if (error instanceof MissionTransactionError) throw error;
+    throw missionError(error);
+  }
+}
+
+/**
+ * Guardian-signed manual quarantine. The owner route uses this same key: the
+ * guardian acts on the owner's behalf and cannot spend mission funds.
+ */
+export async function sendQuarantine(args: {
+  missionAddress: `0x${string}`;
+  expectedVersion: bigint;
+  account?: PrivateKeyAccount;
+  publicClient?: PublicClient;
+}): Promise<MissionWriteResult> {
+  const account = args.account ?? loadGuardianSigner();
+  const wallet = walletFor(account);
+  const publicClient = args.publicClient ?? getPublicClient();
+  try {
+    const txHash = await wallet.writeContract({
+      address: args.missionAddress,
+      abi: SUCCRA_MISSION_WRITE_ABI,
+      functionName: 'quarantine',
+      args: [args.expectedVersion],
+      account,
+      chain: wallet.chain,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') {
+      throw new MissionTransactionError('quarantine receipt was not successful.');
     }
     return { txHash, blockNumber: receipt.blockNumber };
   } catch (error) {

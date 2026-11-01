@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   replayNonce: null as string | null,
   onchain: null as unknown,
   ownerWallet: '',
+  auditEvents: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('@/lib/supabase', () => ({ admin: () => ({}) }));
@@ -33,6 +34,17 @@ vi.mock('@/lib/supabase', () => ({ admin: () => ({}) }));
 vi.mock('@/lib/gateway/contract-reader', () => ({
   readMissionState: vi.fn(async () => mocks.onchain),
 }));
+
+vi.mock('@/lib/gateway/store-quarantine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/gateway/store-quarantine')>();
+  return {
+    ...actual,
+    insertAuditEvent: vi.fn(async (_db: unknown, row: Record<string, unknown>) => {
+      mocks.auditEvents.push(row);
+      return row;
+    }),
+  };
+});
 
 vi.mock('@/lib/gateway/store-preflight', () => ({
   getMissionById: vi.fn(async (_db: unknown, id: string) => mocks.missions.get(id) ?? null),
@@ -89,6 +101,8 @@ function onchainState(overrides: Partial<MissionOnChainState> = {}): MissionOnCh
     status: 'ACTIVE',
     agentNonce: 4n,
     stateVersion: 0n,
+    violationCount: 0,
+    lastViolationAt: 0n,
     confirmedSpentAtomic: 0n,
     paymentToken: token,
     budgetAtomic: 1000n,
@@ -97,6 +111,8 @@ function onchainState(overrides: Partial<MissionOnChainState> = {}): MissionOnCh
     expiresAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
     policyHash: `0x${'77'.repeat(32)}`,
     cartMandateHash: `0x${'88'.repeat(32)}`,
+    violationThreshold: 3,
+    violationWindowSeconds: 900n,
     allowedMerchants: new Set([merchant.toLowerCase()]),
     ...overrides,
   };
@@ -170,6 +186,7 @@ beforeEach(() => {
   mocks.consumed.clear();
   mocks.replayNonce = null;
   mocks.ownerWallet = ownerWallet;
+  mocks.auditEvents.length = 0;
   mocks.onchain = onchainState();
   mocks.missions.set(MISSION_ID, {
     id: MISSION_ID,
@@ -274,6 +291,7 @@ describe('POST /api/missions/:id/actions preflight', () => {
     expect(json.decision).toEqual('BLOCK');
     expect(json.reasonCode).toEqual('MISSION_NOT_ACTIVE');
     expect((mocks.rows[0] as Record<string, unknown>)['mandate_hash']).toBeNull();
+    expect(mocks.auditEvents).toHaveLength(0);
   });
 
   it('returns BLOCK for a merchant outside the allowlist', async () => {
@@ -287,6 +305,12 @@ describe('POST /api/missions/:id/actions preflight', () => {
     });
     const json = (await (await call(requestBody)).json()) as { reasonCode: string };
     expect(json.reasonCode).toEqual('MERCHANT_NOT_ALLOWED');
+    expect(mocks.auditEvents).toHaveLength(1);
+    expect(mocks.auditEvents[0]).toMatchObject({
+      event_type: 'violation.counted',
+      actor_type: 'agent',
+      payload_public: { reasonCode: 'MERCHANT_NOT_ALLOWED' },
+    });
   });
 
   it('returns BLOCK for a token mismatch', async () => {
@@ -332,6 +356,7 @@ describe('POST /api/missions/:id/actions preflight', () => {
     const requestBody = body({ agentNonce: 4 });
     const json = (await (await call(requestBody)).json()) as { reasonCode: string };
     expect(json.reasonCode).toEqual('STALE_NONCE');
+    expect(mocks.auditEvents).toHaveLength(0);
   });
 
   it('returns the original result for a duplicate idempotency key without a second row', async () => {

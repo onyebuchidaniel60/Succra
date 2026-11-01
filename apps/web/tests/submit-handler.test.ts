@@ -132,6 +132,8 @@ function onchain(overrides: Partial<MissionOnChainState> = {}): MissionOnChainSt
     status: 'ACTIVE',
     agentNonce: 0n,
     stateVersion: 0n,
+    violationCount: 0,
+    lastViolationAt: 0n,
     confirmedSpentAtomic: 0n,
     paymentToken: TOKEN,
     budgetAtomic: 1000n,
@@ -140,6 +142,8 @@ function onchain(overrides: Partial<MissionOnChainState> = {}): MissionOnChainSt
     expiresAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
     policyHash: `0x${'99'.repeat(32)}`,
     cartMandateHash: `0x${'88'.repeat(32)}`,
+    violationThreshold: 3,
+    violationWindowSeconds: 900n,
     allowedMerchants: new Set([MERCHANT.toLowerCase()]),
     ...overrides,
   };
