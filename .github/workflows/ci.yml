@@ -1,6 +1,6 @@
-# SUCCRA CI — web and Supabase (real local stack).
+# SUCCRA CI — web, Supabase (real local stack), and contracts.
 #
-# Jobs: web (required), supabase (required).
+# Jobs: web (required), supabase (required), contracts (required).
 #
 # Triggers: push to main, pull requests, and pushes to any `phase-*` or
 # `hashkey-*` iteration branch.
@@ -162,3 +162,20 @@ jobs:
       - name: Stop Supabase
         if: always()
         run: npx -y supabase stop --no-backup
+
+  contracts:
+    name: contracts (compile, test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @succra/contracts build
+      - run: pnpm --filter @succra/contracts test

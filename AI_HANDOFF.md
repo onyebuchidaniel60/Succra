@@ -4,31 +4,42 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 0 — Repository pivot: in progress on branch `phase-0-pivot` (not merged to `main`). The Solana implementation is archived as tag `solana-v1` at `a4e089a` and removed from the mainline. CI now runs only the `web` and `supabase` jobs.**
+**Phase 1 — SuccraMission contract foundation: in progress on branch `phase-1-contracts` (not merged to `main`). Phase 0 is complete and merged to `main` @ `819f8b7`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
-Phase 0 changes on this branch:
-- `programs/`, `Anchor.toml`, and `.github/docker/` removed; root Cargo files were absent;
-- `solana-cargo` and `solana-e2e` CI jobs removed; the push trigger now includes `hashkey-*`;
-- `.env.example` marks Solana-era variables deprecated and adds HashKey/HSP variables;
-- `contracts/` Hardhat workspace scaffolded with empty `SuccraMission`, `MissionFactory`, and `GuardianRegistry` stubs;
-- `packages/hsp-client/` scaffolded with a Phase 0 marker and foundation test;
+Phase 0 delivery (merged @ `819f8b7`):
+- Solana archived as `solana-v1` at `a4e089a`; program/Anchor/Docker/CI removed from the mainline;
+- CI reduced to `web` + `supabase`;
+- HashKey/HSP env vars added; Solana-era vars marked deprecated;
+- `contracts/` Hardhat workspace and `packages/hsp-client/` scaffolded;
 - `wagmi`, `viem`, and `@walletconnect/ethereum-provider` added to `apps/web`;
-- `IMPLEMENTATION_PLAN.md` Phase 1 amended with `authorizePayment` and `MissionCancelled` (two-line fix from docs review).
+- `IMPLEMENTATION_PLAN.md` Phase 1 fixes applied.
 
-Dead-code residue still present in `apps/web`, `packages/*`, `supabase/`, and `tests/`; it will be replaced in Phases 2–3. No product logic was implemented in Phase 0.
+Phase 1 delivery on this branch:
+- `GuardianRegistry` with a global guardian and owner-only rotation;
+- `SuccraMission` with `MissionConfig`, `AuthorityState`, `Successor`, `PaymentAuthorization`, and `Checkpoint` types;
+- `MissionFactory` deploys missions directly to `ACTIVE` and indexes them by owner;
+- `authorizePayment` enforces policy, verifies the agent EIP-712 signature over the mandate digest, and advances both `agentNonce` and `stateVersion`;
+- `cancel` with owner, status, expiry, and state-version guards;
+- all architecture events declared; Phase 1 events emitted, future-phase events declared only;
+- policies immutable at creation (`updateDraftPolicy` dropped);
+- `.env.example` cleanup: `HASHKEY_GUARDIAN_SECRET_KEY` is distinct from the deprecated Solana key; Helius, gateway fee-payer, and guardian-credential vars are marked deprecated;
+- `IMPLEMENTATION_PLAN.md` Phase 1 DRAFT/stateVersion amendments applied;
+- contract tests: **36 passing**;
+- CI: `contracts` job added (web + supabase + contracts).
 
-Solana archive: tag `solana-v1` at `phase-6-succession` @ `a4e089a` (Phase 6 implemented, unverified; Phases 0–5 merged to main via `b94df5e`).
+Solana dead-code residue remains in `apps/web`, `packages/*`, `supabase/`, and `tests/`; it will be replaced in Phases 2–3. `confirmedSpentAtomic` is intentionally not updated by `authorizePayment`; Phase 3 `recordSettlement` will update it after HSP/chain confirmation.
 
 Open questions before Phase 2:
 - HSP merchant access: sandbox vs mock.
 - HashKey mainnet deployer wallet funding.
 - Demo recording plan: testnet + mock vs live mainnet.
+- The wagmi 3.7.9 peer dependency on `@tanstack/react-query` must be resolved when wallet integration begins in Phase 2.
 
-Phase 0 checkpoint: branch `phase-0-pivot` (pending review).
+Phase 1 checkpoint: branch `phase-1-contracts` (pending review).
 
-Next assigned task: **Phase 1 — SuccraMission contract foundation; not yet authorized.**
+Next assigned task: **Phase 2 — HSP client and payment preflight; not yet authorized.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.

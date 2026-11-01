@@ -3,7 +3,8 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "noEmit": true
+    "noEmit": true,
+    "verbatimModuleSyntax": false
   },
-  "include": ["hardhat.config.ts", "test"]
+  "include": ["hardhat.config.ts"]
 }

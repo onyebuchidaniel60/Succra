@@ -28,8 +28,9 @@ Tasks:
 - implement `SuccraMission.sol` with `MissionConfig`, `AuthorityState`, `Successor`, `MissionStatus`, and `Checkpoint` types;
 - implement `MissionFactory.sol` to deploy one mission contract per mission and index missions by owner;
 - implement `GuardianRegistry.sol` with a global guardian address rotatable by the registry owner;
-- implement mission creation, policy validation, owner/guardian access control, and status transitions for `DRAFT`, `ACTIVE`, `CANCELLED`, and `EXPIRED`;
+- implement mission creation, policy validation, owner/guardian access control, and status transitions for `ACTIVE`, `CANCELLED`, and `EXPIRED` (DRAFT is a reserved off-chain mirror state only; policies are immutable at creation);
 - implement `authorizePayment` in `SuccraMission` (agent-signed, policy-enforcing, records `PaymentAuthorization`, advances `agentNonce`; does not move funds);
+- `authorizePayment` advances both `agentNonce` and `stateVersion`; only one payment per mission can be in-flight.
 - emit `MissionCreated`, `MissionStatusChanged`, `PolicyUpdated`, `AgentAuthorized`, `AgentRevoked`, `MissionCancelled`, and `GuardianRotated` events;
 - add `state_version` to every state-changing path;
 - add contract unit tests for creation, validation, authorization, and state transitions.
