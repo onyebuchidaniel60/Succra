@@ -178,6 +178,9 @@ importers:
       '@solana/kit':
         specifier: ^8.3.0
         version: 8.3.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@succra/hsp-client':
+        specifier: workspace:*
+        version: link:../../packages/hsp-client
       '@succra/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -275,6 +278,16 @@ importers:
         version: 5.9.3
 
   packages/hsp-client:
+    dependencies:
+      '@noble/curves':
+        specifier: ^1.9.0
+        version: 1.9.7
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
+      '@succra/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       typescript:
         specifier: ^5.9.0
@@ -301,6 +314,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
       tweetnacl:
         specifier: ^1.0.3
         version: 1.0.3

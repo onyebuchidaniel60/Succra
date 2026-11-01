@@ -3,13 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Succra HSP client placeholder (Phase 0, no product logic). HSP mandates, auth, and HTTP land in Phase 2 per IMPLEMENTATION_PLAN.md.",
+  "description": "Succra HSP client: PROVISIONAL mandate types, HMAC-SHA256, ES256K JWT, and EIP-712 mandate hashing (Phase 2).",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.0",
+    "@noble/hashes": "^1.8.0",
+    "@succra/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.0"

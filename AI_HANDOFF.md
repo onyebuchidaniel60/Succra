@@ -4,42 +4,39 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 1 — SuccraMission contract foundation: in progress on branch `phase-1-contracts` (not merged to `main`). Phase 0 is complete and merged to `main` @ `819f8b7`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Phase 2 — HSP client and payment preflight: in progress on branch `phase-2-preflight` (not merged to `main`). Phase 1 is complete and merged to `main` @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
-Phase 0 delivery (merged @ `819f8b7`):
-- Solana archived as `solana-v1` at `a4e089a`; program/Anchor/Docker/CI removed from the mainline;
-- CI reduced to `web` + `supabase`;
-- HashKey/HSP env vars added; Solana-era vars marked deprecated;
-- `contracts/` Hardhat workspace and `packages/hsp-client/` scaffolded;
-- `wagmi`, `viem`, and `@walletconnect/ethereum-provider` added to `apps/web`;
-- `IMPLEMENTATION_PLAN.md` Phase 1 fixes applied.
+Phase 1 delivery (merged @ `fbce1c2`):
+- `GuardianRegistry` with global guardian and owner-only rotation;
+- `MissionFactory` deploys missions directly to `ACTIVE` and indexes by owner;
+- `SuccraMission` with policy enforcement, `authorizePayment`, `cancel`, and state-version guards;
+- 36 contract tests passing; `contracts` CI job required.
 
-Phase 1 delivery on this branch:
-- `GuardianRegistry` with a global guardian and owner-only rotation;
-- `SuccraMission` with `MissionConfig`, `AuthorityState`, `Successor`, `PaymentAuthorization`, and `Checkpoint` types;
-- `MissionFactory` deploys missions directly to `ACTIVE` and indexes them by owner;
-- `authorizePayment` enforces policy, verifies the agent EIP-712 signature over the mandate digest, and advances both `agentNonce` and `stateVersion`;
-- `cancel` with owner, status, expiry, and state-version guards;
-- all architecture events declared; Phase 1 events emitted, future-phase events declared only;
-- policies immutable at creation (`updateDraftPolicy` dropped);
-- `.env.example` cleanup: `HASHKEY_GUARDIAN_SECRET_KEY` is distinct from the deprecated Solana key; Helius, gateway fee-payer, and guardian-credential vars are marked deprecated;
-- `IMPLEMENTATION_PLAN.md` Phase 1 DRAFT/stateVersion amendments applied;
-- contract tests: **36 passing**;
-- CI: `contracts` job added (web + supabase + contracts).
+Phase 2 delivery on this branch:
+- migration `20261101000000_phase2_preflight.sql` extends `action_requests` with request/on-chain/mandate fields and tightens RLS to owner SELECT + service-role writes;
+- `agent_request_nonces` remains service-role only;
+- `packages/shared` adds the EIP-712 domain, `SuccraRequest` typed data, canonical body hash, method/path hash, and request-id binding;
+- `packages/hsp-client` adds PROVISIONAL HSP Cart/Payment Mandate types, HMAC-SHA256, ES256K JWT, deterministic mandate hashing, and a test-only mock server;
+- JWT uses `@noble/curves` secp256k1 + SHA-256 because Node WebCrypto does not support secp256k1; the signature is compact r||s and verified against the same digest viem produces;
+- `apps/web` adds the HSP policy evaluator, agent EIP-712 auth middleware, viem contract reader, preflight store, and `POST /api/missions/:id/actions` preflight endpoint;
+- preflight constructs the unsigned mandate locally and never calls HSP; submission/settlement remains Phase 3;
+- contract-reader uses `getMerchantAllowlist()` plus the on-chain config, so no contract change was needed;
+- Phase 1 review notes folded in: AI_HANDOFF correction, running-budget TODO, and `contracts/README.md` test-config note;
+- tests: **223 passing** workspace-wide (61 new Phase 2 tests), 2 skipped live tests; 36 contract tests still pass.
 
-Solana dead-code residue remains in `apps/web`, `packages/*`, `supabase/`, and `tests/`; it will be replaced in Phases 2–3. `confirmedSpentAtomic` is intentionally not updated by `authorizePayment`; Phase 3 `recordSettlement` will update it after HSP/chain confirmation.
+`cartMandateId` is provisionally the mission UUID until HSP merchant access exists. The HSP typed-data schema remains PROVISIONAL and must be reconciled in Phase 3. Solana dead-code residue remains in `apps/web`, `packages/*`, `supabase/`, and `tests/`; it will be replaced in Phases 2–3.
 
-Open questions before Phase 2:
+Open questions before Phase 3:
 - HSP merchant access: sandbox vs mock.
 - HashKey mainnet deployer wallet funding.
 - Demo recording plan: testnet + mock vs live mainnet.
-- The wagmi 3.7.9 peer dependency on `@tanstack/react-query` must be resolved when wallet integration begins in Phase 2.
+- `@tanstack/react-query` remains deferred to Phase 4 wallet UI.
 
-Phase 1 checkpoint: branch `phase-1-contracts` (pending review).
+Phase 2 checkpoint: branch `phase-2-preflight` (pending review/merge).
 
-Next assigned task: **Phase 2 — HSP client and payment preflight; not yet authorized.**
+Next assigned task: **Phase 3 — Payment submission and settlement; not yet authorized.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
