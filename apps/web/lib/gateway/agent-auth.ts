@@ -30,12 +30,19 @@ export interface AgentAuthInput {
   missionId: string;
   missionAddress: `0x${string}`;
   chainId: number;
-  currentAgent: string;
+  /** Required unless authorization is 'agent-only'. */
+  currentAgent?: string;
   agent: { id: string; address: string };
   store: AgentAuthStore;
   nowMs?: number;
   /** Path-bound request id for routes whose body does not carry requestId. */
   requestId?: string;
+  /**
+   * 'current-agent' (default) keeps action-submission semantics.
+   * 'agent-only' proves address possession for heartbeat/status without
+   * requiring current-agent status or mission assignment.
+   */
+  authorization?: 'current-agent' | 'agent-only';
 }
 
 export type AgentAuthResult = { ok: true } | { ok: false; reason: AgentAuthReason };
@@ -115,7 +122,14 @@ export async function verifyAgentRequest(input: AgentAuthInput): Promise<AgentAu
     return { ok: false, reason: 'INVALID_SIGNATURE' };
   }
 
-  if (input.currentAgent.toLowerCase() !== input.agent.address.toLowerCase()) {
+  if (input.authorization === 'agent-only') {
+    return { ok: true };
+  }
+
+  if (
+    !input.currentAgent ||
+    input.currentAgent.toLowerCase() !== input.agent.address.toLowerCase()
+  ) {
     return { ok: false, reason: 'AGENT_NOT_CURRENT' };
   }
   if (!(await input.store.isAgentAssigned(input.missionId, input.agent.id))) {

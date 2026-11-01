@@ -12,6 +12,18 @@ export const SUCCRA_REQUEST_TYPES = {
   ],
 } as const;
 
+/** Purpose binding prevents a registration signature from being reused elsewhere. */
+export const AGENT_CHALLENGE_PURPOSE = 'succra.agent-registration.v1';
+
+export const AGENT_CHALLENGE_TYPES = {
+  AgentChallenge: [
+    { name: 'agentAddress', type: 'address' },
+    { name: 'challenge', type: 'bytes32' },
+    { name: 'expiresAt', type: 'uint256' },
+    { name: 'purpose', type: 'string' },
+  ],
+} as const;
+
 export function SUCCRA_EIP712_DOMAIN(
   chainId: bigint | number,
   verifyingContract: `0x${string}`
@@ -85,4 +97,49 @@ export function hashMethodAndPath(method: string, path: string): `0x${string}` {
 
 export function requestIdToBytes32(requestId: string): `0x${string}` {
   return `0x${bytesToHex(keccak_256(utf8ToBytes(requestId)))}`;
+}
+
+export interface AgentChallengeInput {
+  agentAddress: `0x${string}`;
+  challenge: string;
+  expiresAt: bigint | number | string;
+  chainId: bigint | number;
+}
+
+export interface AgentChallengeMessage {
+  agentAddress: `0x${string}`;
+  challenge: `0x${string}`;
+  expiresAt: bigint;
+  purpose: string;
+}
+
+function normalizeBytes32(value: string): `0x${string}` {
+  const clean = value.startsWith('0x') ? value.slice(2) : value;
+  if (!/^[0-9a-f]{64}$/i.test(clean)) {
+    throw new Error('Agent challenge must be a 32-byte hex value.');
+  }
+  return `0x${clean.toLowerCase()}`;
+}
+
+/**
+ * EIP-712 typed data for agent address-possession challenges.
+ * The domain intentionally has no verifyingContract, matching the wallet-login
+ * domain pattern in ARCHITECTURE.md §7.
+ */
+export function buildAgentChallengeTypedData(input: AgentChallengeInput) {
+  return {
+    domain: {
+      name: 'Succra' as const,
+      version: '1' as const,
+      chainId: BigInt(input.chainId),
+    },
+    types: AGENT_CHALLENGE_TYPES,
+    primaryType: 'AgentChallenge' as const,
+    message: {
+      agentAddress: input.agentAddress,
+      challenge: normalizeBytes32(input.challenge),
+      expiresAt: BigInt(input.expiresAt),
+      purpose: AGENT_CHALLENGE_PURPOSE,
+    } satisfies AgentChallengeMessage,
+  };
 }

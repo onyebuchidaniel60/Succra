@@ -31,6 +31,8 @@ export function createSubmitHsp(): SubmitHsp {
   if (!baseUrl) throw new Error('Missing HSP_API_BASE_URL.');
   if (!hmacSecret) throw new Error('Missing HSP_HMAC_SECRET.');
   const apiSecret = process.env.HSP_API_SECRET;
+  // PROVISIONAL — HSP_API_SECRET format treated as 32-byte hex ES256K
+  // key. Reconcile against live HSP docs in Phase 9.
   const jwtPrivateKey = apiSecret && /^(0x)?[0-9a-f]{64}$/i.test(apiSecret) ? apiSecret : undefined;
   const client = new HspClient({
     baseUrl,

@@ -305,6 +305,11 @@ async function confirmPayment(args: {
     return paymentSnapshot(row, requestId);
   }
 
+  // The hsp_payments status update and this budget mirror are separate DB
+  // statements. That is safe: SuccraMission.confirmedSpentAtomic is the
+  // authoritative spend check, so a stale mirror can only block a payment
+  // conservatively; it can never authorize an overspend. Reconciliation can
+  // replay the mirror, and HSP/HashKey remain authoritative.
   await persistence.mirrorConfirmedSpend(mission.id, amountAtomic.toString());
   return paymentSnapshot(confirmed, requestId);
 }

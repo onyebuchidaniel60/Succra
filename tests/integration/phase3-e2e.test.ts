@@ -386,6 +386,7 @@ describe('Phase 3 end-to-end settlement', () => {
       [missionId, agentId]
     );
 
+    // Real Phase 2 digest function, not an inline reimplementation.
     mandateHash = hashPaymentMandate(
       buildPaymentMandate({
         cartMandate: buildCartMandateRef({
