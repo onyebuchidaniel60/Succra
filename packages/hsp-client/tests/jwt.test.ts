@@ -28,9 +28,11 @@ describe('HSP ES256K JWT', () => {
       JSON.stringify({ sub: 'attacker', exp: Math.floor(Date.now() / 1000) + 60 })
     ).toString('base64url');
     expect(verifyJwtES256K(`${header}.${tamperedPayload}.${signature}`, publicKey)).toEqual(false);
-    expect(verifyJwtES256K(`${header}.${payload}.${signature?.slice(0, -2)}xx`, publicKey)).toEqual(
-      false
-    );
+    const signatureBytes = Buffer.from(signature ?? '', 'base64url');
+    signatureBytes.writeUInt8(signatureBytes.readUInt8(0) ^ 0x01, 0);
+    expect(
+      verifyJwtES256K(`${header}.${payload}.${signatureBytes.toString('base64url')}`, publicKey)
+    ).toEqual(false);
   });
 
   it('rejects an expired token', () => {
