@@ -28,7 +28,7 @@ export default async function NewMissionPage(): Promise<React.JSX.Element> {
     <main className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">New mission</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">New mission</p>
           <h1 className="mt-1 text-2xl font-bold">Define bounded authority</h1>
           <p className="mt-2 max-w-2xl text-sm text-zinc-400">
             The mission deploys one SuccraMission contract. The owner wallet signs the deployment;

@@ -12,6 +12,7 @@
 import { createBrowserClient, createServerClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
+import { e2eClient, isE2EMode } from './e2e/db';
 
 function publicUrl(): string {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -33,6 +34,7 @@ function serviceRoleKey(): string {
 
 /** Browser-side client (publishable key). Safe for client components. */
 export function browser(): SupabaseClient {
+  if (isE2EMode()) return e2eClient() as unknown as SupabaseClient;
   return createBrowserClient(publicUrl(), publishableKey());
 }
 
@@ -42,6 +44,7 @@ export function browser(): SupabaseClient {
  * trust `getSession()` — to authenticate.
  */
 export async function server(): Promise<SupabaseClient> {
+  if (isE2EMode()) return e2eClient() as unknown as SupabaseClient;
   const cookieStore = await cookies();
   return createServerClient(publicUrl(), publishableKey(), {
     cookies: {
@@ -64,6 +67,7 @@ export async function server(): Promise<SupabaseClient> {
  * re-derive the owner from the verified session.
  */
 export function admin(): SupabaseClient {
+  if (isE2EMode()) return e2eClient() as unknown as SupabaseClient;
   return createClient(publicUrl(), serviceRoleKey(), {
     auth: { autoRefreshToken: false, persistSession: false },
   });

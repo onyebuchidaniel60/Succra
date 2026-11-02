@@ -1,6 +1,7 @@
 // Succra — mission summary card used by the dashboard.
 import Link from 'next/link';
-import { formatAtomicUnknown, formatTokenAmount, shortenAddress, statusTone } from '@/lib/format';
+import StatusBadge from '@/components/StatusBadge';
+import { formatAtomicUnknown, formatTokenAmount, shortenAddress } from '@/lib/format';
 
 export interface MissionCardData {
   id: string;
@@ -38,7 +39,6 @@ export default function MissionCard({
   latestEvent?: { title: string; severity: string } | undefined;
   successionStatus?: string | null | undefined;
 }): React.JSX.Element {
-  const tone = statusTone(mission.status);
   const lastActivity = mission.updated_at || mission.created_at;
   const remaining =
     decimals === null
@@ -55,12 +55,7 @@ export default function MissionCard({
     >
       <div className="flex items-start justify-between gap-4">
         <h2 className="font-semibold text-zinc-100">{mission.name}</h2>
-        <span
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${tone.className}`}
-        >
-          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${tone.dotClassName}`} />
-          {tone.label}
-        </span>
+        <StatusBadge status={mission.status} />
       </div>
       <p className="mt-2 line-clamp-2 text-sm text-zinc-400">{mission.objective}</p>
       {latestEvent ? (
@@ -87,13 +82,13 @@ export default function MissionCard({
       ) : null}
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
         <div>
-          <dt className="text-zinc-500">Remaining budget</dt>
+          <dt className="text-zinc-400">Remaining budget</dt>
           <dd className="mt-0.5 font-mono text-sm text-zinc-200">
             {remaining} / {budget}
           </dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Current agent</dt>
+          <dt className="text-zinc-400">Current agent</dt>
           <dd
             className="mt-0.5 font-mono text-sm text-zinc-200"
             title={mission.current_agent_address}
@@ -102,13 +97,13 @@ export default function MissionCard({
           </dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Contract</dt>
+          <dt className="text-zinc-400">Contract</dt>
           <dd className="mt-0.5 font-mono text-sm text-zinc-200" title={mission.contract_address}>
             {shortenAddress(mission.contract_address)}
           </dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Last activity</dt>
+          <dt className="text-zinc-400">Last activity</dt>
           <dd className="mt-0.5 text-sm text-zinc-300">
             <time dateTime={lastActivity}>{relativeTime(lastActivity)}</time>
           </dd>

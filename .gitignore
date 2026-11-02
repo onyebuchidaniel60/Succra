@@ -30,3 +30,10 @@ target/
 .idea/
 .DS_Store/
 *.log
+
+# Playwright / test artifacts
+playwright-report/
+test-results/
+apps/web/test-results/
+tests/e2e/.logs/
+tests/e2e/screenshots/*.png

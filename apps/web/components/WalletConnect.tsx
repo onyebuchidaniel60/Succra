@@ -51,9 +51,15 @@ export default function WalletConnect({
   const { connectAsync, isPending: isConnecting } = useConnect();
   const { disconnect } = useDisconnect();
   const { signTypedDataAsync, isPending: isSigning } = useSignTypedData();
+  const [mounted, setMounted] = useState(false);
   const [signedIn, setSignedIn] = useState(authenticated);
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
+
+  // wagmi reads the injected provider/localStorage during hydration. Render a
+  // stable server snapshot until the client is mounted so the wallet badge and
+  // connector list cannot cause a hydration mismatch.
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     setSignedIn(authenticated);
@@ -134,6 +140,15 @@ export default function WalletConnect({
     }
   }
 
+  if (!mounted) {
+    return (
+      <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/80 p-6">
+        <h2 className="text-lg font-semibold">Wallet</h2>
+        <p className="mt-4 text-sm text-zinc-400">Checking wallet connection…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/80 p-6">
       <div className="flex items-center justify-between gap-4">
@@ -148,7 +163,7 @@ export default function WalletConnect({
       {connected && address ? (
         <div className="mt-4 space-y-4">
           <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3">
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Connected address</p>
+            <p className="text-xs uppercase tracking-wide text-zinc-400">Connected address</p>
             <p className="mt-1 break-all font-mono text-sm text-zinc-200" title={address}>
               {shortenAddress(address, 6)}
             </p>
@@ -209,7 +224,7 @@ export default function WalletConnect({
         </p>
       ) : null}
       {!connected ? (
-        <p className="mt-3 text-xs text-zinc-500">Your keys never leave your wallet.</p>
+        <p className="mt-3 text-xs text-zinc-400">Your keys never leave your wallet.</p>
       ) : null}
     </div>
   );

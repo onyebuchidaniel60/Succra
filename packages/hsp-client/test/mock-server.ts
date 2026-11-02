@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { verifyHmac } from '../src/hmac.js';
@@ -23,6 +24,8 @@ export interface MockHspPayment {
 export interface MockHspOptions {
   hmacSecret?: string;
   jwtPublicKey?: string;
+  /** Fixed port for E2E; 0 selects an ephemeral port. */
+  port?: number;
   /** Status returned by GET after settlementDelayMs. Default CONFIRMED. */
   settlementStatus?: HspPaymentStatusValue;
   settlementDelayMs?: number;
@@ -46,6 +49,10 @@ async function readBody(req: import('node:http').IncomingMessage): Promise<strin
 function json(res: import('node:http').ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
+}
+
+function settlementHash(id: string): `0x${string}` {
+  return `0x${createHash('sha256').update(id).digest('hex')}`;
 }
 
 function bearer(req: import('node:http').IncomingMessage): string {
@@ -156,7 +163,7 @@ export async function startMockHspServer(options: MockHspOptions = {}): Promise<
       const status = payment.status === 'SUBMITTED' && settled ? settlementStatus : payment.status;
       if (status === 'CONFIRMED') {
         payment.status = 'CONFIRMED';
-        payment.transactionHash ??= `0x${'ab'.repeat(32)}`;
+        payment.transactionHash ??= settlementHash(id);
         payment.blockNumber ??= 1;
         json(res, 200, {
           hspPaymentMandateId: id,
@@ -187,7 +194,7 @@ export async function startMockHspServer(options: MockHspOptions = {}): Promise<
       }
       if (action === 'confirm') {
         payment.status = 'CONFIRMED';
-        payment.transactionHash ??= `0x${'ab'.repeat(32)}`;
+        payment.transactionHash ??= settlementHash(id);
         payment.blockNumber ??= 1;
       } else {
         payment.status = 'FAILED';
@@ -200,7 +207,7 @@ export async function startMockHspServer(options: MockHspOptions = {}): Promise<
     json(res, 404, { error: 'NOT_FOUND' });
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, '127.0.0.1', resolve));
   const address = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${address.port}`,

@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 7b — audit endpoint, timeline, decision receipts: complete on branch `phase-7-ux` (pending review/merge). Phase 7a is complete on the same branch. Phase 6 is complete and merged to `main` @ `549629d`. Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Phase 7c — remaining screens, design system, demo polish: complete on branch `phase-7-ux` (pending review/merge). Phase 7a and 7b are complete on the same branch. Phase 6 is complete and merged to `main` @ `549629d`. Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
@@ -108,7 +108,20 @@ Phase 7b delivery on branch `phase-7-ux` (complete, pending review/merge):
 
 Phase 7b checkpoint: branch `phase-7-ux` (pending review/merge).
 
-Next assigned task: **Phase 7c — remaining screens, design system, demo polish; awaiting review approval of 7b.**
+Phase 7c delivery on branch `phase-7-ux` (complete, pending review/merge):
+- Amendment: resolved token decimals and symbol are passed into `Timeline`, `DecisionReceipt`, `MissionTimelinePanel`, `AuditExplorer`, and `SuccessionPanel`; `formatEventAmount` renders `amountAtomic`/`amount_atomic` with `formatTokenAmount`. Unknown decimals fall back to `"N atomic"` and warn in development only. Tests cover 6-decimal and 18-decimal tokens; the Playwright flow asserts `Payment of 200 USDC to …` and `Payment of 100 USDC to …`.
+- Added `/agents/[id]`, `/missions/[id]/succession`, `/missions/[id]/audit`, and `/settings`; rewrote the landing page; tightened the mission detail and dashboard layouts.
+- Design-system components: `StatusBadge`, `AuthorityMeter`, `AgentIdentityChip`, `CheckpointCard`, `TransactionProof`, `PolicyRuleList`, `EmptyState`, `InlineError`, `ConfirmDialog`, `CopyButton`, and `PageSkeleton`; loading routes for dashboard, mission, agent, settings, audit, and succession.
+- Accessibility/responsive polish: global `:focus-visible`, contrast fixes, status never conveyed by colour alone, and layout checks at 375/768/1024/1440 px.
+- Playwright smoke test (`tests/e2e/demo-smoke.spec.ts`) runs against a real local Hardhat node (chain ID 177), the real deployed contracts, the mock HSP, and a test-only PGlite-backed Supabase-shaped client. It exercises create → payment → three blocked violations → quarantine → succession activation → signed ACK → recovery payment, checks axe WCAG A/AA at the landing and audit pages, and screenshots the lifecycle.
+- E2E harness is inert unless `SUCCRA_E2E_MODE=1`; it is not used by normal development or production. `@electric-sql/pglite` is externalized from the Next.js server bundle.
+- The mock HSP now returns a unique settlement transaction hash per payment so the `hsp_payments.settlement_tx_hash` uniqueness constraint is exercised realistically.
+- Tests: **405 passing, 1 skipped live Supabase suite**; contracts **101 passing**; Playwright smoke **1 passing** with axe **0 violations** and no horizontal overflow at all four widths.
+- Not run locally: `supabase db lint` and the live Supabase RLS suite, because Docker/Supabase local stack is unavailable in this environment; CI still runs them.
+
+Phase 7c checkpoint: branch `phase-7-ux` (pending review/merge).
+
+Next assigned task: **STOP — await approval to merge `phase-7-ux` to `main`. Phase 8 has not started.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.

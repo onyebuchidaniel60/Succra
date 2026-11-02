@@ -4,8 +4,11 @@ import { formatAtomicUnknown, formatTokenAmount } from '../lib/format';
 import {
   clearTokenDecimalsCache,
   configuredTokenDecimals,
+  configuredTokenSymbol,
   parseTokenDecimalsConfig,
+  parseTokenSymbolConfig,
   readTokenDecimals,
+  readTokenSymbol,
 } from '../lib/token-decimals';
 
 const TOKEN_6 = `0x${'11'.repeat(20)}`;
@@ -15,6 +18,7 @@ const TOKEN_CONFIG = `0x${'33'.repeat(20)}`;
 beforeEach(() => {
   clearTokenDecimalsCache();
   delete process.env.NEXT_PUBLIC_TOKEN_DECIMALS;
+  delete process.env.NEXT_PUBLIC_TOKEN_SYMBOLS;
 });
 
 describe('formatTokenAmount', () => {
@@ -46,6 +50,14 @@ describe('token decimals resolution', () => {
     expect(configuredTokenDecimals(TOKEN_CONFIG)).toEqual(8);
   });
 
+  it('parses explicit token symbols for payment labels', () => {
+    const map = parseTokenSymbolConfig(`${TOKEN_6}:USDC, ${TOKEN_18}:HSK, bad:TOKEN`);
+    expect(map.get(TOKEN_6)).toEqual('USDC');
+    expect(map.get(TOKEN_18)).toEqual('HSK');
+    process.env.NEXT_PUBLIC_TOKEN_SYMBOLS = `${TOKEN_CONFIG}:USDC`;
+    expect(configuredTokenSymbol(TOKEN_CONFIG)).toEqual('USDC');
+  });
+
   it('reads decimals from a mock 6-decimal token and caches it', async () => {
     let calls = 0;
     const reader = {
@@ -63,6 +75,11 @@ describe('token decimals resolution', () => {
     const reader = { readContract: async () => 18 };
     await expect(readTokenDecimals(TOKEN_18, { reader })).resolves.toEqual(18);
     expect(formatTokenAmount(10n ** 18n, 18)).toEqual('1');
+  });
+
+  it('reads a token symbol from a mock reader', async () => {
+    const reader = { readContract: async () => 'USDC' };
+    await expect(readTokenSymbol(TOKEN_6, { reader })).resolves.toEqual('USDC');
   });
 
   it('returns null when the token read fails instead of guessing', async () => {

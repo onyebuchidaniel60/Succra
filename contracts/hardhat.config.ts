@@ -19,6 +19,9 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    hardhat: {
+      chainId: Number(process.env.HARDHAT_CHAIN_ID ?? '31337'),
+    },
     hashkeyMainnet: {
       url: process.env.NEXT_PUBLIC_HASHKEY_RPC_URL || 'https://mainnet.hsk.xyz',
       chainId: 177,

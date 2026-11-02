@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { apiError, unauthorized } from '@/lib/api-error';
 import { issueAgentChallenge } from '@/lib/gateway/agents';
 import { createSupabaseAgentStore } from '@/lib/gateway/store-agents';
+import { jsonSafe, jsonSafeTypedData } from '@/lib/json-safe';
 import { admin, server } from '@/lib/supabase';
 
 export async function POST(
@@ -28,7 +29,14 @@ export async function POST(
     agentId: id,
     chainId: Number(process.env.NEXT_PUBLIC_HASHKEY_CHAIN_ID ?? 177),
   });
-  return NextResponse.json(result.json, { status: result.status });
+  const payload = result.json as { typedData?: unknown } & Record<string, unknown>;
+  return NextResponse.json(
+    jsonSafe({
+      ...payload,
+      ...(payload.typedData ? { typedData: jsonSafeTypedData(payload.typedData) } : {}),
+    }),
+    { status: result.status }
+  );
 }
 
 export function GET(): NextResponse {

@@ -15,6 +15,7 @@ import {
 } from 'wagmi';
 import { erc20Abi, isAddress } from 'viem';
 import { shortenAddress } from '@/lib/format';
+import { configuredTokenDecimals } from '@/lib/token-decimals';
 import {
   dateToExpiresAt,
   toMissionCreateInput,
@@ -75,7 +76,7 @@ function Field({
   return (
     <label className="block text-sm">
       <span className="font-medium text-zinc-200">{label}</span>
-      {hint ? <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span> : null}
+      {hint ? <span className="mt-0.5 block text-xs text-zinc-400">{hint}</span> : null}
       <div className="mt-2">{children}</div>
       {error ? (
         <span role="alert" className="mt-1 block text-xs text-red-400">
@@ -113,7 +114,12 @@ export default function NewMissionWizard({
     functionName: 'decimals',
     query: { enabled: tokenAddress !== undefined, staleTime: Infinity },
   });
-  const tokenDecimals = typeof decimalsQuery.data === 'number' ? decimalsQuery.data : null;
+  const tokenDecimals =
+    typeof decimalsQuery.data === 'number'
+      ? decimalsQuery.data
+      : tokenAddress
+        ? configuredTokenDecimals(tokenAddress)
+        : null;
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<WizardErrors>({});
   const [submitError, setSubmitError] = useState('');
@@ -215,7 +221,6 @@ export default function NewMissionWizard({
       const finalized = finalizePayload as FinalizeResponse;
       setProgress('Mission active.');
       router.push(`/missions/${finalized.missionId}`);
-      router.refresh();
     } catch {
       setSubmitError('Mission creation failed. No funds moved; retry when ready.');
     } finally {
@@ -241,7 +246,7 @@ export default function NewMissionWizard({
                   ? 'border-emerald-700 bg-emerald-950 text-emerald-300'
                   : index < step
                     ? 'border-zinc-600 text-zinc-300'
-                    : 'border-zinc-800 text-zinc-500'
+                    : 'border-zinc-800 text-zinc-400'
               }`}
             >
               {index + 1}. {label}
@@ -299,7 +304,7 @@ export default function NewMissionWizard({
                 spellCheck={false}
               />
               {tokenAddress ? (
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-zinc-400">
                   {decimalsQuery.isLoading
                     ? 'Reading token decimals…'
                     : tokenDecimals === null
@@ -573,47 +578,47 @@ export default function NewMissionWizard({
             </div>
             <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-zinc-500">Settlement token</dt>
+                <dt className="text-zinc-400">Settlement token</dt>
                 <dd className="mt-0.5 break-all font-mono text-xs text-zinc-200">
                   {draft.paymentTokenAddress}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Expiry</dt>
+                <dt className="text-zinc-400">Expiry</dt>
                 <dd className="mt-0.5 text-zinc-200">{expiresAt ?? draft.expiresAt}</dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Budget</dt>
+                <dt className="text-zinc-400">Budget</dt>
                 <dd className="mt-0.5 font-mono text-zinc-200">
                   {draft.budget} {tokenLabel}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Per-payment ceiling</dt>
+                <dt className="text-zinc-400">Per-payment ceiling</dt>
                 <dd className="mt-0.5 font-mono text-zinc-200">
                   {draft.maxPayment} {tokenLabel}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Recovery ceiling</dt>
+                <dt className="text-zinc-400">Recovery ceiling</dt>
                 <dd className="mt-0.5 font-mono text-zinc-200">
                   {draft.recoveryMaxPayment} {tokenLabel}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Violations</dt>
+                <dt className="text-zinc-400">Violations</dt>
                 <dd className="mt-0.5 text-zinc-200">
                   {draft.violationThreshold} within {draft.violationWindowSeconds}s
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Primary agent</dt>
+                <dt className="text-zinc-400">Primary agent</dt>
                 <dd className="mt-0.5 break-all font-mono text-xs text-zinc-200">
                   {shortenAddress(draft.primaryAgentAddress, 6)}
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-500">Successors</dt>
+                <dt className="text-zinc-400">Successors</dt>
                 <dd className="mt-0.5 text-zinc-200">
                   {successorRows.filter((row) => row.address.trim()).length}
                 </dd>
@@ -634,7 +639,7 @@ export default function NewMissionWizard({
             <div>
               <h3 className="text-sm font-medium text-zinc-300">Successors</h3>
               {successorRows.filter((row) => row.address.trim()).length === 0 ? (
-                <p className="mt-1 text-sm text-zinc-500">None.</p>
+                <p className="mt-1 text-sm text-zinc-400">None.</p>
               ) : (
                 <ul className="mt-2 space-y-1">
                   {successorRows

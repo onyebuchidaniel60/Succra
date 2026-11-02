@@ -3,6 +3,7 @@
 // Succession visualization for QUARANTINED / RECOVERING / ACTIVE_RECOVERY.
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import TransactionProof from '@/components/TransactionProof';
 import { formatAtomicUnknown, formatTokenAmount, shortenAddress } from '@/lib/format';
 import type { AuditEvent } from '@/lib/audit/format';
 
@@ -27,6 +28,7 @@ export interface SuccessionPanelProps {
   succession: SuccessionRecordView | null;
   events: AuditEvent[];
   tokenDecimals: number | null;
+  tokenSymbol?: string | null;
 }
 
 function eventPayload(event: AuditEvent): Record<string, unknown> {
@@ -55,6 +57,7 @@ export default function SuccessionPanel({
   succession,
   events,
   tokenDecimals,
+  tokenSymbol = null,
 }: SuccessionPanelProps): React.JSX.Element {
   const router = useRouter();
   const [working, setWorking] = useState(false);
@@ -77,7 +80,9 @@ export default function SuccessionPanel({
   const recovery =
     tokenDecimals === null
       ? formatAtomicUnknown(succession?.recovery_max_payment_atomic)
-      : formatTokenAmount(succession?.recovery_max_payment_atomic, tokenDecimals);
+      : `${formatTokenAmount(succession?.recovery_max_payment_atomic, tokenDecimals)}${
+          tokenSymbol ? ` ${tokenSymbol}` : ''
+        }`;
 
   async function prompt(): Promise<void> {
     if (working) return;
@@ -140,7 +145,7 @@ export default function SuccessionPanel({
                   ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300'
                   : state === 'current'
                     ? 'border-amber-700 bg-amber-950/40 text-amber-200'
-                    : 'border-zinc-800 text-zinc-500'
+                    : 'border-zinc-800 text-zinc-400'
               }`}
             >
               {state === 'done' ? '✓ ' : state === 'current' ? '● ' : '○ '}
@@ -152,7 +157,7 @@ export default function SuccessionPanel({
 
       <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-zinc-500">Why succession occurred</dt>
+          <dt className="text-zinc-400">Why succession occurred</dt>
           <dd className="mt-1 text-zinc-200">
             {typeof triggerPayload['trigger'] === 'string'
               ? triggerPayload['trigger'].replaceAll('_', ' ')
@@ -163,17 +168,17 @@ export default function SuccessionPanel({
           </dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Recovery authority</dt>
+          <dt className="text-zinc-400">Recovery authority</dt>
           <dd className="mt-1 font-mono text-zinc-200">{recovery} per payment</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Selected successor</dt>
+          <dt className="text-zinc-400">Selected successor</dt>
           <dd className="mt-1 font-mono text-zinc-200">
             {succession ? shortenAddress(succession.to_agent_address, 6) : 'None selected'}
           </dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Recovery checkpoint</dt>
+          <dt className="text-zinc-400">Recovery checkpoint</dt>
           <dd className="mt-1 break-all font-mono text-xs text-zinc-300">
             {succession?.checkpoint_hash
               ? `#${succession.checkpoint_sequence ?? '—'} ${shortenAddress(succession.checkpoint_hash, 6)}`
@@ -181,7 +186,7 @@ export default function SuccessionPanel({
           </dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Acknowledgement</dt>
+          <dt className="text-zinc-400">Acknowledgement</dt>
           <dd className="mt-1 text-zinc-200">
             {succession?.status === 'ACKNOWLEDGED'
               ? `Acknowledged${succession.acknowledged_at ? ` at ${new Date(succession.acknowledged_at).toLocaleString()}` : ''}`
@@ -191,18 +196,20 @@ export default function SuccessionPanel({
           </dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Activation proof</dt>
-          <dd className="mt-1 break-all font-mono text-xs text-zinc-300">
-            {succession?.activation_tx_hash
-              ? shortenAddress(succession.activation_tx_hash, 6)
-              : '—'}
+          <dt className="text-zinc-400">Activation proof</dt>
+          <dd className="mt-1">
+            {succession?.activation_tx_hash ? (
+              <TransactionProof txHash={succession.activation_tx_hash} label="Activation" />
+            ) : (
+              <span className="font-mono text-xs text-zinc-400">—</span>
+            )}
           </dd>
         </div>
       </dl>
 
       {candidates.length > 0 ? (
         <div className="mt-5 border-t border-amber-900/40 pt-4">
-          <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Candidates considered</p>
+          <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Candidates considered</p>
           <ul className="mt-2 space-y-1">
             {candidates.map((candidate) => (
               <li
@@ -212,7 +219,7 @@ export default function SuccessionPanel({
                 <span className="break-all font-mono text-zinc-300">
                   {shortenAddress(candidate.address, 6)}
                 </span>
-                <span className="text-zinc-500">priority {candidate.priority}</span>
+                <span className="text-zinc-400">priority {candidate.priority}</span>
               </li>
             ))}
           </ul>

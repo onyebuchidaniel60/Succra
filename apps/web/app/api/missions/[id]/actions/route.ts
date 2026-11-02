@@ -16,6 +16,7 @@ import {
 } from '@succra/hsp-client';
 import { hashCanonicalBody, requestIdToBytes32 } from '@succra/shared';
 import { apiError } from '@/lib/api-error';
+import { jsonSafeTypedData } from '@/lib/json-safe';
 import { verifyAgentRequest, type AgentAuthReason } from '@/lib/gateway/agent-auth';
 import { readMissionState } from '@/lib/gateway/contract-reader';
 import {
@@ -64,17 +65,6 @@ function toUnixSeconds(value: string | number): bigint {
   const millis = Date.parse(value);
   if (Number.isNaN(millis)) throw new Error('invalid expiry');
   return BigInt(Math.floor(millis / 1000));
-}
-
-function jsonSafe(value: unknown): unknown {
-  if (typeof value === 'bigint') return value.toString();
-  if (Array.isArray(value)) return value.map(jsonSafe);
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, jsonSafe(entry)])
-    );
-  }
-  return value;
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -388,7 +378,7 @@ export async function POST(
         decision_reason_code: null,
         mandate_hash: mandateHash,
         mandate_payload: mandate,
-        typed_data: jsonSafe(typedData),
+        typed_data: jsonSafeTypedData(typedData),
         expires_at: expiresAtIso,
       });
     } catch (error) {
@@ -409,7 +399,7 @@ export async function POST(
       requestId: parsed.data.requestId,
       paymentMandate: mandate,
       mandateHash,
-      typedData: jsonSafe(typedData),
+      typedData: jsonSafeTypedData(typedData),
       expiresAt: expiresAtIso,
     });
   } catch {

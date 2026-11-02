@@ -1,6 +1,10 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // PGlite is used only by the Playwright E2E test harness. Keep it external
+  // so its WASM loader resolves files from node_modules instead of webpack's
+  // asset URL pipeline.
+  serverExternalPackages: ['@electric-sql/pglite'],
   // Phase 3: default App Router behavior. No rewrites, no headers, no
   // experimental flags.
   // Phase 4: @succra/shared is TypeScript workspace source (NodeNext-style

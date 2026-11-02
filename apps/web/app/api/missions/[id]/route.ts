@@ -3,20 +3,9 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { apiError, unauthorized } from '@/lib/api-error';
 import { getSessionWallet } from '@/lib/auth/session';
+import { jsonSafe } from '@/lib/json-safe';
 import { getMissionDetail } from '@/lib/missions/detail';
 import { server } from '@/lib/supabase';
-
-function jsonSafe(value: unknown): unknown {
-  if (typeof value === 'bigint') return value.toString();
-  if (value instanceof Set) return [...value].map(jsonSafe);
-  if (Array.isArray(value)) return value.map(jsonSafe);
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, jsonSafe(entry)])
-    );
-  }
-  return value;
-}
 
 export async function GET(
   _request: Request,

@@ -102,10 +102,53 @@ describe('formatAuditEvent', () => {
           hspPaymentMandateId: 'mandate-1',
         },
         onchain_tx_hash: TX,
-      })
+      }),
+      { decimals: 6, symbol: 'USDC' }
     );
-    expect(formatted.title).toContain('Payment of 1000000 atomic');
+    expect(formatted.title).toContain('Payment of 1 USDC to');
     expect(formatted.description).toContain('mandate-1');
+  });
+
+  it('renders the amendment example as 200 USDC, not atomic units', () => {
+    const formatted = formatAuditEvent(
+      event({
+        event_type: 'payment.confirmed',
+        payload_public: {
+          amountAtomic: '200000000',
+          tokenAddress: `0x${'55'.repeat(20)}`,
+          merchantAddress: `0x${'66'.repeat(20)}`,
+        },
+      }),
+      { decimals: 6, symbol: 'USDC' }
+    );
+    expect(formatted.title).toContain('Payment of 200 USDC to 0x');
+    expect(formatted.title).not.toContain('200000000');
+  });
+
+  it('formats 6/18-decimal amounts, snake_case payloads, and atomic fallback', () => {
+    const base = {
+      event_type: 'payment.confirmed',
+      payload_public: {
+        amountAtomic: '2000000000000000000',
+        merchantAddress: `0x${'66'.repeat(20)}`,
+      },
+    };
+    expect(formatAuditEvent(event(base), { decimals: 18, symbol: 'HSK' }).title).toContain(
+      'Payment of 2 HSK to'
+    );
+    expect(formatAuditEvent(event(base)).title).toContain('Payment of 2000000000000000000 atomic');
+    expect(
+      formatAuditEvent(
+        event({
+          ...base,
+          payload_public: {
+            amount_atomic: '5000000',
+            merchantAddress: base.payload_public.merchantAddress,
+          },
+        }),
+        { decimals: 6, symbol: 'USDC' }
+      ).title
+    ).toContain('Payment of 5 USDC to');
   });
 
   it('falls back to the raw event type for unknown events', () => {

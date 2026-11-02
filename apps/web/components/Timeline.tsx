@@ -2,6 +2,7 @@
 
 // Mission timeline. Read-only presentation of immutable audit_events.
 import { useMemo } from 'react';
+import EmptyState from '@/components/EmptyState';
 import {
   actorLabel,
   checkpointPendingStates,
@@ -14,6 +15,9 @@ export interface TimelineProps {
   events: AuditEvent[];
   highlight?: string | undefined;
   onSelect?: ((event: AuditEvent) => void) | undefined;
+  decimals?: number | null;
+  symbol?: string | null;
+  groupByDay?: boolean;
 }
 
 function relativeTime(value: string): string {
@@ -62,6 +66,9 @@ export default function Timeline({
   events,
   highlight,
   onSelect,
+  decimals = null,
+  symbol = null,
+  groupByDay = true,
 }: TimelineProps): React.JSX.Element {
   const pending = useMemo(() => checkpointPendingStates(events), [events]);
   const duplicateSequences = useMemo(() => duplicateCheckpointSequences(events), [events]);
@@ -84,24 +91,29 @@ export default function Timeline({
     return groups;
   }, [ordered]);
 
+  const sections = groupByDay ? grouped : [{ key: 'all', label: '', events: ordered }];
+
   if (events.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-400">
-        No mission events yet. The timeline will fill as the mission executes.
-      </div>
+      <EmptyState
+        title="No mission events yet"
+        description="The timeline will fill as the mission executes."
+      />
     );
   }
 
   return (
     <div className="space-y-8" aria-label="Mission timeline">
-      {grouped.map((group) => (
+      {sections.map((group) => (
         <section key={group.key}>
-          <h3 className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-            {group.label}
-          </h3>
+          {group.label ? (
+            <h3 className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-zinc-400">
+              {group.label}
+            </h3>
+          ) : null}
           <ol className="space-y-0">
             {group.events.map((event, index) => {
-              const formatted = formatAuditEvent(event);
+              const formatted = formatAuditEvent(event, { decimals, symbol });
               const isLast = index === group.events.length - 1;
               const sequence = Number(event.payload_public?.['sequence']);
               const duplicate =
@@ -151,7 +163,7 @@ export default function Timeline({
                           dateTime={event.created_at}
                           title={new Date(event.created_at).toLocaleString()}
                           suppressHydrationWarning
-                          className="text-[11px] text-zinc-500"
+                          className="text-[11px] text-zinc-400"
                         >
                           {relativeTime(event.created_at)}
                         </time>

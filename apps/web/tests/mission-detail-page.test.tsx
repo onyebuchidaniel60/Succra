@@ -116,6 +116,7 @@ beforeEach(() => {
       allowedMerchants: new Set([`0x${'ff'.repeat(20)}`]),
     },
     tokenDecimals: 6,
+    tokenSymbol: 'USDC',
     checkpoints: [
       {
         sequence: 1,

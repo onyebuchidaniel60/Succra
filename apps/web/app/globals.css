@@ -1,6 +1,15 @@
 @import 'tailwindcss';
 
-/* Succra Phase 3: Tailwind defaults + mission-control direction
-   (PROJECT_SPEC.md §15). Near-black/graphite base, high-contrast text,
-   restrained semantic accents. No custom design-system components yet
-   (those are Phase 7). */
+/* Succra design system: near-black/graphite base, semantic accents, visible
+   keyboard focus everywhere. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid #34d399;
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: #065f46;
+    color: #ecfdf5;
+  }
+}

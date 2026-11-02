@@ -6,7 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { parsePolicyDocument, type MissionPolicyDocument } from '@/lib/missions';
 import { readMissionState, type MissionOnChainState } from '@/lib/gateway/contract-reader';
-import { readTokenDecimals } from '@/lib/token-decimals';
+import { readTokenDecimals, readTokenSymbol } from '@/lib/token-decimals';
 import type { SuccessionRecordView } from '@/components/SuccessionPanel';
 
 export interface MissionDetailRow {
@@ -48,6 +48,7 @@ export interface MissionDetail {
   policy: MissionPolicyDocument | null;
   onchain: MissionOnChainState | null;
   tokenDecimals: number | null;
+  tokenSymbol: string | null;
   checkpoints: MissionCheckpointView[];
   successions: SuccessionRecordView[];
   agents: MissionAgentView[];
@@ -92,7 +93,10 @@ export async function getMissionDetail(
   }
 
   const tokenAddress = onchain?.paymentToken ?? mission.payment_token_address;
-  const tokenDecimals = await readTokenDecimals(tokenAddress).catch(() => null);
+  const [tokenDecimals, tokenSymbol] = await Promise.all([
+    readTokenDecimals(tokenAddress).catch(() => null),
+    readTokenSymbol(tokenAddress).catch(() => null),
+  ]);
 
   const { data: checkpointData } = await db
     .from('mission_checkpoints')
@@ -150,5 +154,5 @@ export async function getMissionDetail(
     }
   }
 
-  return { mission, policy, onchain, tokenDecimals, checkpoints, successions, agents };
+  return { mission, policy, onchain, tokenDecimals, tokenSymbol, checkpoints, successions, agents };
 }

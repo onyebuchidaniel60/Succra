@@ -2,7 +2,7 @@
 //
 // This module is pure: it turns immutable audit_events rows into human-
 // readable timeline entries and proof links. It never writes audit rows.
-import { shortenAddress } from '@/lib/format';
+import { formatTokenAmount, shortenAddress } from '@/lib/format';
 
 export type AuditSeverity = 'success' | 'warning' | 'danger' | 'info';
 
@@ -68,6 +68,25 @@ function reasonLabel(reason: unknown): string {
   return value.replaceAll('_', ' ').toLowerCase();
 }
 
+export interface AuditFormatOptions {
+  decimals?: number | null;
+  symbol?: string | null;
+}
+
+export function formatEventAmount(amountAtomic: unknown, options: AuditFormatOptions = {}): string {
+  const raw = text(amountAtomic);
+  if (!raw) return '—';
+  const decimals = options.decimals ?? null;
+  if (decimals === null) {
+    if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
+      console.warn('[succra] payment amount has no known token decimals; showing atomic units.');
+    }
+    return `${raw} atomic`;
+  }
+  const amount = formatTokenAmount(raw, decimals, 2);
+  return options.symbol?.trim() ? `${amount} ${options.symbol.trim()}` : `${amount} tokens`;
+}
+
 export function actorLabel(actorType: string): string {
   switch (actorType) {
     case 'owner':
@@ -85,7 +104,10 @@ export function actorLabel(actorType: string): string {
   }
 }
 
-export function formatAuditEvent(event: AuditEvent): FormattedAuditEvent {
+export function formatAuditEvent(
+  event: AuditEvent,
+  options: AuditFormatOptions = {}
+): FormattedAuditEvent {
   const data = payload(event);
   switch (event.event_type) {
     case 'mission.created':
@@ -99,14 +121,13 @@ export function formatAuditEvent(event: AuditEvent): FormattedAuditEvent {
     case 'payment.confirmed':
     case 'payment.settled':
     case 'settlement.confirmed': {
-      const amount = text(data['amountAtomic']) ?? '—';
       const token = address(data['tokenAddress']) ?? 'the settlement token';
       const merchant = address(data['merchantAddress']) ?? 'the merchant';
       const mandate = text(data['hspPaymentMandateId']);
       return {
         icon: '↗',
-        title: `Payment of ${amount} atomic ${token}`,
-        description: `Paid ${merchant}${mandate ? `; HSP mandate ${mandate}` : ''}.`,
+        title: `Payment of ${formatEventAmount(data['amountAtomic'] ?? data['amount_atomic'], options)} to ${merchant}`,
+        description: `Settled for ${token}${mandate ? `; HSP mandate ${mandate}` : ''}.`,
         severity: 'success',
         ...base(event),
       };

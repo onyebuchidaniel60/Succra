@@ -3,6 +3,8 @@
 // Owner/guardian mission actions used by the mission detail rail.
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import InlineError from '@/components/InlineError';
 
 export interface MissionActionsProps {
   missionId: string;
@@ -77,46 +79,30 @@ export default function MissionActions({
       aria-label="Mission actions"
     >
       <h2 className="text-sm font-semibold text-zinc-200">Actions</h2>
-      <p className="mt-1 text-xs text-zinc-500">
+      <p className="mt-1 text-xs text-zinc-400">
         Owner controls only. Quarantine freezes authority; it never moves funds.
       </p>
 
       <div className="mt-4 space-y-2">
         {status === 'ACTIVE' ? (
-          confirming ? (
-            <div className="rounded-md border border-red-900 bg-red-950/40 p-3">
-              <p className="text-xs text-red-200">
-                Quarantine this mission? The current agent loses payment authority immediately.
-              </p>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void quarantine()}
-                  disabled={working !== null}
-                  className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 disabled:opacity-50"
-                >
-                  {working === 'quarantine' ? 'Quarantining…' : 'Confirm quarantine'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirming(false)}
-                  disabled={working !== null}
-                  className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirming(true)}
-              className="w-full rounded-md border border-red-800 px-3 py-2 text-sm font-medium text-red-300 hover:bg-red-950/40"
-            >
-              Quarantine mission
-            </button>
-          )
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="w-full rounded-md border border-red-800 px-3 py-2 text-sm font-medium text-red-300 transition-colors duration-150 hover:bg-red-950/40"
+          >
+            Quarantine mission
+          </button>
         ) : null}
+
+        <ConfirmDialog
+          open={confirming}
+          title="Quarantine this mission?"
+          description="The current agent loses payment authority immediately. Funds remain in the owner’s wallet."
+          confirmLabel="Confirm quarantine"
+          busy={working === 'quarantine'}
+          onConfirm={() => void quarantine()}
+          onCancel={() => setConfirming(false)}
+        />
 
         {status === 'QUARANTINED' ? (
           <button
@@ -144,14 +130,14 @@ export default function MissionActions({
         ) : null}
 
         {!['ACTIVE', 'QUARANTINED', 'RECOVERING', 'ACTIVE_RECOVERY'].includes(status) ? (
-          <p className="text-xs text-zinc-500">No owner actions are available in this status.</p>
+          <p className="text-xs text-zinc-400">No owner actions are available in this status.</p>
         ) : null}
       </div>
 
       {error ? (
-        <p role="alert" className="mt-3 text-sm text-red-400">
-          {error}
-        </p>
+        <div className="mt-3">
+          <InlineError message={error} />
+        </div>
       ) : null}
     </section>
   );

@@ -16,6 +16,16 @@ export const ERC20_DECIMALS_ABI = [
   },
 ] as const;
 
+export const ERC20_SYMBOL_ABI = [
+  {
+    type: 'function',
+    name: 'symbol',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+  },
+] as const;
+
 export interface DecimalsReader {
   readContract(args: {
     address: `0x${string}`;
@@ -24,12 +34,26 @@ export interface DecimalsReader {
   }): Promise<number>;
 }
 
+export interface SymbolReader {
+  readContract(args: {
+    address: `0x${string}`;
+    abi: typeof ERC20_SYMBOL_ABI;
+    functionName: 'symbol';
+  }): Promise<string>;
+}
+
 export interface ReadTokenDecimalsOptions {
   reader?: DecimalsReader;
   rpcUrl?: string;
 }
 
+export interface ReadTokenSymbolOptions {
+  reader?: SymbolReader;
+  rpcUrl?: string;
+}
+
 const cache = new Map<string, number>();
+const symbolCache = new Map<string, string>();
 
 /** Parse `0xabc...:6,0xdef...:18`; invalid entries are ignored. */
 export function parseTokenDecimalsConfig(raw: string | undefined): Map<string, number> {
@@ -51,6 +75,29 @@ export function configuredTokenDecimals(
 ): number | null {
   if (!isAddress(address)) return null;
   return parseTokenDecimalsConfig(raw).get(address.toLowerCase()) ?? null;
+}
+
+/** Parse `0xabc...:USDC,0xdef...:HSK`; invalid entries are ignored. */
+export function parseTokenSymbolConfig(raw: string | undefined): Map<string, string> {
+  const result = new Map<string, string>();
+  if (!raw) return result;
+  for (const entry of raw.split(',')) {
+    const separator = entry.lastIndexOf(':');
+    if (separator <= 0) continue;
+    const address = entry.slice(0, separator).trim();
+    const symbol = entry.slice(separator + 1).trim();
+    if (!isAddress(address) || symbol.length === 0 || symbol.length > 32) continue;
+    result.set(address.toLowerCase(), symbol);
+  }
+  return result;
+}
+
+export function configuredTokenSymbol(
+  address: string,
+  raw = process.env.NEXT_PUBLIC_TOKEN_SYMBOLS
+): string | null {
+  if (!isAddress(address)) return null;
+  return parseTokenSymbolConfig(raw).get(address.toLowerCase()) ?? null;
 }
 
 function rpcUrl(explicit?: string): string {
@@ -100,4 +147,42 @@ export async function readTokenDecimals(
 /** Test-only cache reset. */
 export function clearTokenDecimalsCache(): void {
   cache.clear();
+  symbolCache.clear();
+}
+
+/**
+ * Resolve the token display symbol, preferring explicit deployment config.
+ * A missing symbol only affects label text; amounts still use decimals.
+ */
+export async function readTokenSymbol(
+  address: string,
+  options: ReadTokenSymbolOptions = {}
+): Promise<string | null> {
+  if (!isAddress(address)) return null;
+  const key = address.toLowerCase();
+  const cached = symbolCache.get(key);
+  if (cached !== undefined) return cached;
+  const configured = configuredTokenSymbol(address);
+  if (configured !== null) {
+    symbolCache.set(key, configured);
+    return configured;
+  }
+  try {
+    const reader =
+      options.reader ??
+      (createPublicClient({
+        transport: http(rpcUrl(options.rpcUrl)),
+      }) as unknown as SymbolReader);
+    const symbol = await reader.readContract({
+      address: key as `0x${string}`,
+      abi: ERC20_SYMBOL_ABI,
+      functionName: 'symbol',
+    });
+    const value = String(symbol).trim();
+    if (value.length === 0 || value.length > 32) return null;
+    symbolCache.set(key, value);
+    return value;
+  } catch {
+    return null;
+  }
 }

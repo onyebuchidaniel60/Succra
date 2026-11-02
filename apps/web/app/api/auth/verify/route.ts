@@ -21,6 +21,7 @@ import { parseLoginTypedData } from '@/lib/auth/message';
 import { VERIFY_REQUEST_SCHEMA } from '@/lib/auth/schemas';
 import { verifyWalletSignature } from '@/lib/auth/signature';
 import { consumeNonce, SupabaseNonceTable } from '@/lib/auth/nonces';
+import { E2E_USER_ID, isE2EMode } from '@/lib/e2e/db';
 import { admin } from '@/lib/supabase';
 
 function publicUrl(): string {
@@ -83,6 +84,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
   if (!(await verifyWalletSignature({ walletAddress, typedData, signature }))) {
     return apiError(401, 'INVALID_SIGNATURE', 'Wallet signature rejected. No session created.');
+  }
+
+  // Playwright E2E: the session is the fixed test profile served by the
+  // PGlite client. No Supabase Auth round-trip is possible without a stack.
+  if (isE2EMode()) {
+    return NextResponse.json({ user: { id: E2E_USER_ID, walletAddress } });
   }
 
   // 3. Resolve wallet -> auth user (create on first login), then profile.

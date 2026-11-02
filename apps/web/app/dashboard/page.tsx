@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import MissionCard, { type MissionCardData } from '@/components/MissionCard';
 import { formatAuditEvent, type AuditEvent } from '@/lib/audit/format';
-import { readTokenDecimals } from '@/lib/token-decimals';
+import { readTokenDecimals, readTokenSymbol } from '@/lib/token-decimals';
 import { server } from '@/lib/supabase';
 
 // Session-dependent: never statically prerendered.
@@ -55,9 +55,15 @@ export default async function DashboardPage(): Promise<React.JSX.Element> {
   }
   const missions = (data ?? []) as unknown as MissionRow[];
   const decimalsByToken = new Map<string, number | null>();
+  const symbolsByToken = new Map<string, string | null>();
   await Promise.all(
     [...new Set(missions.map((mission) => mission.payment_token_address))].map(async (token) => {
-      decimalsByToken.set(token, await readTokenDecimals(token).catch(() => null));
+      const [decimals, symbol] = await Promise.all([
+        readTokenDecimals(token).catch(() => null),
+        readTokenSymbol(token).catch(() => null),
+      ]);
+      decimalsByToken.set(token, decimals);
+      symbolsByToken.set(token, symbol);
     })
   );
   const latestByMission = new Map<string, { title: string; severity: string } | null>();
@@ -74,7 +80,10 @@ export default async function DashboardPage(): Promise<React.JSX.Element> {
         .limit(1)
         .maybeSingle();
       if (audit) {
-        const formatted = formatAuditEvent(audit as unknown as AuditEvent);
+        const formatted = formatAuditEvent(audit as unknown as AuditEvent, {
+          decimals: decimalsByToken.get(mission.payment_token_address) ?? null,
+          symbol: symbolsByToken.get(mission.payment_token_address) ?? null,
+        });
         latestByMission.set(mission.id, {
           title: formatted.title,
           severity: formatted.severity,
@@ -101,15 +110,23 @@ export default async function DashboardPage(): Promise<React.JSX.Element> {
     <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Mission control</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Mission control</p>
           <h1 className="mt-1 text-2xl font-bold">Dashboard</h1>
         </div>
-        <Link
-          href="/missions/new"
-          className="inline-flex w-full items-center justify-center rounded-md bg-emerald-500 px-4 py-2 font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 sm:w-auto"
-        >
-          New mission
-        </Link>
+        <div className="flex w-full gap-3 sm:w-auto">
+          <Link
+            href="/settings"
+            className="inline-flex flex-1 items-center justify-center rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-200 transition-colors hover:border-zinc-500 sm:flex-none"
+          >
+            Settings
+          </Link>
+          <Link
+            href="/missions/new"
+            className="inline-flex flex-1 items-center justify-center rounded-md bg-emerald-500 px-4 py-2 font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 sm:flex-none"
+          >
+            New mission
+          </Link>
+        </div>
       </div>
 
       {missions.length === 0 ? (
