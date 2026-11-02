@@ -10,13 +10,13 @@
 // Contents:
 //   A. RLS allow/deny mirror of tests/integration/supabase-rls.test.ts,
 //      executed through PostgREST with real GoTrue JWTs.
-//   B. Live auth flow over HTTP: nonce -> Ed25519 sign (generated test
-//      keypair) -> verify -> session cookie -> missions CRUD scoping,
-//      nonce single-use/reuse/expiry, bad signature, owner_id spoof.
+//   B. Live auth flow over HTTP: nonce -> EIP-712 SuccraLogin sign
+//      (generated test account) -> verify -> session cookie -> missions
+//      read/auth gate, nonce single-use/reuse/expiry, bad signature.
 //   C. Dashboard gate: anonymous GET /dashboard -> 307 to /.
 import { randomBytes, randomUUID } from 'node:crypto';
-import { sign } from 'tweetnacl';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
@@ -24,29 +24,6 @@ const ANON_KEY = process.env.SUPABASE_ANON_KEY ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const APP_URL = (process.env.APP_URL ?? '').replace(/\/$/, '');
 const LIVE = SUPABASE_URL !== '' && ANON_KEY !== '' && SERVICE_KEY !== '' && APP_URL !== '';
-
-const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-
-function base58Encode(bytes: Uint8Array): string {
-  let num = 0n;
-  for (const byte of bytes) {
-    num = (num << 8n) + BigInt(byte);
-  }
-  let out = '';
-  while (num > 0n) {
-    out = (ALPHABET[Number(num % 58n)] ?? '') + out;
-    num /= 58n;
-  }
-  for (const byte of bytes) {
-    if (byte !== 0) break;
-    out = `1${out}`;
-  }
-  return out;
-}
-
-function base64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64');
-}
 
 if (!LIVE) {
   describe.skip('live supabase suite (requires SUPABASE_URL/ANON_KEY/SERVICE_KEY/APP_URL)', () => {
@@ -267,27 +244,44 @@ if (!LIVE) {
       return setCookies.map((entry) => entry.split(';')[0] ?? '').join('; ');
     }
 
+    interface LoginTypedData {
+      domain: { name: 'Succra'; version: '1'; chainId: number };
+      types: {
+        SuccraLogin: readonly [
+          { name: 'walletAddress'; type: 'address' },
+          { name: 'nonce'; type: 'string' },
+          { name: 'issuedAt'; type: 'string' },
+        ];
+      };
+      primaryType: 'SuccraLogin';
+      message: { walletAddress: `0x${string}`; nonce: string; issuedAt: string };
+    }
+
     async function issueNonce(
       walletAddress: string
-    ): Promise<{ nonce: string; message: string; status: number }> {
+    ): Promise<{ nonce: string; typedData: LoginTypedData; status: number }> {
       const response = await fetch(`${APP_URL}/api/auth/nonce`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ walletAddress }),
       });
-      const payload = (await response.json()) as { nonce: string; message: string };
-      return { nonce: payload.nonce, message: payload.message, status: response.status };
+      const payload = (await response.json()) as { nonce: string; typedData: LoginTypedData };
+      return { nonce: payload.nonce, typedData: payload.typedData, status: response.status };
     }
 
     it('nonce -> sign -> verify -> cookie -> missions 200; anonymous 401', async () => {
-      const keys = sign.keyPair();
-      const walletAddress = base58Encode(keys.publicKey);
-      const issued = await issueNonce(walletAddress);
+      const account = privateKeyToAccount(generatePrivateKey());
+      const walletAddress = account.address.toLowerCase();
+      const issued = await issueNonce(account.address);
       expect(issued.status).toEqual(200);
-      expect(issued.message).toContain(`Wallet: ${walletAddress}`);
-      const signature = base64(
-        sign.detached(new TextEncoder().encode(issued.message), keys.secretKey)
-      );
+      expect(issued.typedData.message.walletAddress).toEqual(walletAddress);
+      expect(issued.typedData.domain).toEqual({ name: 'Succra', version: '1', chainId: 177 });
+      const signature = await account.signTypedData({
+        domain: issued.typedData.domain,
+        types: issued.typedData.types,
+        primaryType: issued.typedData.primaryType,
+        message: issued.typedData.message,
+      });
       const verifyRes = await fetch(`${APP_URL}/api/auth/verify`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -315,7 +309,8 @@ if (!LIVE) {
       });
       expect(replay.status).toEqual(401);
 
-      // Authenticated draft creation ignores a smuggled owner_id.
+      // Authenticated but Solana-shaped input is rejected by the EVM schema,
+      // and a smuggled owner_id never creates a row.
       const created = await fetch(`${APP_URL}/api/missions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie },
@@ -333,50 +328,50 @@ if (!LIVE) {
           owner_id: 'attacker-user-id',
         }),
       });
-      expect(created.status).toEqual(201);
-      const draft = (await created.json()) as { id: string; status: string };
-      expect(draft.status).toEqual('DRAFT');
-      const stored = await admin
-        .from('missions')
-        .select('owner_id')
-        .eq('id', draft.id)
-        .maybeSingle();
-      expect((stored.data as { owner_id: string } | null)?.owner_id).toEqual(session.user.id);
-      await admin.from('missions').delete().eq('id', draft.id);
+      expect(created.status).toEqual(400);
+      const stored = await admin.from('missions').select('id').eq('owner_id', session.user.id);
+      expect((stored.data ?? []).length).toEqual(0);
       await admin.from('profiles').delete().eq('id', session.user.id);
       await admin.auth.admin.deleteUser(session.user.id);
     }, 120_000);
 
     it('tampered signature is rejected', async () => {
-      const keys = sign.keyPair();
-      const walletAddress = base58Encode(keys.publicKey);
-      const issued = await issueNonce(walletAddress);
-      const raw = Buffer.from(
-        sign.detached(new TextEncoder().encode(issued.message), keys.secretKey)
-      );
-      raw[0] = (raw[0] ?? 0) ^ 0xff;
+      const account = privateKeyToAccount(generatePrivateKey());
+      const walletAddress = account.address.toLowerCase();
+      const issued = await issueNonce(account.address);
+      const signature = await account.signTypedData({
+        domain: issued.typedData.domain,
+        types: issued.typedData.types,
+        primaryType: issued.typedData.primaryType,
+        message: issued.typedData.message,
+      });
+      const bytes = signature.slice(2).split('');
+      bytes[0] = bytes[0] === 'f' ? '0' : 'f';
       const response = await fetch(`${APP_URL}/api/auth/verify`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           walletAddress,
           nonce: issued.nonce,
-          signature: base64(raw),
+          signature: `0x${bytes.join('')}`,
         }),
       });
       expect(response.status).toEqual(401);
     }, 60_000);
 
     it('expired nonce is rejected (short app TTL)', async () => {
-      const keys = sign.keyPair();
-      const walletAddress = base58Encode(keys.publicKey);
-      const issued = await issueNonce(walletAddress);
+      const account = privateKeyToAccount(generatePrivateKey());
+      const walletAddress = account.address.toLowerCase();
+      const issued = await issueNonce(account.address);
       // CI boots the app with SUCCRA_NONCE_TTL_SECONDS=10; outliving it
       // must fail verification.
       await new Promise((resolve) => setTimeout(resolve, 11_000));
-      const signature = base64(
-        sign.detached(new TextEncoder().encode(issued.message), keys.secretKey)
-      );
+      const signature = await account.signTypedData({
+        domain: issued.typedData.domain,
+        types: issued.typedData.types,
+        primaryType: issued.typedData.primaryType,
+        message: issued.typedData.message,
+      });
       const response = await fetch(`${APP_URL}/api/auth/verify`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
