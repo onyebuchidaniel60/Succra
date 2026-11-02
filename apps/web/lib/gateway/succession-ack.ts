@@ -18,6 +18,10 @@ export interface AckMissionRow {
 export interface AckDeps {
   getMission(missionId: string): Promise<AckMissionRow | null>;
   getSuccession(missionId: string, successionId: string): Promise<SuccessionEventRow | null>;
+  getSuccessorEligibility(args: {
+    missionId: string;
+    agentId: string;
+  }): Promise<{ agentStatus: string; assignmentStatus: string | null }>;
   readState(address: `0x${string}`): Promise<MissionOnChainState>;
   submitAck(args: {
     missionAddress: `0x${string}`;
@@ -73,6 +77,32 @@ export async function acknowledgeRecovery(args: {
     succession.to_agent_address.toLowerCase() !== args.agentAddress.toLowerCase()
   ) {
     return failure(403, 'SUCCESSION_FORBIDDEN', 'This succession belongs to another agent.');
+  }
+
+  // ACK-time eligibility re-check. Activation selected this successor while
+  // REGISTERED/ACTIVE_SUCCESSOR; if the assignment or agent was later
+  // quarantined/revoked, the handoff must not complete.
+  let eligibility: { agentStatus: string; assignmentStatus: string | null };
+  try {
+    eligibility = await deps.getSuccessorEligibility({
+      missionId,
+      agentId: args.agentId,
+    });
+  } catch {
+    return failure(503, 'SUCCESSION_ELIGIBILITY_UNAVAILABLE', 'Could not re-check eligibility.');
+  }
+  const eligibleAgentStatuses = new Set(['REGISTERED', 'ACTIVE_PRIMARY', 'ACTIVE_SUCCESSOR']);
+  const eligibleAssignmentStatuses = new Set(['REGISTERED', 'ACTIVE_SUCCESSOR']);
+  if (
+    !eligibleAgentStatuses.has(eligibility.agentStatus) ||
+    !eligibility.assignmentStatus ||
+    !eligibleAssignmentStatuses.has(eligibility.assignmentStatus)
+  ) {
+    return failure(
+      403,
+      'SUCCESSOR_NOT_ELIGIBLE',
+      'The successor is no longer eligible to acknowledge this mission.'
+    );
   }
 
   const addressValue = mission.contract_address ?? mission.pda_address;

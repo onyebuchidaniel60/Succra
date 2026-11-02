@@ -7,6 +7,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import MissionCard, { type MissionCardData } from '@/components/MissionCard';
+import { formatAuditEvent, type AuditEvent } from '@/lib/audit/format';
+import { readTokenDecimals } from '@/lib/token-decimals';
 import { server } from '@/lib/supabase';
 
 // Session-dependent: never statically prerendered.
@@ -52,6 +54,49 @@ export default async function DashboardPage(): Promise<React.JSX.Element> {
     );
   }
   const missions = (data ?? []) as unknown as MissionRow[];
+  const decimalsByToken = new Map<string, number | null>();
+  await Promise.all(
+    [...new Set(missions.map((mission) => mission.payment_token_address))].map(async (token) => {
+      decimalsByToken.set(token, await readTokenDecimals(token).catch(() => null));
+    })
+  );
+  const latestByMission = new Map<string, { title: string; severity: string } | null>();
+  const successionByMission = new Map<string, string | null>();
+  await Promise.all(
+    missions.map(async (mission) => {
+      const { data: audit } = await supabase
+        .from('audit_events')
+        .select(
+          'id,mission_id,event_type,actor_type,actor_id,payload_public,onchain_tx_hash,created_at'
+        )
+        .eq('mission_id', mission.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (audit) {
+        const formatted = formatAuditEvent(audit as unknown as AuditEvent);
+        latestByMission.set(mission.id, {
+          title: formatted.title,
+          severity: formatted.severity,
+        });
+      } else {
+        latestByMission.set(mission.id, null);
+      }
+      if (mission.status !== 'ACTIVE') {
+        const { data: succession } = await supabase
+          .from('succession_events')
+          .select('status')
+          .eq('mission_id', mission.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        successionByMission.set(
+          mission.id,
+          (succession as { status?: string } | null)?.status ?? null
+        );
+      }
+    })
+  );
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -84,7 +129,12 @@ export default async function DashboardPage(): Promise<React.JSX.Element> {
         <ul className="mt-8 grid gap-4 sm:grid-cols-2">
           {missions.map((mission) => (
             <li key={mission.id}>
-              <MissionCard mission={mission} />
+              <MissionCard
+                mission={mission}
+                decimals={decimalsByToken.get(mission.payment_token_address) ?? null}
+                latestEvent={latestByMission.get(mission.id) ?? undefined}
+                successionStatus={successionByMission.get(mission.id) ?? null}
+              />
             </li>
           ))}
         </ul>

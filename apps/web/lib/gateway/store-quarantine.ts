@@ -39,6 +39,7 @@ export interface NewAuditEventRow {
   event_hash: string;
   payload_public: Record<string, unknown>;
   onchain_tx_hash?: string | null;
+  created_at?: string;
 }
 
 export interface AuditEventRow extends NewAuditEventRow {

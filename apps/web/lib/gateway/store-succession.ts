@@ -173,6 +173,25 @@ export async function getSuccessionById(
   return (data as SuccessionEventRow | null) ?? null;
 }
 
+/**
+ * ACK-time eligibility: a successor whose assignment or agent record was
+ * revoked/quarantined after activation must not be able to acknowledge.
+ */
+export async function getMissionAgentStatus(
+  db: SupabaseClient,
+  missionId: string,
+  agentId: string
+): Promise<string | null> {
+  const { data, error } = await db
+    .from('mission_agents')
+    .select('status')
+    .eq('mission_id', missionId)
+    .eq('agent_id', agentId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { status?: string } | null)?.status ?? null;
+}
+
 export async function listSuccessions(
   db: SupabaseClient,
   missionId: string

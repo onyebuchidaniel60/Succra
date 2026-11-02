@@ -4,7 +4,6 @@
 // Human-readable token amounts are converted to atomic strings only at the
 // boundary; all API/on-chain values remain decimal integer strings.
 import { isAddress, parseUnits } from 'viem';
-import { DEFAULT_TOKEN_DECIMALS } from '@/lib/format';
 import {
   MAX_SUCCESSORS,
   MAX_VIOLATION_THRESHOLD,
@@ -80,8 +79,11 @@ export function dateToExpiresAt(value: string): string | null {
 
 export function parseTokenAmount(
   value: string,
-  decimals = DEFAULT_TOKEN_DECIMALS
+  decimals: number
 ): { atomic: string } | { error: string } {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+    return { error: 'Token decimals are unavailable.' };
+  }
   const trimmed = value.trim();
   if (trimmed.length === 0) return { error: 'Enter an amount.' };
   if (!/^\d+(\.\d+)?$/.test(trimmed)) return { error: 'Use a positive decimal amount.' };
@@ -107,11 +109,11 @@ function positiveInteger(value: string, min: number, max: number, field: string)
   return null;
 }
 
-function validateAmounts(draft: MissionWizardDraft): WizardErrors {
+function validateAmounts(draft: MissionWizardDraft, decimals: number): WizardErrors {
   const errors: WizardErrors = {};
-  const budget = parseTokenAmount(draft.budget);
-  const maxPayment = parseTokenAmount(draft.maxPayment);
-  const recovery = parseTokenAmount(draft.recoveryMaxPayment);
+  const budget = parseTokenAmount(draft.budget, decimals);
+  const maxPayment = parseTokenAmount(draft.maxPayment, decimals);
+  const recovery = parseTokenAmount(draft.recoveryMaxPayment, decimals);
   if ('error' in budget) errors['budget'] = budget.error;
   if ('error' in maxPayment) errors['maxPayment'] = maxPayment.error;
   if ('error' in recovery) errors['recoveryMaxPayment'] = recovery.error;
@@ -128,7 +130,11 @@ function validateAmounts(draft: MissionWizardDraft): WizardErrors {
   return errors;
 }
 
-export function validateWizardStep(step: WizardStep, draft: MissionWizardDraft): WizardErrors {
+export function validateWizardStep(
+  step: WizardStep,
+  draft: MissionWizardDraft,
+  tokenDecimals: number | null
+): WizardErrors {
   const errors: WizardErrors = {};
   if (step === 0) {
     if (draft.name.trim().length === 0) errors['name'] = 'Mission name is required.';
@@ -140,8 +146,12 @@ export function validateWizardStep(step: WizardStep, draft: MissionWizardDraft):
   if (step === 1) {
     if (!isAddress(draft.paymentTokenAddress)) {
       errors['paymentTokenAddress'] = 'Enter a valid EVM token address.';
+    } else if (tokenDecimals === null) {
+      errors['paymentTokenAddress'] = 'Token decimals could not be read. Check the token address.';
     }
-    Object.assign(errors, validateAmounts(draft));
+    if (tokenDecimals !== null) {
+      Object.assign(errors, validateAmounts(draft, tokenDecimals));
+    }
     const expiresAt = dateToExpiresAt(draft.expiresAt);
     if (!expiresAt || Date.parse(expiresAt) <= Date.now()) {
       errors['expiresAt'] = 'Choose a future expiry date.';
@@ -209,19 +219,25 @@ export function validateWizardStep(step: WizardStep, draft: MissionWizardDraft):
   return errors;
 }
 
-export function validateWizard(draft: MissionWizardDraft): WizardErrors {
+export function validateWizard(
+  draft: MissionWizardDraft,
+  tokenDecimals: number | null
+): WizardErrors {
   const errors: WizardErrors = {};
   for (let step = 0; step < WIZARD_STEPS.length - 1; step += 1) {
-    Object.assign(errors, validateWizardStep(step, draft));
+    Object.assign(errors, validateWizardStep(step, draft, tokenDecimals));
   }
   return errors;
 }
 
 /** Convert a valid wizard draft into the POST /api/missions body. */
-export function toMissionCreateInput(draft: MissionWizardDraft): MissionCreateInput {
-  const budget = parseTokenAmount(draft.budget);
-  const maxPayment = parseTokenAmount(draft.maxPayment);
-  const recovery = parseTokenAmount(draft.recoveryMaxPayment);
+export function toMissionCreateInput(
+  draft: MissionWizardDraft,
+  tokenDecimals: number
+): MissionCreateInput {
+  const budget = parseTokenAmount(draft.budget, tokenDecimals);
+  const maxPayment = parseTokenAmount(draft.maxPayment, tokenDecimals);
+  const recovery = parseTokenAmount(draft.recoveryMaxPayment, tokenDecimals);
   const expiresAt = dateToExpiresAt(draft.expiresAt);
   if ('error' in budget || 'error' in maxPayment || 'error' in recovery || !expiresAt) {
     throw new Error('Wizard draft is invalid.');

@@ -205,6 +205,7 @@ const { POST: postNonce } = await import('../app/api/auth/nonce/route');
 const { POST: postVerify } = await import('../app/api/auth/verify/route');
 const { GET: getMissions, POST: postMissions } = await import('../app/api/missions/route');
 const { POST: postFinalize } = await import('../app/api/missions/[id]/finalize/route');
+const { GET: getMissionAudit } = await import('../app/api/missions/[id]/audit/route');
 
 const ACCOUNT = privateKeyToAccount(
   '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6'
@@ -494,5 +495,80 @@ describe('POST /api/missions/:id/finalize', () => {
       { params: Promise.resolve({ id: missionId }) }
     );
     expect(response.status).toEqual(400);
+  });
+});
+
+describe('GET /api/missions/:id/audit', () => {
+  const MISSION_ID = '11111111-1111-4111-8111-111111111111';
+
+  it('returns owner-scoped events ordered by created_at ascending', async () => {
+    authenticate();
+    fixtures.tables['missions'] = [
+      {
+        id: MISSION_ID,
+        owner_id: USER_ID,
+        name: 'Treasury run',
+        status: 'ACTIVE',
+        contract_address: `0x${'aa'.repeat(20)}`,
+        current_agent_address: `0x${'bb'.repeat(20)}`,
+      },
+    ];
+    fixtures.tables['audit_events'] = [
+      {
+        id: 'later',
+        mission_id: MISSION_ID,
+        event_type: 'checkpoint.verified',
+        actor_type: 'runtime',
+        actor_id: null,
+        payload_public: { sequence: 1 },
+        onchain_tx_hash: null,
+        created_at: '2026-11-02T10:05:00.000Z',
+      },
+      {
+        id: 'earlier',
+        mission_id: MISSION_ID,
+        event_type: 'mission.created',
+        actor_type: 'owner',
+        actor_id: USER_ID,
+        payload_public: { contractAddress: `0x${'aa'.repeat(20)}` },
+        onchain_tx_hash: `0x${'cc'.repeat(32)}`,
+        created_at: '2026-11-02T10:00:00.000Z',
+      },
+    ];
+    const response = await getMissionAudit(
+      new Request(`http://localhost/api/missions/${MISSION_ID}/audit`),
+      { params: Promise.resolve({ id: MISSION_ID }) }
+    );
+    expect(response.status).toEqual(200);
+    const payload = (await response.json()) as {
+      mission: { id: string; contractAddress: string };
+      events: Array<{ id: string; event_type: string }>;
+    };
+    expect(payload.mission).toMatchObject({ id: MISSION_ID });
+    expect(payload.events.map((event) => event.id)).toEqual(['earlier', 'later']);
+  });
+
+  it('returns 404 for a mission owned by another user', async () => {
+    authenticate();
+    fixtures.tables['missions'] = [
+      {
+        id: MISSION_ID,
+        owner_id: 'other-user',
+        status: 'ACTIVE',
+      },
+    ];
+    const response = await getMissionAudit(
+      new Request(`http://localhost/api/missions/${MISSION_ID}/audit`),
+      { params: Promise.resolve({ id: MISSION_ID }) }
+    );
+    expect(response.status).toEqual(404);
+  });
+
+  it('requires a session', async () => {
+    const response = await getMissionAudit(
+      new Request(`http://localhost/api/missions/${MISSION_ID}/audit`),
+      { params: Promise.resolve({ id: MISSION_ID }) }
+    );
+    expect(response.status).toEqual(401);
   });
 });

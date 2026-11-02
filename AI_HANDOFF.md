@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 7a — wallet + on-chain mission creation: complete on branch `phase-7-ux` (pending review/merge). Phase 6 is complete and merged to `main` @ `549629d`. Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Phase 7b — audit endpoint, timeline, decision receipts: complete on branch `phase-7-ux` (pending review/merge). Phase 7a is complete on the same branch. Phase 6 is complete and merged to `main` @ `549629d`. Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
@@ -92,9 +92,23 @@ Phase 7a delivery on branch `phase-7-ux` (complete, pending review/merge):
 - No settlement-token address is fabricated: `NEXT_PUBLIC_DEFAULT_PAYMENT_TOKEN_ADDRESS` is optional and the wizard requires the operator to supply the allowlisted token.
 - Tests: **367 passing, 1 skipped live Supabase suite**; contracts **101 passing**.
 
-Phase 7a checkpoint: branch `phase-7-ux` (pending review/merge).
+Phase 7a checkpoint: branch `phase-7-ux` (approved).
 
-Next assigned task: **Phase 7b — audit endpoint + timeline; awaiting review approval of 7a.**
+Phase 7b delivery on branch `phase-7-ux` (complete, pending review/merge):
+- Amendment 1 (option b): `mission.created` is written first with `payload_public.pending=true`; activation mirror writes follow; the same row is marked `pending=false` after activation. An activation failure leaves the mission `DRAFT` with a pending audit row; an audit-insert failure aborts before activation. The idempotent ACTIVE path reconciles a pending row.
+- Amendment 2: `formatTokenAmount(atomic, decimals)` and `readTokenDecimals` resolve ERC-20 `decimals()` via viem with a per-process cache, plus an optional explicit `NEXT_PUBLIC_TOKEN_DECIMALS` mapping. No 6/18 default. The mission detail route/page, dashboard cards, wizard conversion, and succession recovery ceiling use the resolved value.
+- `GET /api/missions/:id/audit` (owner-only) and `GET /api/missions/:id` added.
+- `formatAuditEvent`, `Timeline`, `DecisionReceipt`, `SuccessionPanel`, `MissionTimelinePanel`, and `MissionActions` added; mission detail now shows hero stats, timeline, receipt, succession progress, checkpoint, and owner actions.
+- Dashboard cards show latest audit event, token-aware budget, and succession status.
+- Blockscout links use `NEXT_PUBLIC_HASHKEY_EXPLORER_URL` (mainnet `https://hashkey.blockscout.com`; testnet `https://testnet-explorer.hsk.xyz`).
+- Timeline defensively shows checkpoint-pending and duplicate-checkpoint-sequence badges.
+- `payment.confirmed` audit rows are backfilled idempotently from confirmed `hsp_payments` after settlement, so the timeline includes payments without making settlement depend on audit writes.
+- ACK-time eligibility re-check in `succession-ack.ts`: quarantined/revoked successors cannot acknowledge.
+- Tests: **401 passing, 1 skipped live Supabase suite**; contracts **101 passing**.
+
+Phase 7b checkpoint: branch `phase-7-ux` (pending review/merge).
+
+Next assigned task: **Phase 7c — remaining screens, design system, demo polish; awaiting review approval of 7b.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.

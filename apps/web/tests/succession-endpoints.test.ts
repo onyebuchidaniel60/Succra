@@ -31,6 +31,7 @@ vi.mock('@/lib/gateway/store-succession', () => ({
   getSuccessionMission: vi.fn(async () => mocks.mission),
   listSuccessions: vi.fn(async () => mocks.successions),
   getSuccessionById: vi.fn(async () => mocks.successions[0] ?? null),
+  getMissionAgentStatus: vi.fn(async () => 'REGISTERED'),
   markSuccessionAcknowledged: vi.fn(),
   updateMissionAgentStatus: vi.fn(),
   updateMissionCurrentAgent: vi.fn(),

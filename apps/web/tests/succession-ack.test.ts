@@ -62,6 +62,10 @@ function deps(overrides: Partial<AckDeps> = {}): AckDeps {
       created_at: new Date().toISOString(),
       acknowledged_at: null,
     })),
+    getSuccessorEligibility: vi.fn(async () => ({
+      agentStatus: 'REGISTERED',
+      assignmentStatus: 'REGISTERED',
+    })),
     readState: vi.fn(async () => onchain()),
     submitAck: vi.fn(async () => ({ txHash: `0x${'03'.repeat(32)}` })),
     insertAuditEvent: vi.fn(async () => undefined),
@@ -136,6 +140,52 @@ describe('Phase 6 acknowledgement core', () => {
       agentAddress: BETA.address,
     });
     expect(result.status).toEqual(409);
+    expect(d.submitAck).not.toHaveBeenCalled();
+  });
+
+  it('rejects ACK when the successor assignment was quarantined after activation', async () => {
+    const d = deps({
+      getSuccessorEligibility: vi.fn(async () => ({
+        agentStatus: 'QUARANTINED',
+        assignmentStatus: 'QUARANTINED',
+      })),
+    });
+    const result = await acknowledgeRecovery({
+      deps: d,
+      missionId: MISSION_ID,
+      successionId: SUCCESSION_ID,
+      expectedVersion: 5n,
+      signature: await signatureFor(5n),
+      agentId: 'beta-id',
+      agentAddress: BETA.address,
+    });
+    expect(result).toMatchObject({
+      status: 403,
+      json: { error: { code: 'SUCCESSOR_NOT_ELIGIBLE' } },
+    });
+    expect(d.submitAck).not.toHaveBeenCalled();
+  });
+
+  it('rejects ACK when the successor assignment was revoked', async () => {
+    const d = deps({
+      getSuccessorEligibility: vi.fn(async () => ({
+        agentStatus: 'REGISTERED',
+        assignmentStatus: 'REVOKED',
+      })),
+    });
+    const result = await acknowledgeRecovery({
+      deps: d,
+      missionId: MISSION_ID,
+      successionId: SUCCESSION_ID,
+      expectedVersion: 5n,
+      signature: await signatureFor(5n),
+      agentId: 'beta-id',
+      agentAddress: BETA.address,
+    });
+    expect(result).toMatchObject({
+      status: 403,
+      json: { error: { code: 'SUCCESSOR_NOT_ELIGIBLE' } },
+    });
     expect(d.submitAck).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@ import { acknowledgeRecovery } from '@/lib/gateway/succession-ack';
 import { insertAuditEvent } from '@/lib/gateway/store-quarantine';
 import { getAgentByAddress } from '@/lib/gateway/store-preflight';
 import {
+  getMissionAgentStatus,
   getSuccessionById,
   getSuccessionMission,
   markSuccessionAcknowledged,
@@ -132,6 +133,10 @@ export async function POST(
       deps: {
         getMission: (missionId) => getSuccessionMission(db, missionId),
         getSuccession: (missionId, idValue) => getSuccessionById(db, missionId, idValue),
+        getSuccessorEligibility: async ({ missionId, agentId }) => ({
+          agentStatus: agent.status,
+          assignmentStatus: await getMissionAgentStatus(db, missionId, agentId),
+        }),
         readState: (address) => readMissionState(address),
         submitAck: (args) => sendAcknowledgeRecovery(args),
         insertAuditEvent: async (row) => {

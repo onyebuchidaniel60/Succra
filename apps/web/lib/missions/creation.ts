@@ -215,6 +215,90 @@ export interface FinalizeMissionResult {
   idempotent: boolean;
   txHash: string;
   policyHash: string;
+  auditPending: boolean;
+}
+
+function auditIsPending(payload: unknown): boolean {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    (payload as { pending?: unknown }).pending === true
+  );
+}
+
+function missionCreatedPayload(args: {
+  missionId: string;
+  deployment: VerifiedMissionDeployment;
+  factoryAddress: string;
+  ownerWallet: string;
+  policy: MissionPolicyDocument;
+  chainId: number;
+  at: string;
+}): Record<string, unknown> {
+  return {
+    missionId: args.missionId,
+    contractAddress: args.deployment.contractAddress,
+    factoryAddress: args.factoryAddress,
+    ownerAddress: args.ownerWallet,
+    policyHash: args.deployment.policyHash,
+    policyVersion: 1,
+    cartMandateId: args.policy.cart_mandate_id,
+    cartMandateHash: args.policy.cart_mandate_hash,
+    primaryAgentAddress: args.policy.primary_agent_address,
+    successors: args.policy.successors,
+    chainId: args.chainId,
+    blockNumber: args.deployment.blockNumber.toString(),
+    txHash: args.deployment.txHash,
+    at: args.at,
+  };
+}
+
+async function writePendingMissionAudit(args: {
+  store: MissionCreationStore;
+  missionId: string;
+  ownerId: string;
+  deployment: VerifiedMissionDeployment;
+  policy: MissionPolicyDocument;
+  chainId: number;
+  factoryAddress: string;
+  ownerWallet: string;
+}): Promise<string> {
+  const at = new Date().toISOString();
+  const payload = {
+    ...missionCreatedPayload({
+      missionId: args.missionId,
+      deployment: args.deployment,
+      factoryAddress: args.factoryAddress,
+      ownerWallet: args.ownerWallet,
+      policy: args.policy,
+      chainId: args.chainId,
+      at,
+    }),
+    pending: true,
+  };
+  const existing = await args.store.getMissionCreatedAudit(args.missionId);
+  if (existing) {
+    await args.store.updateAuditPayload(existing.id, payload);
+    return existing.id;
+  }
+  await args.store.insertAudit({
+    mission_id: args.missionId,
+    event_type: 'mission.created',
+    actor_type: 'owner',
+    actor_id: args.ownerId,
+    event_hash: auditEventHash([
+      args.missionId,
+      'mission.created',
+      args.deployment.txHash,
+      args.deployment.contractAddress,
+    ]),
+    payload_public: payload,
+    onchain_tx_hash: args.deployment.txHash,
+    created_at: at,
+  });
+  const created = await args.store.getMissionCreatedAudit(args.missionId);
+  if (!created) throw new Error('MISSION_AUDIT_MISSING');
+  return created.id;
 }
 
 export async function finalizeMission(args: {
@@ -236,6 +320,18 @@ export async function finalizeMission(args: {
   }
 
   if (mission.status === 'ACTIVE') {
+    // A previous finalize may have activated the mission but failed to clear
+    // the pending marker on its audit row. Reconcile it if present.
+    const existingAudit = await args.store.getMissionCreatedAudit(mission.id).catch(() => null);
+    if (existingAudit && auditIsPending(existingAudit.payload_public)) {
+      await args.store
+        .updateAuditPayload(existingAudit.id, {
+          ...(existingAudit.payload_public as Record<string, unknown>),
+          pending: false,
+          confirmedAt: new Date().toISOString(),
+        })
+        .catch(() => undefined);
+    }
     return {
       missionId: mission.id,
       contractAddress: mission.contract_address,
@@ -243,6 +339,7 @@ export async function finalizeMission(args: {
       idempotent: true,
       txHash: args.txHash,
       policyHash: mission.policy_hash,
+      auditPending: existingAudit === null,
     };
   }
   if (mission.status !== 'DRAFT') {
@@ -280,6 +377,26 @@ export async function finalizeMission(args: {
       'MISSION_STATE_MISMATCH',
       'Deployed mission config does not match the stored policy.'
     );
+  }
+
+  // Amendment 1: the audit row is written before any activation mirror write.
+  // If a later write fails, the mission stays DRAFT and the audit row remains
+  // with pending=true for reconciliation. The audit insert is therefore a
+  // precondition for activation rather than a best-effort follow-up.
+  let auditId: string;
+  try {
+    auditId = await writePendingMissionAudit({
+      store: args.store,
+      missionId: mission.id,
+      ownerId: args.ownerId,
+      deployment,
+      policy,
+      chainId: args.chain.chainId,
+      factoryAddress: args.chain.factoryAddress,
+      ownerWallet: args.ownerWallet,
+    });
+  } catch {
+    throw new MissionFinalizeError('MISSION_FINALIZE_FAILED', 'Could not write audit event.');
   }
 
   const primary = await ensureAgent({
@@ -345,6 +462,7 @@ export async function finalizeMission(args: {
         idempotent: true,
         txHash: args.txHash,
         policyHash: current.policy_hash,
+        auditPending: true,
       };
     }
     throw new MissionFinalizeError(
@@ -353,40 +471,26 @@ export async function finalizeMission(args: {
     );
   }
 
-  const auditAt = new Date().toISOString();
+  const confirmedPayload = {
+    ...missionCreatedPayload({
+      missionId: mission.id,
+      deployment,
+      factoryAddress: args.chain.factoryAddress,
+      ownerWallet: args.ownerWallet,
+      policy,
+      chainId: args.chain.chainId,
+      at: new Date().toISOString(),
+    }),
+    pending: false,
+    confirmedAt: new Date().toISOString(),
+  };
+  let auditPending = false;
   try {
-    await args.store.insertAudit({
-      mission_id: mission.id,
-      event_type: 'mission.created',
-      actor_type: 'owner',
-      actor_id: args.ownerId,
-      event_hash: auditEventHash([
-        mission.id,
-        'mission.created',
-        deployment.txHash,
-        deployment.contractAddress,
-      ]),
-      payload_public: {
-        missionId: mission.id,
-        contractAddress: deployment.contractAddress,
-        factoryAddress: args.chain.factoryAddress,
-        ownerAddress: args.ownerWallet,
-        policyHash: deployment.policyHash,
-        policyVersion: 1,
-        cartMandateId: policy.cart_mandate_id,
-        cartMandateHash: policy.cart_mandate_hash,
-        primaryAgentAddress: policy.primary_agent_address,
-        successors: policy.successors,
-        chainId: args.chain.chainId,
-        blockNumber: deployment.blockNumber.toString(),
-        txHash: deployment.txHash,
-        at: auditAt,
-      },
-      onchain_tx_hash: deployment.txHash,
-      created_at: auditAt,
-    });
+    await args.store.updateAuditPayload(auditId, confirmedPayload);
   } catch {
-    throw new MissionFinalizeError('MISSION_FINALIZE_FAILED', 'Could not write audit event.');
+    // The mission is active and the audit row is still present with
+    // pending=true. A later idempotent finalize reconciles it.
+    auditPending = true;
   }
 
   return {
@@ -396,6 +500,7 @@ export async function finalizeMission(args: {
     idempotent: false,
     txHash: args.txHash,
     policyHash: deployment.policyHash,
+    auditPending,
   };
 }
 

@@ -1,23 +1,26 @@
-// Succra web — display formatting for addresses and atomic token amounts.
-// Token amounts are DB mirrors only; the contract/HSP remain authoritative.
-
-export const DEFAULT_TOKEN_DECIMALS = 6;
+// Succra web — display formatting for addresses and token amounts.
+// Token amounts are DB/on-chain mirrors only; the contract/HSP remain
+// authoritative. Decimals must come from the token itself or explicit config.
 
 export function shortenAddress(value: string, visible = 4): string {
   if (value.length <= visible * 2 + 1) return value;
   return `${value.slice(0, visible + 2)}…${value.slice(-visible)}`;
 }
 
-/** Format a decimal atomic amount for display (default 6-decimal USDC). */
-export function formatAtomic(
-  value: string | bigint | null | undefined,
-  decimals = DEFAULT_TOKEN_DECIMALS,
+/**
+ * Format an atomic integer with the token's own decimals.
+ * `decimals` is required: there is deliberately no 6/18 default.
+ */
+export function formatTokenAmount(
+  value: bigint | string | null | undefined,
+  decimals: number,
   maxFraction = 2
 ): string {
   if (value === null || value === undefined || value === '') return '—';
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) return String(value);
   let atomic: bigint;
   try {
-    atomic = BigInt(value);
+    atomic = typeof value === 'bigint' ? value : BigInt(value);
   } catch {
     return String(value);
   }
@@ -26,12 +29,22 @@ export function formatAtomic(
   const base = 10n ** BigInt(decimals);
   const whole = absolute / base;
   const fraction = absolute % base;
-  const fractionText =
-    fraction === 0n
-      ? ''
-      : `.${fraction.toString().padStart(decimals, '0').slice(0, maxFraction).replace(/0+$/, '')}`;
-  const trimmed = fractionText === '.' ? '' : fractionText;
-  return `${negative ? '-' : ''}${whole.toLocaleString('en-US')}${trimmed}`;
+  let fractionText = '';
+  if (fraction > 0n) {
+    fractionText = `.${fraction
+      .toString()
+      .padStart(decimals, '0')
+      .slice(0, maxFraction)
+      .replace(/0+$/, '')}`;
+  }
+  if (fractionText === '.') fractionText = '';
+  return `${negative ? '-' : ''}${whole.toLocaleString('en-US')}${fractionText}`;
+}
+
+/** Raw atomic display when decimals cannot be resolved; never guesses. */
+export function formatAtomicUnknown(value: string | bigint | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return `${value.toString()} atomic`;
 }
 
 export function statusLabel(status: string): string {

@@ -6,7 +6,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useAccount, useChainId, usePublicClient, useSendTransaction } from 'wagmi';
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useSendTransaction,
+  useReadContract,
+} from 'wagmi';
+import { erc20Abi, isAddress } from 'viem';
 import { shortenAddress } from '@/lib/format';
 import {
   dateToExpiresAt,
@@ -97,6 +104,16 @@ export default function NewMissionWizard({
   const publicClient = usePublicClient();
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const [draft, setDraft] = useState(initialDraft);
+  const tokenAddress = isAddress(draft.paymentTokenAddress)
+    ? (draft.paymentTokenAddress as `0x${string}`)
+    : undefined;
+  const decimalsQuery = useReadContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: 'decimals',
+    query: { enabled: tokenAddress !== undefined, staleTime: Infinity },
+  });
+  const tokenDecimals = typeof decimalsQuery.data === 'number' ? decimalsQuery.data : null;
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<WizardErrors>({});
   const [submitError, setSubmitError] = useState('');
@@ -117,7 +134,7 @@ export default function NewMissionWizard({
   }
 
   function next(): void {
-    const stepErrors = validateWizardStep(step, draft);
+    const stepErrors = validateWizardStep(step, draft, tokenDecimals);
     setErrors(stepErrors);
     if (Object.keys(stepErrors).length > 0) return;
     setStep((current) => Math.min(current + 1, WIZARD_STEPS.length - 1));
@@ -130,7 +147,7 @@ export default function NewMissionWizard({
 
   async function createMission(): Promise<void> {
     if (submitting) return;
-    const allErrors = validateWizard(draft);
+    const allErrors = validateWizard(draft, tokenDecimals);
     setErrors(allErrors);
     if (Object.keys(allErrors).length > 0) {
       setSubmitError('Fix the highlighted fields before creating the mission.');
@@ -142,6 +159,10 @@ export default function NewMissionWizard({
     }
     if (address.toLowerCase() !== ownerWallet.toLowerCase()) {
       setSubmitError('The connected wallet does not match the signed-in mission owner.');
+      return;
+    }
+    if (tokenDecimals === null) {
+      setSubmitError('Token decimals could not be read. Check the token address and retry.');
       return;
     }
     if (!publicClient) {
@@ -156,7 +177,7 @@ export default function NewMissionWizard({
       const preparedResponse = await fetch('/api/missions', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(toMissionCreateInput(draft)),
+        body: JSON.stringify(toMissionCreateInput(draft, tokenDecimals)),
       });
       const preparedPayload: unknown = await preparedResponse.json();
       if (!preparedResponse.ok) {
@@ -277,6 +298,15 @@ export default function NewMissionWizard({
                 placeholder="0x…"
                 spellCheck={false}
               />
+              {tokenAddress ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  {decimalsQuery.isLoading
+                    ? 'Reading token decimals…'
+                    : tokenDecimals === null
+                      ? 'Token decimals unavailable; amounts cannot be converted safely.'
+                      : `Token decimals: ${tokenDecimals}`}
+                </p>
+              ) : null}
             </Field>
             <div className="grid gap-4 sm:grid-cols-3">
               <Field label={`Budget (${tokenLabel})`} error={errors['budget']}>

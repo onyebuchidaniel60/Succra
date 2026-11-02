@@ -14,7 +14,7 @@ export type Row = Record<string, unknown>;
 export type Tables = Record<string, Row[]>;
 
 export interface Filter {
-  op: 'eq' | 'is' | 'gt' | 'lt' | 'not-is-null';
+  op: 'eq' | 'is' | 'gt' | 'lt' | 'not-is-null' | 'in';
   col: string;
   val: unknown;
 }
@@ -24,6 +24,8 @@ export class FakeQuery {
   private pendingInsert: Row | null = null;
   private pendingUpdate: Row | null = null;
   private pendingDelete = false;
+  private orderState: { col: string; ascending: boolean } | null = null;
+  private limitValue: number | null = null;
 
   constructor(
     private readonly tables: Tables,
@@ -58,6 +60,8 @@ export class FakeQuery {
           return typeof value === 'string' && typeof filter.val === 'string' && value < filter.val;
         case 'not-is-null':
           return value !== null && value !== undefined;
+        case 'in':
+          return Array.isArray(filter.val) && filter.val.includes(value);
       }
     });
   }
@@ -109,8 +113,32 @@ export class FakeQuery {
     return this;
   }
 
-  order(): this {
+  in(col: string, val: unknown[]): this {
+    this.filters.push({ op: 'in', col, val });
     return this;
+  }
+
+  order(col: string, options?: { ascending?: boolean }): this {
+    this.orderState = { col, ascending: options?.ascending ?? true };
+    return this;
+  }
+
+  limit(value: number): this {
+    this.limitValue = value;
+    return this;
+  }
+
+  private orderedRows(): Row[] {
+    const rows = this.rows().filter((row) => this.matches(row));
+    if (!this.orderState) return rows;
+    const { col, ascending } = this.orderState;
+    return [...rows].sort((left, right) => {
+      const leftValue = left[col] ?? '';
+      const rightValue = right[col] ?? '';
+      if (leftValue === rightValue) return 0;
+      const result = String(leftValue) < String(rightValue) ? -1 : 1;
+      return ascending ? result : -result;
+    });
   }
 
   private execute(): { data: unknown; error: null } {
@@ -135,7 +163,11 @@ export class FakeQuery {
       this.pendingDelete = false;
       return { data: removed, error: null };
     }
-    return { data: this.rows().filter((row) => this.matches(row)), error: null };
+    const rows = this.orderedRows();
+    return {
+      data: this.limitValue === null ? rows : rows.slice(0, this.limitValue),
+      error: null,
+    };
   }
 
   async maybeSingle(): Promise<{ data: Row | null; error: null }> {

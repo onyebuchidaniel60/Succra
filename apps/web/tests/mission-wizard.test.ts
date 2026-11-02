@@ -30,15 +30,15 @@ function validDraft(): MissionWizardDraft {
 
 describe('wizard token amounts', () => {
   it('converts human USDC to six-decimal atomic strings', () => {
-    expect(parseTokenAmount('1')).toEqual({ atomic: '1000000' });
-    expect(parseTokenAmount('1.5')).toEqual({ atomic: '1500000' });
-    expect(parseTokenAmount('0.000001')).toEqual({ atomic: '1' });
+    expect(parseTokenAmount('1', 6)).toEqual({ atomic: '1000000' });
+    expect(parseTokenAmount('1.5', 6)).toEqual({ atomic: '1500000' });
+    expect(parseTokenAmount('0.000001', 6)).toEqual({ atomic: '1' });
   });
 
   it('rejects zero, negatives, and excess precision', () => {
-    expect(parseTokenAmount('0')).toHaveProperty('error');
-    expect(parseTokenAmount('-1')).toHaveProperty('error');
-    expect(parseTokenAmount('1.1234567')).toHaveProperty('error');
+    expect(parseTokenAmount('0', 6)).toHaveProperty('error');
+    expect(parseTokenAmount('-1', 6)).toHaveProperty('error');
+    expect(parseTokenAmount('1.1234567', 6)).toHaveProperty('error');
   });
 
   it('maps a date-only value to end-of-day UTC', () => {
@@ -51,13 +51,13 @@ describe('wizard step validation', () => {
   it('accepts a complete valid draft on every step', () => {
     const draft = validDraft();
     for (let step = 0; step < 6; step += 1) {
-      expect(validateWizardStep(step, draft)).toEqual({});
+      expect(validateWizardStep(step, draft, 6)).toEqual({});
     }
-    expect(validateWizard(draft)).toEqual({});
+    expect(validateWizard(draft, 6)).toEqual({});
   });
 
   it('requires mission basics', () => {
-    const errors = validateWizardStep(0, { ...validDraft(), name: '', objective: '' });
+    const errors = validateWizardStep(0, { ...validDraft(), name: '', objective: '' }, 6);
     expect(errors['name']).toBeDefined();
     expect(errors['objective']).toBeDefined();
   });
@@ -65,12 +65,16 @@ describe('wizard step validation', () => {
   it('enforces the authority ceilings and future expiry', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-02T00:00:00.000Z'));
-    const errors = validateWizardStep(1, {
-      ...validDraft(),
-      maxPayment: '1001',
-      recoveryMaxPayment: '1002',
-      expiresAt: '2020-01-01',
-    });
+    const errors = validateWizardStep(
+      1,
+      {
+        ...validDraft(),
+        maxPayment: '1001',
+        recoveryMaxPayment: '1002',
+        expiresAt: '2020-01-01',
+      },
+      6
+    );
     expect(errors['maxPayment']).toBeDefined();
     expect(errors['recoveryMaxPayment']).toBeDefined();
     expect(errors['expiresAt']).toBeDefined();
@@ -79,39 +83,51 @@ describe('wizard step validation', () => {
 
   it('requires a non-empty, unique merchant allowlist', () => {
     expect(
-      validateWizardStep(2, { ...validDraft(), merchantAllowlist: [''] })['merchantAllowlist']
+      validateWizardStep(2, { ...validDraft(), merchantAllowlist: [''] }, 6)['merchantAllowlist']
     ).toBeDefined();
     expect(
-      validateWizardStep(2, {
-        ...validDraft(),
-        merchantAllowlist: [
-          '0x2222222222222222222222222222222222222222',
-          '0x2222222222222222222222222222222222222222',
-        ],
-      })['merchantAllowlist']
+      validateWizardStep(
+        2,
+        {
+          ...validDraft(),
+          merchantAllowlist: [
+            '0x2222222222222222222222222222222222222222',
+            '0x2222222222222222222222222222222222222222',
+          ],
+        },
+        6
+      )['merchantAllowlist']
     ).toBeDefined();
   });
 
   it('rejects the primary agent in the successor list', () => {
-    const errors = validateWizardStep(4, {
-      ...validDraft(),
-      successors: [{ address: '0x3333333333333333333333333333333333333333', priority: '1' }],
-    });
+    const errors = validateWizardStep(
+      4,
+      {
+        ...validDraft(),
+        successors: [{ address: '0x3333333333333333333333333333333333333333', priority: '1' }],
+      },
+      6
+    );
     expect(errors['successors']).toBeDefined();
   });
 
   it('enforces policy tuning bounds', () => {
-    const errors = validateWizardStep(5, {
-      ...validDraft(),
-      violationThreshold: '0',
-      violationWindowSeconds: '10',
-    });
+    const errors = validateWizardStep(
+      5,
+      {
+        ...validDraft(),
+        violationThreshold: '0',
+        violationWindowSeconds: '10',
+      },
+      6
+    );
     expect(errors['violationThreshold']).toBeDefined();
     expect(errors['violationWindowSeconds']).toBeDefined();
   });
 
   it('converts a valid draft into the API body', () => {
-    const body = toMissionCreateInput(validDraft());
+    const body = toMissionCreateInput(validDraft(), 6);
     expect(body.budgetAtomic).toEqual('1000000000');
     expect(body.maxPaymentAtomic).toEqual('100000000');
     expect(body.recoveryMaxPaymentAtomic).toEqual('50000000');
@@ -119,6 +135,18 @@ describe('wizard step validation', () => {
     expect(body.successors).toEqual([
       { address: '0x4444444444444444444444444444444444444444', priority: 1 },
     ]);
+  });
+
+  it('converts with 18-decimal tokens without a hardcoded default', () => {
+    expect(parseTokenAmount('1', 18)).toEqual({ atomic: '1000000000000000000' });
+    expect(parseTokenAmount('1.5', 18)).toEqual({ atomic: '1500000000000000000' });
+    expect(parseTokenAmount('1.1234567', 18)).toEqual({ atomic: '1123456700000000000' });
+    expect(parseTokenAmount('1', 18)).not.toEqual({ atomic: '1000000' });
+  });
+
+  it('requires token decimals instead of guessing', () => {
+    expect(parseTokenAmount('1', Number.NaN)).toHaveProperty('error');
+    expect(validateWizardStep(1, validDraft(), null)['paymentTokenAddress']).toBeDefined();
   });
 
   it('defaults to a seven-day expiry', () => {

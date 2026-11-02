@@ -6,6 +6,7 @@ import type {
   ActiveMissionPatch,
   AgentSummary,
   MissionAuditRow,
+  MissionAuditRecord,
   MissionCreationStore,
   MissionDraftRow,
   MissionPolicyRow,
@@ -261,5 +262,23 @@ export class PGliteMissionCreationStore implements MissionCreationStore {
         row.created_at,
       ]
     );
+  }
+
+  async getMissionCreatedAudit(missionId: string): Promise<MissionAuditRecord | null> {
+    const row = await this.one<Row>(
+      `SELECT id, payload_public FROM audit_events
+       WHERE mission_id = $1 AND event_type = 'mission.created'
+       ORDER BY created_at ASC LIMIT 1`,
+      [missionId]
+    );
+    if (!row) return null;
+    return { id: str(row['id']), payload_public: row['payload_public'] };
+  }
+
+  async updateAuditPayload(id: string, payload: Record<string, unknown>): Promise<void> {
+    await this.db.query('UPDATE audit_events SET payload_public = $2::jsonb WHERE id = $1', [
+      id,
+      JSON.stringify(payload),
+    ]);
   }
 }

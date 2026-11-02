@@ -1,6 +1,6 @@
 // Integration test: mission creation persistence against real migrations in
 // PGlite, with the HashKey chain adapter injected (no network).
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PGlite } from '@electric-sql/pglite';
 import { prepareMissionCreation, finalizeMission } from '../lib/missions/creation';
 import type { MissionChain } from '../lib/missions/chain';
@@ -143,6 +143,7 @@ describe('mission creation with PGlite', () => {
     });
     expect(finalized.status).toEqual('ACTIVE');
     expect(finalized.idempotent).toEqual(false);
+    expect(finalized.auditPending).toEqual(false);
 
     const mission = await store.getDraft(prepared.missionId, OWNER_ID);
     expect(mission?.status).toEqual('ACTIVE');
@@ -178,6 +179,146 @@ describe('mission creation with PGlite', () => {
       [prepared.missionId]
     );
     expect(count.rows[0]?.count).toEqual('1');
+  });
+
+  it('leaves the mission DRAFT with a pending audit when a mirror write fails', async () => {
+    const prepared = await prepareMissionCreation({
+      store,
+      ownerId: OWNER_ID,
+      ownerWallet: OWNER_WALLET,
+      input,
+      chain: chainWithState(() => ({})),
+    });
+    const policyRow = await store.getPolicy(prepared.missionId, 1);
+    const policy = parsePolicyDocument(policyRow?.policy_json);
+    if (!policy) throw new Error('policy missing');
+    const state = {
+      contractAddress: MISSION_ADDRESS,
+      currentAgent: policy.primary_agent_address,
+      status: 'ACTIVE',
+      agentNonce: 0n,
+      stateVersion: 0n,
+      violationCount: 0,
+      lastViolationAt: 0n,
+      confirmedSpentAtomic: 0n,
+      lastCheckpointHash: `0x${'00'.repeat(32)}`,
+      lastCheckpointSequence: 0n,
+      checkpointCount: 0n,
+      successors: policy.successors.map((successor) => ({
+        agent: successor.address,
+        priority: successor.priority,
+        active: true,
+      })),
+      paymentToken: policy.payment_token_address,
+      budgetAtomic: BigInt(policy.budget_atomic),
+      maxPaymentAtomic: BigInt(policy.max_payment_atomic),
+      recoveryMaxPaymentAtomic: BigInt(policy.recovery_max_payment_atomic),
+      expiresAt: BigInt(Math.floor(Date.parse(policy.expires_at) / 1000)),
+      policyHash: prepared.policyHash,
+      cartMandateHash: policy.cart_mandate_hash,
+      violationThreshold: policy.violation_threshold,
+      violationWindowSeconds: BigInt(policy.violation_window_seconds),
+      allowedMerchants: new Set(policy.merchant_allowlist),
+    };
+    const chain = chainWithState(() => state);
+    const activation = vi.spyOn(store, 'activateMission').mockResolvedValue(false);
+
+    await expect(
+      finalizeMission({
+        store,
+        ownerId: OWNER_ID,
+        ownerWallet: OWNER_WALLET,
+        missionId: prepared.missionId,
+        txHash: TX_HASH,
+        chain,
+      })
+    ).rejects.toMatchObject({ code: 'MISSION_STATE_MISMATCH' });
+
+    const mission = await store.getDraft(prepared.missionId, OWNER_ID);
+    expect(mission?.status).toEqual('DRAFT');
+    const pending = await db.query<{ pending: string }>(
+      `SELECT payload_public->>'pending' AS pending FROM audit_events
+       WHERE mission_id = $1 AND event_type = 'mission.created'`,
+      [prepared.missionId]
+    );
+    expect(pending.rows).toEqual([{ pending: 'true' }]);
+
+    activation.mockRestore();
+    const finalized = await finalizeMission({
+      store,
+      ownerId: OWNER_ID,
+      ownerWallet: OWNER_WALLET,
+      missionId: prepared.missionId,
+      txHash: TX_HASH,
+      chain,
+    });
+    expect(finalized.status).toEqual('ACTIVE');
+    expect(finalized.auditPending).toEqual(false);
+    const audits = await db.query<{ count: string; pending: string }>(
+      `SELECT COUNT(*)::text AS count, MIN(payload_public->>'pending') AS pending
+       FROM audit_events WHERE mission_id = $1 AND event_type = 'mission.created'`,
+      [prepared.missionId]
+    );
+    expect(audits.rows).toEqual([{ count: '1', pending: 'false' }]);
+  });
+
+  it('does not activate when the initial audit insert fails', async () => {
+    const prepared = await prepareMissionCreation({
+      store,
+      ownerId: OWNER_ID,
+      ownerWallet: OWNER_WALLET,
+      input,
+      chain: chainWithState(() => ({})),
+    });
+    const policyRow = await store.getPolicy(prepared.missionId, 1);
+    const policy = parsePolicyDocument(policyRow?.policy_json);
+    if (!policy) throw new Error('policy missing');
+    const state = {
+      contractAddress: MISSION_ADDRESS,
+      currentAgent: policy.primary_agent_address,
+      status: 'ACTIVE',
+      agentNonce: 0n,
+      stateVersion: 0n,
+      violationCount: 0,
+      lastViolationAt: 0n,
+      confirmedSpentAtomic: 0n,
+      lastCheckpointHash: `0x${'00'.repeat(32)}`,
+      lastCheckpointSequence: 0n,
+      checkpointCount: 0n,
+      successors: policy.successors.map((successor) => ({
+        agent: successor.address,
+        priority: successor.priority,
+        active: true,
+      })),
+      paymentToken: policy.payment_token_address,
+      budgetAtomic: BigInt(policy.budget_atomic),
+      maxPaymentAtomic: BigInt(policy.max_payment_atomic),
+      recoveryMaxPaymentAtomic: BigInt(policy.recovery_max_payment_atomic),
+      expiresAt: BigInt(Math.floor(Date.parse(policy.expires_at) / 1000)),
+      policyHash: prepared.policyHash,
+      cartMandateHash: policy.cart_mandate_hash,
+      violationThreshold: policy.violation_threshold,
+      violationWindowSeconds: BigInt(policy.violation_window_seconds),
+      allowedMerchants: new Set(policy.merchant_allowlist),
+    };
+    const insertAudit = vi.spyOn(store, 'insertAudit').mockRejectedValue(new Error('audit down'));
+    const activate = vi.spyOn(store, 'activateMission');
+
+    await expect(
+      finalizeMission({
+        store,
+        ownerId: OWNER_ID,
+        ownerWallet: OWNER_WALLET,
+        missionId: prepared.missionId,
+        txHash: TX_HASH,
+        chain: chainWithState(() => state),
+      })
+    ).rejects.toMatchObject({ code: 'MISSION_FINALIZE_FAILED' });
+    expect(activate).not.toHaveBeenCalled();
+    expect((await store.getDraft(prepared.missionId, OWNER_ID))?.status).toEqual('DRAFT');
+
+    insertAudit.mockRestore();
+    activate.mockRestore();
   });
 
   it('rejects finalization when the deployed policy hash differs', async () => {

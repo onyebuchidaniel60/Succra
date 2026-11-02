@@ -46,6 +46,51 @@ export interface ConfirmedPaymentRow {
   settlement_tx_hash: string | null;
 }
 
+export interface ConfirmedPaymentDetailRow extends ConfirmedPaymentRow {
+  amount_atomic: string;
+  token_address: string;
+  merchant_address: string;
+  block_number: number | null;
+  settled_at: string | null;
+}
+
+export async function listConfirmedPaymentDetails(
+  db: SupabaseClient,
+  missionId: string
+): Promise<ConfirmedPaymentDetailRow[]> {
+  const { data, error } = await db
+    .from('hsp_payments')
+    .select(
+      'hsp_payment_mandate_id, settlement_tx_hash, amount_atomic, token_address, merchant_address, block_number, settled_at'
+    )
+    .eq('mission_id', missionId)
+    .eq('status', 'CONFIRMED')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data as ConfirmedPaymentDetailRow[] | null) ?? [];
+}
+
+export async function listPaymentAuditMandateIds(
+  db: SupabaseClient,
+  missionId: string
+): Promise<Set<string>> {
+  const { data, error } = await db
+    .from('audit_events')
+    .select('payload_public')
+    .eq('mission_id', missionId)
+    .eq('event_type', 'payment.confirmed');
+  if (error) throw error;
+  const ids = new Set<string>();
+  for (const row of (data as Array<{ payload_public?: unknown }> | null) ?? []) {
+    const payload = row.payload_public;
+    if (payload && typeof payload === 'object') {
+      const mandateId = (payload as { hspPaymentMandateId?: unknown }).hspPaymentMandateId;
+      if (typeof mandateId === 'string') ids.add(mandateId);
+    }
+  }
+  return ids;
+}
+
 export async function getCheckpointMission(
   db: SupabaseClient,
   missionId: string

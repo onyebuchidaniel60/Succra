@@ -108,6 +108,11 @@ export interface MissionAuditRow {
   created_at: string;
 }
 
+export interface MissionAuditRecord {
+  id: string;
+  payload_public: unknown;
+}
+
 export interface MissionCreationStore {
   insertDraft(row: NewMissionDraftRow): Promise<void>;
   insertPolicy(row: NewMissionPolicyRow): Promise<void>;
@@ -136,6 +141,8 @@ export interface MissionCreationStore {
     status: 'REGISTERED' | 'PENDING';
   }): Promise<void>;
   insertAudit(row: MissionAuditRow): Promise<void>;
+  getMissionCreatedAudit(missionId: string): Promise<MissionAuditRecord | null>;
+  updateAuditPayload(id: string, payload: Record<string, unknown>): Promise<void>;
 }
 
 const DRAFT_COLUMNS =
@@ -244,6 +251,27 @@ export function createSupabaseMissionCreationStore(db: SupabaseClient): MissionC
     async insertAudit(row) {
       const { error } = await db.from('audit_events').insert(row);
       if (error) throw new Error('AUDIT_INSERT_FAILED');
+    },
+
+    async getMissionCreatedAudit(missionId) {
+      const { data, error } = await db
+        .from('audit_events')
+        .select('id,payload_public')
+        .eq('mission_id', missionId)
+        .eq('event_type', 'mission.created')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error('AUDIT_READ_FAILED');
+      return (data as unknown as MissionAuditRecord | null) ?? null;
+    },
+
+    async updateAuditPayload(id, payload) {
+      const { error } = await db
+        .from('audit_events')
+        .update({ payload_public: payload })
+        .eq('id', id);
+      if (error) throw new Error('AUDIT_UPDATE_FAILED');
     },
   };
 }
