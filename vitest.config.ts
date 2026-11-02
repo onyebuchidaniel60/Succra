@@ -2,6 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  esbuild: {
+    jsx: 'automatic',
+  },
   resolve: {
     // Only apps/web uses the `@/*` import prefix (Next.js convention).
     alias: {
@@ -9,7 +12,11 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['apps/*/tests/**/*.test.ts', 'packages/*/tests/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: [
+      'apps/*/tests/**/*.test.{ts,tsx}',
+      'packages/*/tests/**/*.test.ts',
+      'tests/**/*.test.ts',
+    ],
     environment: 'node',
   },
 });

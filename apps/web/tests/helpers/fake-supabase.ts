@@ -9,6 +9,7 @@
 // single-threaded atomicity the SQL gate provides; the exact production
 // SQL lives in SupabaseNonceTable and is proven live in CI.
 import type { NewNonceRow, NonceTable, StoredNonceRow } from '../../lib/auth/nonces';
+import { randomUUID } from 'node:crypto';
 export type Row = Record<string, unknown>;
 export type Tables = Record<string, Row[]>;
 
@@ -114,7 +115,7 @@ export class FakeQuery {
 
   private execute(): { data: unknown; error: null } {
     if (this.pendingInsert) {
-      const row = { ...this.pendingInsert };
+      const row = { id: randomUUID(), ...this.pendingInsert };
       this.rows().push(row);
       this.pendingInsert = null;
       return { data: [row], error: null };

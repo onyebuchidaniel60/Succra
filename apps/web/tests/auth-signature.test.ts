@@ -1,112 +1,115 @@
-// Unit tests: login message format + Ed25519 verification (no server).
-//
-// Wallet addresses in fixtures must be REAL base58 encodings of 32 bytes:
-// 32 base58 chars only encode ~23 bytes (the all-'1' system address is the
-// zero special case), so fixtures use tweetnacl keys round-tripped through
-// a local base58 encoder that self-checks against the system vector.
+// Unit tests: EIP-712 login typed data + signature verification (no server).
 import { describe, expect, it } from 'vitest';
-import { sign } from 'tweetnacl';
-import { buildLoginMessage } from '../lib/auth/message';
+import { privateKeyToAccount } from 'viem/accounts';
+import { buildLoginTypedData, parseLoginTypedData, type LoginTypedData } from '../lib/auth/message';
 import { verifyWalletSignature } from '../lib/auth/signature';
 
-const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const ACCOUNT = privateKeyToAccount(
+  '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
+);
 
-function base58Encode(bytes: Uint8Array): string {
-  let num = 0n;
-  for (const byte of bytes) {
-    num = (num << 8n) + BigInt(byte);
-  }
-  let out = '';
-  while (num > 0n) {
-    out = ALPHABET[Number(num % 58n)] + out;
-    num /= 58n;
-  }
-  for (const byte of bytes) {
-    if (byte !== 0) break;
-    out = `1${out}`;
-  }
-  return out;
-}
-
-function base64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString('base64');
-}
-
-describe('test base58 fixture encoder', () => {
-  it('matches the system-program zero vector', () => {
-    expect(base58Encode(new Uint8Array(32))).toEqual('1'.repeat(32));
+async function fixture(): Promise<{
+  typedData: LoginTypedData;
+  signature: `0x${string}`;
+}> {
+  const typedData = buildLoginTypedData({
+    walletAddress: ACCOUNT.address,
+    nonce: 'nonce-1234567890',
+    issuedAt: '2026-11-02T00:10:00.000Z',
+    chainId: 177,
   });
-});
+  const signature = await ACCOUNT.signTypedData({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+  });
+  return { typedData, signature };
+}
 
-describe('buildLoginMessage', () => {
-  it('binds wallet, nonce, expiry, and app URI in order', () => {
-    expect(
-      buildLoginMessage({
-        walletAddress: 'WALLET',
-        nonce: 'NONCE',
-        expiresAt: '2026-09-13T00:10:00.000Z',
-        appUri: 'https://app.example',
-      })
-    ).toEqual(
-      [
-        'Succra sign-in',
-        '',
-        'Wallet: WALLET',
-        'Nonce: NONCE',
-        'Expires: 2026-09-13T00:10:00.000Z',
-        'URI: https://app.example',
-      ].join('\n')
-    );
+describe('buildLoginTypedData', () => {
+  it('builds a SuccraLogin domain with no verifying contract', async () => {
+    const { typedData } = await fixture();
+    expect(typedData.domain).toEqual({ name: 'Succra', version: '1', chainId: 177 });
+    expect('verifyingContract' in typedData.domain).toEqual(false);
+    expect(typedData.primaryType).toEqual('SuccraLogin');
+    expect(typedData.message.walletAddress).toEqual(ACCOUNT.address.toLowerCase());
+    expect(typedData.message.nonce).toEqual('nonce-1234567890');
+  });
+
+  it('normalizes a checksummed wallet to lowercase', () => {
+    const typedData = buildLoginTypedData({
+      walletAddress: ACCOUNT.address,
+      nonce: 'n',
+      issuedAt: '2026-11-02T00:00:00.000Z',
+      chainId: 133,
+    });
+    expect(typedData.message.walletAddress).toEqual(ACCOUNT.address.toLowerCase());
+  });
+
+  it('round-trips through stored JSON', async () => {
+    const { typedData } = await fixture();
+    expect(parseLoginTypedData(JSON.stringify(typedData))).toEqual(typedData);
+    expect(parseLoginTypedData('not-json')).toBeNull();
+    expect(parseLoginTypedData(JSON.stringify({ ...typedData, primaryType: 'Wrong' }))).toBeNull();
   });
 });
 
 describe('verifyWalletSignature', () => {
-  const keys = sign.keyPair();
-  const walletAddress = base58Encode(keys.publicKey);
-  const message = buildLoginMessage({
-    walletAddress,
-    nonce: 'n',
-    expiresAt: 'e',
-    appUri: 'u',
-  });
-  const signature = base64(sign.detached(new TextEncoder().encode(message), keys.secretKey));
-
-  it('accepts a genuine signature over the exact message', () => {
-    expect(verifyWalletSignature({ walletAddress, message, signatureBase64: signature })).toEqual(
-      true
-    );
-  });
-
-  it('accepts the system address fixture shape', () => {
-    expect(walletAddress.length).toBeGreaterThan(32);
-  });
-
-  it('rejects a tampered message', () => {
-    expect(
-      verifyWalletSignature({ walletAddress, message: `${message}X`, signatureBase64: signature })
-    ).toEqual(false);
-  });
-
-  it('rejects a signature from a different key', () => {
-    const other = base58Encode(sign.keyPair().publicKey);
-    expect(
-      verifyWalletSignature({ walletAddress: other, message, signatureBase64: signature })
-    ).toEqual(false);
-  });
-
-  it('rejects malformed inputs without throwing', () => {
-    expect(
-      verifyWalletSignature({ walletAddress: '!!!', message, signatureBase64: signature })
-    ).toEqual(false);
-    expect(verifyWalletSignature({ walletAddress, message, signatureBase64: '!!!' })).toEqual(
-      false
-    );
-    expect(
+  it('accepts a genuine EIP-712 signature', async () => {
+    const { typedData, signature } = await fixture();
+    await expect(
       verifyWalletSignature({
-        walletAddress,
-        message,
-        signatureBase64: base64(new Uint8Array(3)),
+        walletAddress: ACCOUNT.address,
+        typedData,
+        signature,
       })
-    ).toEqual(false);
+    ).resolves.toEqual(true);
+  });
+
+  it('rejects tampered typed data', async () => {
+    const { typedData, signature } = await fixture();
+    await expect(
+      verifyWalletSignature({
+        walletAddress: ACCOUNT.address,
+        typedData: {
+          ...typedData,
+          message: { ...typedData.message, nonce: 'different-nonce' },
+        },
+        signature,
+      })
+    ).resolves.toEqual(false);
+  });
+
+  it('rejects a signature from a different wallet', async () => {
+    const { typedData, signature } = await fixture();
+    const other = privateKeyToAccount(
+      '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba'
+    );
+    await expect(
+      verifyWalletSignature({
+        walletAddress: other.address,
+        typedData,
+        signature,
+      })
+    ).resolves.toEqual(false);
+  });
+
+  it('rejects malformed inputs without throwing', async () => {
+    const { typedData } = await fixture();
+    await expect(
+      verifyWalletSignature({
+        walletAddress: ACCOUNT.address,
+        typedData,
+        signature: '0x1234',
+      })
+    ).resolves.toEqual(false);
+    await expect(
+      verifyWalletSignature({
+        walletAddress: 'not-an-address',
+        typedData,
+        signature: `0x${'11'.repeat(65)}`,
+      })
+    ).resolves.toEqual(false);
   });
 });

@@ -1,29 +1,31 @@
-// Unit tests: mission draft schema (validation, FR-01 rules, owner strip).
+// Unit tests: mission creation schema (FR-01 policy rules, owner strip).
 import { describe, expect, it } from 'vitest';
 import { MISSION_CREATE_SCHEMA } from '../lib/missions';
 
-const SYSTEM_PROGRAM = '11111111111111111111111111111111';
-// Format-valid fixture address (token program id — used only for shape,
-// not as a real agent).
-const AGENT = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const TOKEN = '0x1111111111111111111111111111111111111111';
+const MERCHANT = '0x2222222222222222222222222222222222222222';
+const PRIMARY = '0x3333333333333333333333333333333333333333';
+const SUCCESSOR = '0x4444444444444444444444444444444444444444';
 
 function validBody(): Record<string, unknown> {
   return {
     name: 'Treasury run',
     objective: 'Pay vendors weekly',
-    mintAddress: SYSTEM_PROGRAM,
+    paymentTokenAddress: TOKEN,
     budgetAtomic: '50000000',
-    maxActionAtomic: '5000000',
-    recoveryMaxActionAtomic: '1000000',
-    allowedActionTypes: ['TRANSFER_SOL'],
-    allowedRecipients: [AGENT],
+    maxPaymentAtomic: '5000000',
+    recoveryMaxPaymentAtomic: '1000000',
+    merchantAllowlist: [MERCHANT],
     expiresAt: new Date(Date.now() + 3600_000).toISOString(),
-    currentAgentPublicKey: AGENT,
+    primaryAgentAddress: PRIMARY,
+    successors: [{ address: SUCCESSOR, priority: 1 }],
+    violationThreshold: 3,
+    violationWindowSeconds: 900,
   };
 }
 
 describe('MISSION_CREATE_SCHEMA', () => {
-  it('accepts a valid draft body', () => {
+  it('accepts a valid mission body', () => {
     expect(MISSION_CREATE_SCHEMA.safeParse(validBody()).success).toEqual(true);
   });
 
@@ -35,43 +37,99 @@ describe('MISSION_CREATE_SCHEMA', () => {
     }
   });
 
-  it('rejects maxAction above budget (FR-01)', () => {
-    const parsed = MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), maxActionAtomic: '50000001' });
-    expect(parsed.success).toEqual(false);
+  it('normalizes addresses to lowercase', () => {
+    const parsed = MISSION_CREATE_SCHEMA.safeParse({
+      ...validBody(),
+      paymentTokenAddress: TOKEN.toUpperCase().replace('0X', '0x'),
+    });
+    expect(parsed.success).toEqual(true);
+    if (parsed.success) expect(parsed.data.paymentTokenAddress).toEqual(TOKEN);
+  });
+
+  it('rejects maxPayment above budget (FR-01)', () => {
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), maxPaymentAtomic: '50000001' }).success
+    ).toEqual(false);
   });
 
   it('rejects recoveryMax above primary max (FR-01)', () => {
-    const parsed = MISSION_CREATE_SCHEMA.safeParse({
-      ...validBody(),
-      recoveryMaxActionAtomic: '5000001',
-    });
-    expect(parsed.success).toEqual(false);
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({
+        ...validBody(),
+        recoveryMaxPaymentAtomic: '5000001',
+      }).success
+    ).toEqual(false);
   });
 
-  it('rejects empty action types (FR-01)', () => {
-    const parsed = MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), allowedActionTypes: [] });
-    expect(parsed.success).toEqual(false);
+  it('rejects an empty or duplicate merchant allowlist', () => {
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), merchantAllowlist: [] }).success
+    ).toEqual(false);
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({
+        ...validBody(),
+        merchantAllowlist: [MERCHANT, MERCHANT],
+      }).success
+    ).toEqual(false);
   });
 
-  it('rejects unknown action types', () => {
-    const parsed = MISSION_CREATE_SCHEMA.safeParse({
-      ...validBody(),
-      allowedActionTypes: ['SWAP'],
-    });
-    expect(parsed.success).toEqual(false);
+  it('rejects a primary agent that is also a successor', () => {
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({
+        ...validBody(),
+        successors: [{ address: PRIMARY, priority: 1 }],
+      }).success
+    ).toEqual(false);
   });
 
-  it('rejects past expiry (FR-01)', () => {
-    const parsed = MISSION_CREATE_SCHEMA.safeParse({
-      ...validBody(),
-      expiresAt: new Date(Date.now() - 60_000).toISOString(),
-    });
-    expect(parsed.success).toEqual(false);
+  it('rejects duplicate successors and more than eight successors', () => {
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({
+        ...validBody(),
+        successors: [
+          { address: SUCCESSOR, priority: 1 },
+          { address: SUCCESSOR, priority: 2 },
+        ],
+      }).success
+    ).toEqual(false);
+
+    const nine = Array.from({ length: 9 }, (_, index) => ({
+      address: `0x${String(index + 1).padStart(40, '0')}`,
+      priority: index + 1,
+    }));
+    expect(MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), successors: nine }).success).toEqual(
+      false
+    );
+  });
+
+  it('rejects out-of-bounds violation settings', () => {
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), violationThreshold: 0 }).success
+    ).toEqual(false);
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), violationThreshold: 11 }).success
+    ).toEqual(false);
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), violationWindowSeconds: 59 }).success
+    ).toEqual(false);
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), violationWindowSeconds: 86_401 }).success
+    ).toEqual(false);
+  });
+
+  it('rejects past expiry', () => {
+    expect(
+      MISSION_CREATE_SCHEMA.safeParse({
+        ...validBody(),
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }).success
+    ).toEqual(false);
   });
 
   it('rejects malformed addresses and amounts', () => {
     expect(
-      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), mintAddress: 'not-an-address' }).success
+      MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), paymentTokenAddress: 'not-an-address' })
+        .success
     ).toEqual(false);
     expect(
       MISSION_CREATE_SCHEMA.safeParse({ ...validBody(), budgetAtomic: '10.5' }).success

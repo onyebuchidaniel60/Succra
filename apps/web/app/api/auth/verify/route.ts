@@ -1,14 +1,14 @@
-// POST /api/auth/verify — verify wallet signature, establish session.
+// POST /api/auth/verify — verify an EIP-712 wallet signature, establish a session.
 //
-// Request:  { walletAddress, nonce, signature } (signature = base64
-//             Ed25519 detached signature over the issued message bytes)
+// Request:  { walletAddress, nonce, signature } (signature = 0x-prefixed
+//             EIP-712 signature over the issued SuccraLogin typed data)
 // Success:  200 { user: { id, walletAddress } } + Supabase session cookies
 // Errors:   400 INVALID_BODY; 401 NONCE_UNKNOWN/NONCE_REUSED/NONCE_EXPIRED/
 //           NONCE_WALLET_MISMATCH/INVALID_SIGNATURE; 500 SESSION_FAILED.
 //
 // Session model (ARCHITECTURE.md §9/§12): the session is a genuine
 // Supabase Auth session (Supabase-signed JWT + refresh token), never a
-// home-rolled token. The server verifies the Solana signature, resolves
+// home-rolled token. The server verifies the EIP-712 signature, resolves
 // the wallet to an auth user (creating user + profile on first login),
 // then mints the session through Auth's own OTP-verification path and
 // stores it in HTTP-only cookies via @supabase/ssr. RLS sees
@@ -17,9 +17,10 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { apiError } from '@/lib/api-error';
+import { parseLoginTypedData } from '@/lib/auth/message';
+import { VERIFY_REQUEST_SCHEMA } from '@/lib/auth/schemas';
 import { verifyWalletSignature } from '@/lib/auth/signature';
 import { consumeNonce, SupabaseNonceTable } from '@/lib/auth/nonces';
-import { VERIFY_REQUEST_SCHEMA } from '@/lib/missions';
 import { admin } from '@/lib/supabase';
 
 function publicUrl(): string {
@@ -55,9 +56,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   // 1. Single-use, expiry-checked, wallet-bound nonce, consumed atomically
   // in Postgres (multi-instance safe). Consumed here, so a replayed verify
   // can never reach signature checking twice.
-  let message: string;
+  let serializedTypedData: string;
   try {
-    message = (
+    serializedTypedData = (
       await consumeNonce(new SupabaseNonceTable(admin()), nonce, walletAddress, Date.now())
     ).message;
   } catch (error) {
@@ -70,8 +71,17 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  // 2. Ed25519 signature over the exact issued message bytes.
-  if (!verifyWalletSignature({ walletAddress, message, signatureBase64: signature })) {
+  // 2. EIP-712 signature over the exact issued typed data. The stored copy
+  // is authoritative; a re-serialized/rebuilt message is never substituted.
+  const typedData = parseLoginTypedData(serializedTypedData);
+  if (
+    !typedData ||
+    typedData.message.nonce !== nonce ||
+    typedData.message.walletAddress !== walletAddress
+  ) {
+    return apiError(401, 'INVALID_SIGNATURE', 'Wallet signature rejected. No session created.');
+  }
+  if (!(await verifyWalletSignature({ walletAddress, typedData, signature }))) {
     return apiError(401, 'INVALID_SIGNATURE', 'Wallet signature rejected. No session created.');
   }
 

@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { consumeNonce, issueNonce } from '../lib/auth/nonces';
 import { FakeNonceTable } from './helpers/fake-supabase';
 
-const WALLET_A = '11111111111111111111111111111111';
-const WALLET_B = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const WALLET_A = '0x1111111111111111111111111111111111111111';
+const WALLET_B = '0x2222222222222222222222222222222222222222';
 const BUILDER = ({ nonce, expiresAtMs }: { nonce: string; expiresAtMs: number }): string =>
   `message:${nonce}:${expiresAtMs}`;
 

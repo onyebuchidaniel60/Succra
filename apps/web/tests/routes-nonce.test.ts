@@ -17,7 +17,7 @@ vi.mock('@/lib/supabase', () => ({
   }),
 }));
 
-const WALLET = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const WALLET = '0x1111111111111111111111111111111111111111';
 
 function post(body: unknown): Promise<Response> {
   return POST(
@@ -30,18 +30,32 @@ function post(body: unknown): Promise<Response> {
 }
 
 describe('POST /api/auth/nonce', () => {
-  it('issues a bound nonce with the exact message to sign', async () => {
+  it('issues a bound nonce and SuccraLogin typed data', async () => {
     const response = await post({ walletAddress: WALLET });
     expect(response.status).toEqual(200);
     const payload = (await response.json()) as {
       nonce: string;
-      message: string;
+      typedData: {
+        domain: { name: string; version: string; chainId: number };
+        primaryType: string;
+        message: { walletAddress: string; nonce: string; issuedAt: string };
+      };
       expiresAt: string;
     };
     expect(typeof payload.nonce).toEqual('string');
-    expect(payload.message).toContain(`Wallet: ${WALLET}`);
-    expect(payload.message).toContain(`Nonce: ${payload.nonce}`);
+    expect(payload.typedData.domain).toEqual({ name: 'Succra', version: '1', chainId: 177 });
+    expect(payload.typedData.primaryType).toEqual('SuccraLogin');
+    expect(payload.typedData.message.walletAddress).toEqual(WALLET);
+    expect(payload.typedData.message.nonce).toEqual(payload.nonce);
+    expect(Number.isNaN(Date.parse(payload.typedData.message.issuedAt))).toEqual(false);
     expect(Number.isNaN(Date.parse(payload.expiresAt))).toEqual(false);
+  });
+
+  it('honours a supported chain id', async () => {
+    const response = await post({ walletAddress: WALLET, chainId: 133 });
+    expect(response.status).toEqual(200);
+    const payload = (await response.json()) as { typedData: { domain: { chainId: number } } };
+    expect(payload.typedData.domain.chainId).toEqual(133);
   });
 
   it('issues unique nonces per call', async () => {
@@ -58,6 +72,11 @@ describe('POST /api/auth/nonce', () => {
     };
     expect(payload.error.code).toEqual('INVALID_BODY');
     expect(typeof payload.error.requestId).toEqual('string');
+  });
+
+  it('rejects an unsupported chain id', async () => {
+    const response = await post({ walletAddress: WALLET, chainId: 1 });
+    expect(response.status).toEqual(400);
   });
 
   it('rejects a non-JSON body', async () => {

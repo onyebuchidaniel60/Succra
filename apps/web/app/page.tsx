@@ -1,6 +1,6 @@
 // Succra landing `/` (PROJECT_SPEC.md §14 screen 1).
 import Link from 'next/link';
-import ConnectWallet from '@/components/ConnectWallet';
+import WalletConnect from '@/components/WalletConnect';
 
 const LIFECYCLE = [
   'Mission funded',
@@ -11,7 +11,7 @@ const LIFECYCLE = [
 ];
 
 const PROOF_POINTS = [
-  'Mission vaults are program-controlled — agents never custody funds.',
+  'Funds stay in the owner’s wallet — Succra controls authority, not custody.',
   'Policy violations block on-chain; three in a row quarantines the agent.',
   'Pre-approved successors continue with restricted recovery authority.',
 ];
@@ -22,7 +22,7 @@ export default function LandingPage(): React.JSX.Element {
       <section className="text-center">
         <h1 className="text-4xl font-bold tracking-tight">Agents can fail. Missions continue.</h1>
         <p className="mt-4 text-zinc-400">
-          Succra is a Solana-native continuity layer for autonomous economic missions.
+          Succra is the continuity layer for autonomous agent payments on HashKey Chain.
         </p>
       </section>
       <section aria-label="Continuity lifecycle" className="w-full">
@@ -47,10 +47,10 @@ export default function LandingPage(): React.JSX.Element {
           ))}
         </ul>
       </section>
-      <ConnectWallet />
+      <WalletConnect redirectTo="/dashboard" />
       <p className="text-sm text-zinc-500">
         <Link href="/dashboard" className="underline underline-offset-4">
-          Explore the dashboard
+          Open the dashboard
         </Link>{' '}
         (sign-in required)
       </p>

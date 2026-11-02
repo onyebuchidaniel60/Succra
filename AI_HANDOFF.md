@@ -4,7 +4,7 @@
 Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
 
 ## Current status
-**Phase 6 — Checkpoints and succession: complete on branch `phase-6-succession-evm` (pending review/merge). Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Phase 7a — wallet + on-chain mission creation: complete on branch `phase-7-ux` (pending review/merge). Phase 6 is complete and merged to `main` @ `549629d`. Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
 
 Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
 
@@ -32,7 +32,7 @@ Open questions:
 - HSP merchant access: sandbox vs mock.
 - HashKey mainnet deployer wallet funding.
 - Demo recording plan: testnet + mock vs live mainnet.
-- `@tanstack/react-query` remains deferred to Phase 4 wallet UI.
+- `@tanstack/react-query` is now installed for Phase 7a wallet/query UI.
 
 Phase 3 delivery (merged @ `4bb1641`):
 - mission schema migrated to HashKey columns (`contract_address`, `factory_address`, `owner_address`, `payment_token_address`, `current_agent_address`), with legacy Solana columns retained until Phase 7;
@@ -80,9 +80,21 @@ Phase 6 delivery on this branch (complete, pending review/merge):
 - audit names follow the frozen FR-08 Phase 6 list exactly, and no-eligible-successor is represented as `succession.triggered` with `outcome: no_eligible_successor`;
 - tests: **334 passing**, 1 skipped live Supabase suite; contracts **101 passing** (30 new Phase 6 contract tests).
 
-Phase 6 checkpoint: branch `phase-6-succession-evm` (pending review/merge).
+Phase 6 checkpoint: merged @ `549629d`.
 
-Next assigned task: **Phase 7 — Audit and polished UX; not yet authorized.**
+Phase 7a delivery on branch `phase-7-ux` (complete, pending review/merge):
+- `@tanstack/react-query` added; `components/Providers.tsx` wraps the app with wagmi + a single QueryClient.
+- Solana Wallet Standard connect replaced by `components/WalletConnect.tsx`: injected wallets plus optional WalletConnect, HashKey mainnet/testnet chain badge, wrong-chain warning, disconnect, EIP-712 sign-in.
+- Login auth moved from Ed25519/base58 to EIP-712 `SuccraLogin` typed data (no verifying contract), verified with viem; `profiles.wallet_address` is stored lowercase 0x hex; nonce table/single-use semantics unchanged.
+- `POST /api/missions` now validates the FR-01 policy, computes the keccak policy hash and provisional mock Cart Mandate, predicts the CREATE address, stores a DRAFT mirror, and returns the unsigned `MissionFactory.createMission` transaction (plus the architecture-compatible `unsignedTransaction` alias).
+- `POST /api/missions/:id/finalize` verifies the receipt, factory `MissionFactoryMissionDeployed` event, mission `MissionCreated` event, policy hash, and on-chain config before activating the mirror, attaching primary/successor agents, and writing `mission.created`.
+- Seven-step `/missions/new` wizard, HashKey dashboard columns and mission cards, minimal owner-scoped `/missions/:id` landing page.
+- No settlement-token address is fabricated: `NEXT_PUBLIC_DEFAULT_PAYMENT_TOKEN_ADDRESS` is optional and the wizard requires the operator to supply the allowlisted token.
+- Tests: **367 passing, 1 skipped live Supabase suite**; contracts **101 passing**.
+
+Phase 7a checkpoint: branch `phase-7-ux` (pending review/merge).
+
+Next assigned task: **Phase 7b — audit endpoint + timeline; awaiting review approval of 7a.**
 
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
