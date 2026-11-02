@@ -38,6 +38,10 @@ vi.mock('@/lib/gateway/contract-writer', () => ({
   sendQuarantine: mocks.sendQuarantine,
 }));
 
+vi.mock('@/lib/gateway/succession-runner', () => ({
+  triggerSuccessionForMission: vi.fn(async () => ({ outcome: 'NO_ELIGIBLE' })),
+}));
+
 const { POST } = await import('../app/api/missions/[id]/quarantine/route');
 
 const MISSION_ID = '11111111-1111-4111-8111-111111111111';

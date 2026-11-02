@@ -36,6 +36,7 @@ export interface QuarantineDeps {
   insertAuditEvent(row: NewAuditEventRow): Promise<void>;
   updateMissionStatus(missionId: string): Promise<void>;
   updateAgentStatus(missionId: string): Promise<void>;
+  triggerSuccession?(missionId: string): Promise<void>;
   nowMs?: number;
 }
 
@@ -94,6 +95,7 @@ export async function requestQuarantine(args: {
 
   if (onchain.status === 'QUARANTINED') {
     await mirrorQuarantined(deps, missionId);
+    await deps.triggerSuccession?.(missionId).catch(() => undefined);
     return {
       status: 200,
       json: {
@@ -126,6 +128,7 @@ export async function requestQuarantine(args: {
       const latest = await deps.readState(missionAddress).catch(() => null);
       if (latest?.status === 'QUARANTINED') {
         await mirrorQuarantined(deps, missionId);
+        await deps.triggerSuccession?.(missionId).catch(() => undefined);
         return {
           status: 200,
           json: {
@@ -174,6 +177,7 @@ export async function requestQuarantine(args: {
     onchain_tx_hash: txHash,
   });
   await mirrorQuarantined(deps, missionId);
+  await deps.triggerSuccession?.(missionId).catch(() => undefined);
 
   return {
     status: 200,

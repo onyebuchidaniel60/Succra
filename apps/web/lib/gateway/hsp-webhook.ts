@@ -50,6 +50,7 @@ export interface WebhookArgs {
   secret: string;
   persistence: WebhookPersistence;
   chain: WebhookChain;
+  postSettlement?(missionId: string): Promise<void>;
   nowMs?: number;
 }
 
@@ -223,6 +224,13 @@ export async function handleHspWebhook(args: WebhookArgs): Promise<WebhookResult
       // authoritative, so a stale mirror can only block conservatively and
       // reconciliation can replay it. No overspend is possible.
       await persistence.mirrorConfirmedSpend(payment.mission_id, payment.amount_atomic);
+      if (args.postSettlement) {
+        try {
+          await args.postSettlement(payment.mission_id);
+        } catch {
+          // Settlement is authoritative; checkpoint reconciliation retries.
+        }
+      }
     } else {
       const current = await persistence.getPaymentByMandateId(mandateId);
       if (current?.status !== 'CONFIRMED') {

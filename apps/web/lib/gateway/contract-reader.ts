@@ -35,6 +35,24 @@ const MISSION_ABI = [
       { name: 'confirmedSpentAtomic', type: 'uint256' },
       { name: 'lastCheckpointHash', type: 'bytes32' },
       { name: 'lastCheckpointSequence', type: 'uint64' },
+      { name: 'checkpointCount', type: 'uint64' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'getSuccessors',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple[]',
+        components: [
+          { name: 'agent', type: 'address' },
+          { name: 'priority', type: 'uint16' },
+          { name: 'active', type: 'bool' },
+        ],
+      },
     ],
   },
   {
@@ -75,6 +93,10 @@ export interface MissionOnChainState {
   violationCount: number;
   lastViolationAt: bigint;
   confirmedSpentAtomic: bigint;
+  lastCheckpointHash: string;
+  lastCheckpointSequence: bigint;
+  checkpointCount: bigint;
+  successors: Array<{ agent: string; priority: number; active: boolean }>;
   paymentToken: string;
   budgetAtomic: bigint;
   maxPaymentAtomic: bigint;
@@ -115,7 +137,7 @@ export async function readMissionState(
     });
 
   try {
-    const [config, authority, allowlist] = await Promise.all([
+    const [config, authority, allowlist, successors] = await Promise.all([
       client.readContract({
         address: contractAddress,
         abi: MISSION_ABI,
@@ -130,6 +152,11 @@ export async function readMissionState(
         address: contractAddress,
         abi: MISSION_ABI,
         functionName: 'getMerchantAllowlist',
+      }),
+      client.readContract({
+        address: contractAddress,
+        abi: MISSION_ABI,
+        functionName: 'getSuccessors',
       }),
     ]);
 
@@ -147,6 +174,14 @@ export async function readMissionState(
       violationCount: Number(authority[4]),
       lastViolationAt: authority[5],
       confirmedSpentAtomic: authority[6],
+      lastCheckpointHash: authority[7],
+      lastCheckpointSequence: authority[8],
+      checkpointCount: authority[9],
+      successors: successors.map((successor) => ({
+        agent: successor.agent,
+        priority: Number(successor.priority),
+        active: successor.active,
+      })),
       paymentToken: config[0],
       budgetAtomic: config[1],
       maxPaymentAtomic: config[2],

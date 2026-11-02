@@ -79,6 +79,13 @@ export async function createPhase5TestDb(): Promise<PGlite> {
   return db;
 }
 
+/** Phase 6 fixture schema: Phase 5 + checkpoints/succession migration. */
+export async function createPhase6TestDb(): Promise<PGlite> {
+  const db = await createPhase5TestDb();
+  await db.exec(readMigration('20261105000000_phase6_succession.sql'));
+  return db;
+}
+
 function iso(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
   return String(value);

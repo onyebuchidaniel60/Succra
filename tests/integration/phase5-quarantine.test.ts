@@ -265,6 +265,10 @@ async function createWorld(options: { threshold?: number } = {}): Promise<World>
       );
       return result.rows;
     },
+    async getAgentAddress(agentId) {
+      const row = await one(db, 'SELECT address FROM agents WHERE id = $1', [agentId]);
+      return row ? String(row['address']) : null;
+    },
     async updateMissionStatusToQuarantined(id) {
       await db.query("UPDATE missions SET status = 'QUARANTINED' WHERE id = $1", [id]);
     },
@@ -403,6 +407,9 @@ describe('Phase 5 violation → quarantine flow', () => {
         'violation.counted',
         'violation.counted',
         'violation.counted',
+        'violation.recorded',
+        'violation.recorded',
+        'violation.recorded',
         'violation.threshold_reached',
       ].sort()
     );

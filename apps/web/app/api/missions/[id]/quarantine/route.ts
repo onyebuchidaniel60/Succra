@@ -4,12 +4,12 @@
 // call. The chain is authoritative; the database mirror is written only after
 // the transaction confirms. Already-quarantined missions return 200
 // idempotently without a second transaction.
-import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { apiError, unauthorized } from '@/lib/api-error';
 import { readMissionState } from '@/lib/gateway/contract-reader';
 import { sendQuarantine } from '@/lib/gateway/contract-writer';
+import { guardianCredentialMatches } from '@/lib/gateway/guardian-auth';
 import { requestQuarantine } from '@/lib/gateway/quarantine-evm';
 import {
   getQuarantineMission,
@@ -18,19 +18,7 @@ import {
   updateMissionStatusToQuarantined,
 } from '@/lib/gateway/store-quarantine';
 import { admin, server } from '@/lib/supabase';
-
-function guardianCredentialMatches(request: Request): boolean {
-  const header = request.headers.get('authorization');
-  const expected = process.env.HASHKEY_GUARDIAN_CREDENTIAL;
-  if (!header?.startsWith('Bearer ') || !expected) return false;
-  const presented = header.slice('Bearer '.length).trim();
-  if (presented.length === 0) return false;
-  const presentedBytes = Buffer.from(presented);
-  const expectedBytes = Buffer.from(expected);
-  return (
-    presentedBytes.length === expectedBytes.length && timingSafeEqual(presentedBytes, expectedBytes)
-  );
-}
+import { triggerSuccessionForMission } from '@/lib/gateway/succession-runner';
 
 export async function POST(
   request: Request,
@@ -69,6 +57,10 @@ export async function POST(
         },
         updateMissionStatus: (missionId) => updateMissionStatusToQuarantined(db, missionId),
         updateAgentStatus: (missionId) => updateCurrentAgentStatusToQuarantined(db, missionId),
+        triggerSuccession: (missionId) =>
+          triggerSuccessionForMission(missionId, { triggerType: 'quarantine' }).then(
+            () => undefined
+          ),
       },
       missionId: id,
       actor,

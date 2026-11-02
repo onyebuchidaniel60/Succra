@@ -8,7 +8,12 @@ const TOKEN = `0x${'33'.repeat(20)}`;
 const MERCHANT = `0x${'44'.repeat(20)}`;
 
 function clientWith(
-  overrides: { config?: unknown[]; authority?: unknown[]; allowlist?: string[] } = {}
+  overrides: {
+    config?: unknown[];
+    authority?: unknown[];
+    allowlist?: string[];
+    successors?: unknown[];
+  } = {}
 ) {
   return {
     readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
@@ -29,10 +34,15 @@ function clientWith(
         );
       }
       if (functionName === 'authority') {
-        return overrides.authority ?? [AGENT, 1, 4n, 2n, 0, 0n, 0n, `0x${'00'.repeat(32)}`, 0n];
+        return overrides.authority ?? [AGENT, 1, 4n, 2n, 0, 0n, 0n, `0x${'00'.repeat(32)}`, 0n, 0n];
       }
       if (functionName === 'getMerchantAllowlist') {
         return overrides.allowlist ?? [MERCHANT];
+      }
+      if (functionName === 'getSuccessors') {
+        return (
+          overrides.successors ?? [{ agent: `0x${'66'.repeat(20)}`, priority: 1, active: true }]
+        );
       }
       throw new Error('unexpected function');
     }),
@@ -49,8 +59,12 @@ describe('EVM mission contract reader', () => {
     expect(state.stateVersion).toEqual(2n);
     expect(state.paymentToken).toEqual(TOKEN);
     expect(state.cartMandateHash).toEqual(`0x${'66'.repeat(32)}`);
+    expect(state.checkpointCount).toEqual(0n);
+    expect(state.successors).toEqual([
+      { agent: `0x${'66'.repeat(20)}`, priority: 1, active: true },
+    ]);
     expect(state.allowedMerchants.has(MERCHANT.toLowerCase())).toEqual(true);
-    expect(client.readContract).toHaveBeenCalledTimes(3);
+    expect(client.readContract).toHaveBeenCalledTimes(4);
   });
 
   it('rejects an invalid contract address', async () => {

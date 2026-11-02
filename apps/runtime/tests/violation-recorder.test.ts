@@ -90,6 +90,7 @@ function harness(input: { rows?: UnprocessedBlockedRequest[]; threshold?: number
     getRecentAuditEvents: vi.fn(async () =>
       events.map((event) => ({ event_type: event.event_type }))
     ),
+    getAgentAddress: vi.fn(async () => `0x${'22'.repeat(20)}`),
     updateMissionStatusToQuarantined: vi.fn(async () => undefined),
     updateCurrentAgentStatusToQuarantined: vi.fn(async () => undefined),
     now: () => 1_700_000_100_000,
@@ -155,12 +156,17 @@ describe('Phase 5 violation recorder', () => {
     const h = harness({ rows: [row(1), row(2), row(3)] });
     await runViolationRecorder(h.deps);
     expect(h.events.map((event) => event.event_type)).toEqual([
+      'violation.recorded',
+      'violation.recorded',
+      'violation.recorded',
       'violation.threshold_reached',
       'quarantine.submitted',
       'quarantine.confirmed',
     ]);
     expect(h.events.every((event) => event.actor_type === 'runtime')).toEqual(true);
-    expect(h.events[0]?.payload_public).toMatchObject({ violationCount: 3, violationThreshold: 3 });
+    expect(
+      h.events.find((event) => event.event_type === 'violation.threshold_reached')?.payload_public
+    ).toMatchObject({ violationCount: 3, violationThreshold: 3 });
   });
 
   it('is idempotent: re-running on already-processed rows is a no-op', async () => {

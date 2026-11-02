@@ -85,6 +85,7 @@ export interface SubmitActionArgs {
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  postSettlement?(missionId: string, expectedVersion: bigint): Promise<void>;
 }
 
 export interface HandlerResult {
@@ -244,6 +245,7 @@ async function confirmPayment(args: {
   requestId: string;
   onchainRequestId: `0x${string}`;
   nowMs: number;
+  postSettlement?(missionId: string, expectedVersion: bigint): Promise<void>;
 }): Promise<HandlerResult> {
   const {
     chain,
@@ -255,6 +257,7 @@ async function confirmPayment(args: {
     requestId,
     onchainRequestId,
     nowMs,
+    postSettlement,
   } = args;
   const amountAtomic = BigInt(payment.amount_atomic);
   if (!isHex(hspStatus.transactionHash, 32)) {
@@ -311,6 +314,16 @@ async function confirmPayment(args: {
   // conservatively; it can never authorize an overspend. Reconciliation can
   // replay the mirror, and HSP/HashKey remain authoritative.
   await persistence.mirrorConfirmedSpend(mission.id, amountAtomic.toString());
+
+  if (postSettlement) {
+    try {
+      const latest = await chain.readMissionState(missionAddress);
+      await postSettlement(mission.id, latest.stateVersion);
+    } catch {
+      // The settlement is already authoritative. Checkpoint/succession
+      // reconciliation is retried by the runtime without failing the payment.
+    }
+  }
   return paymentSnapshot(confirmed, requestId);
 }
 
@@ -331,6 +344,7 @@ export async function submitApprovedAction(args: SubmitActionArgs): Promise<Hand
     chain,
     hsp,
     persistence,
+    postSettlement,
   } = args;
   const nowMs = args.nowMs ?? Date.now();
   const nowIso = new Date(nowMs).toISOString();
@@ -497,6 +511,7 @@ export async function submitApprovedAction(args: SubmitActionArgs): Promise<Hand
         requestId: action.request_id,
         onchainRequestId: action.onchain_request_id as `0x${string}`,
         nowMs,
+        ...(postSettlement !== undefined ? { postSettlement } : {}),
       });
     }
     if (status.status === 'FAILED') {

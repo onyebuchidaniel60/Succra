@@ -9,6 +9,7 @@ import { isAddress } from 'viem';
 import { z } from 'zod';
 import { apiError } from '@/lib/api-error';
 import { verifyAgentRequest, type AgentAuthReason } from '@/lib/gateway/agent-auth';
+import { postSettlementHook } from '@/lib/gateway/post-settlement';
 import { submitApprovedAction } from '@/lib/gateway/submit-handler';
 import {
   createSubmitChain,
@@ -127,6 +128,8 @@ export async function POST(
       chain: createSubmitChain(),
       hsp: createSubmitHsp(),
       persistence: createSubmitPersistence(db),
+      postSettlement: (missionId, expectedVersion) =>
+        postSettlementHook(missionId, expectedVersion).then(() => undefined),
     });
     return NextResponse.json(result.json, { status: result.status });
   } catch (error) {
