@@ -10,13 +10,21 @@ Succra allows an economic mission to survive primary-agent failure by maintainin
 **Pivot notice (2026-11-03): Succra is pivoting from HashKey Chain (HSP) to Robinhood Chain (x402) for the World is Flat hackathon (submissions close 2026-11-12 17:30 UTC). The product thesis is unchanged: Succra is the continuity layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail. Missions don't have to.**
 
 - HashKey implementation archived at annotated tag `hashkey-v1` → `phase-7-ux` @ `cc0f90b` (Phase 7a/7b/7c complete; not merged to main). `main` is @ `549629d` (Phase 6 merge).
-- Carried forward unchanged: the three Solidity contracts and their authority/policy model, violation streak, quarantine, succession, checkpoints, recovery authority, audit events, dashboard, timeline, and decision receipts. Contract topology and policy semantics remain fixed; R1 may adapt identifiers/ABI/field names for x402.
-- Replaced: HSP payment rail → x402 (HTTP 402 `accepts[]`, EIP-3009 `transferWithAuthorization`), HashKey Chain → Robinhood Chain (4663/46630), HSK → ETH gas, HSP mandate IDs → x402 payment IDs / authorization nonces, and the Blockscout URL.
-- Default settlement asset: USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`; allowlisted ERC-20 supported. Native ETH is gas only.
-- Non-custodial model retained: funds stay in the owner wallet; the owner/token holder signs EIP-3009 authorizations; agents never hold funds.
-- Phase sequence: **R0** (archive + docs pivot; this task), **R1** (x402 client + chain swap; not authorized), **R2** (testnet 46630), **R3** (mainnet 4663), **R4** (Playwright smoke + video/submission).
+- **R0 complete (chain swap):** docs authorize Robinhood Chain / x402, mainnet 4663 and testnet 46630, USDG, and the x402 facilitator.
+- **R0b complete (this task):** docs authorize the program-controlled vault model (Model A), session-key lifecycle, deposit/withdrawal, the R1-spike gate, and the mission-continuity reframe.
+- Docs now specify:
+  - `SuccraMission` holds mission USDG; the owner deposits at creation and can withdraw unilaterally at any status.
+  - A session key is registered at mission creation, held server-side by the runtime, revoked on quarantine, and replaced on succession with the reduced recovery cap.
+  - Two EIP-3009 variants: **A** (contract signer via ERC-1271) and **B** (session key funded on-demand); R1-spike decides.
+  - The owner is never in the per-payment loop.
+- Phase sequence: **R0** (archive + docs pivot; complete), **R0b** (Model A docs amendment; complete), **R1-spike** (ERC-1271 probe; not authorized), **R1** (x402 client + vault integration; not authorized), **R2** (testnet 46630), **R3** (mainnet 4663), **R4** (Playwright smoke + video/submission).
 - Phase 7c UI work is rail-agnostic and complete at `cc0f90b`; it can be merged or carried into `robinhood-pivot` after R0. No further 7c work is authorized.
-- R0: docs-only pivot complete on branch `robinhood-pivot` (from `cc0f90b`); awaiting reviewer approval. Next assigned task: **R1 — x402 client and chain config swap, not begun.**
+- **Next assigned task: R1-spike, not yet authorized.**
+- Prerequisites for R1-spike:
+  - funded Robinhood testnet deployer wallet (not configured yet);
+  - Robinhood testnet network in Hardhat config (not configured yet);
+  - testnet ETH and USDG from the faucet.
+- After R1-spike: R1 implementation, not yet authorized.
 
 ## Historical HashKey delivery (archived at `hashkey-v1`)
 
@@ -137,11 +145,14 @@ Phase 7c checkpoint: branch `phase-7-ux` (pending review/merge).
 Historical next-task note: Phase 7c was awaiting merge to `main` when the HashKey implementation was archived. The merge is not part of R0.
 
 ## Frozen architecture
-User wallet → Next.js web → Supabase / Succra runtime → SuccraMission contract + x402 facilitator → Robinhood Chain settlement. Agents communicate through EIP-712-signed requests and never custody mission funds. The owner/token holder signs EIP-3009 settlement authorizations.
+User wallet → Next.js web → Supabase / Succra runtime → SuccraMission contract + x402 facilitator → Robinhood Chain settlement. Mission funds are held by SuccraMission. A runtime-held session key signs EIP-3009 authorizations; the owner registers it, can withdraw at any status, and never signs per payment. Agents communicate through EIP-712-signed requests and never custody mission funds or the session key.
 
 ## Frozen MVP
 - Robinhood Chain (EVM) only, mainnet 4663 / testnet 46630
 - USDG by default or an allowlisted ERC-20 via x402 EIP-3009; ETH is gas only
+- program-controlled vault model (Model A)
+- SuccraMission holds mission USDG; owner deposits at creation and withdraws unilaterally at any status
+- session key registered at creation, held by the runtime, revoked on quarantine, replaced on succession
 - allowlisted merchants
 - deterministic policy engine
 - 3 consecutive blocked policy violations → quarantine
@@ -159,27 +170,28 @@ User wallet → Next.js web → Supabase / Succra runtime → SuccraMission cont
 - global agent reputation
 - unrestricted agent wallets
 - production decentralized keeper network
-- custodial vault model
+- withdrawal paths that require agent or guardian cooperation
 - direct ERC-20 transfers bypassing x402
 - support for Solana
 
 ## Current phase
-**Phase R0 — Archive HashKey, authorize Robinhood Chain / x402 docs pivot.**
+**Phase R0b — Program-controlled vault model docs amendment.**
 
-R0 is complete: the HashKey implementation is archived, `robinhood-pivot` is branched from the archive target, and the six source-of-truth docs are amended. No code, contracts, env files, or Hardhat config changed. R1 is not authorized.
+R0 is complete (chain swap docs). R0b is complete: the six source-of-truth docs now authorize Model A (SuccraMission holds mission USDG), the session-key lifecycle, deposit/withdrawal, the R1-spike ERC-1271 gate, and the mission-continuity reframe. No code, contracts, env files, or Hardhat config changed. R1-spike and R1 are not authorized.
 
 ## Next phase (not begun)
-Phase R1 — x402 client and chain config swap. Replace `packages/hsp-client` with `packages/x402-client`, switch chain 4663/46630, USDG, facilitator, and preflight/submit to x402/EIP-3009. Do not begin without explicit authorization.
+Phase R1-spike — ERC-1271 capability probe against testnet USDG `0x7E955252E15c84f5768B83c41a71F9eba181802F`. Determines Variant A (contract signer via ERC-1271) or Variant B (session key funded on-demand) for R1. Prerequisites: funded testnet deployer, Robinhood testnet network in Hardhat config, testnet ETH and USDG. Do not begin without explicit authorization.
 
 ## Known design assumptions
-- Succra Cloud can go offline; on-chain authority remains intact, but new x402 payments cannot be authorized until the owner/runtime can act.
-- The x402 facilitator is the settlement authority; SuccraMission is the authority and policy layer. The facilitator does not read SuccraMission state.
+- Succra Cloud can go offline; on-chain authority remains intact, but new x402 payments cannot be authorized until the runtime can act. The owner can still withdraw mission USDG directly from SuccraMission.
+- The x402 facilitator is the settlement authority; SuccraMission is the authority, policy, and custody layer. The facilitator does not read SuccraMission state.
 - EIP-3009 authorizations must have short `validBefore` windows; cancellation cannot revoke an already-signed authorization.
-- The owner/token holder signs EIP-3009 authorizations; agents never hold funds or token signing keys.
-- Guardian is constrained and cannot spend. Production should eventually move toward a stronger decentralized guardian/keeper design.
+- The runtime-held session key signs EIP-3009 authorizations; the owner never signs per payment, and agents never hold funds, the session key, or token signing keys.
+- Variant A depends on USDG code-routing through ERC-1271; if the R1-spike fails, Variant B is used. Variant B's `releaseForPayment` signature does not carry the merchant, so the runtime enforces the merchant allowlist before release and re-checks the signed recipient before submission.
+- Guardian is constrained and cannot spend; quarantine revokes the session key. Production should eventually move toward a stronger decentralized guardian/keeper design.
 - Mission checkpoint stores deterministic facts, not agent private reasoning.
 - The database mirrors on-chain and x402 settlement state; it does not authorize money movement.
-- Funds remain in the owner's wallet; Succra never takes custody.
+- Mission funds are held by SuccraMission; the owner's withdrawal right is unconditional and unilateral. Succra never holds owner signing keys.
 
 ## Verification rule
 Evidence > agent claim. Do not accept “works” without tests or direct flow verification.

@@ -1,6 +1,6 @@
 # 24. PHASED IMPLEMENTATION PLAN
 
-> **Historical note:** Phases 0–6 below were executed against HashKey Chain / HSP and are archived at tag `hashkey-v1`. They are retained as history. The active plan is Phase R0–R4 for Robinhood Chain / x402.
+> **Historical note:** Phases 0–6 below were executed against HashKey Chain / HSP and are archived at tag `hashkey-v1`. They are retained as history. The active plan is Phase R0–R4 for Robinhood Chain / x402, including the R0b docs amendment and the R1-spike ERC-1271 gate.
 
 ## Phase 0 — Repository pivot
 Objective: preserve the prior chain implementation, remove it from the mainline, and establish the EVM/HSP workspace without implementing product behavior.
@@ -174,38 +174,86 @@ Acceptance:
 - no code, contracts, env files, or Hardhat config changed;
 - docs-only commit pushed and reported.
 
-## Phase R1 — x402 client and chain swap
+## Phase R0b — Program-controlled vault docs amendment
 
-Objective: replace the HSP payment rail with x402 while preserving the three-contract authority model, policy engine, violation streak, quarantine, succession, checkpoints, recovery authority, audit events, and UI.
+Objective: amend the six source-of-truth docs for Model A (SuccraMission holds mission USDG), the session-key lifecycle, deposit/withdrawal, the R1-spike gate, and the mission-continuity reframe.
 
 Tasks:
-- add `packages/x402-client` for HTTP 402 `accepts[]` parsing, EIP-3009 `TransferWithAuthorization` typed data, facilitator verify/settle/receipt handling, and a mock facilitator;
-- switch chain config to Robinhood mainnet 4663 and testnet 46630, RPC `https://rpc.mainnet.chain.robinhood.com`, explorer `https://robinhoodchain.blockscout.com`, and USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`;
-- rename `HASHKEY_*` to `ROBINHOOD_*` and `HSP_*` to `X402_*` in `.env.example`, runtime config, and deployment config;
-- preserve the three-contract topology and policy semantics; adapt identifiers/ABI/field names only as required by the x402 authorization model;
-- rewrite preflight to select an x402 offer and return EIP-3009 typed data for the owner/token holder;
-- rewrite submit to verify the agent `SuccraRequest` and owner EIP-3009 signature, record on-chain authorization, submit to the facilitator, and verify the receipt against the Robinhood Transfer log;
-- replace HSP persistence and webhook handling with x402 payment/receipt persistence and facilitator polling fallback;
-- update UI copy, decision receipts, timeline event formatting, and proof links for x402 payment IDs / authorization nonces and Robinhood transaction hashes;
-- add unit, integration, contract, and security tests for authorization binding, nonce replay, receipt forgery, facilitator failure, duplicate submission, budget exhaustion, stale state, unauthorized agents, and unauthorized merchants.
+- update `AGENTS.md` invariants, security rules, stack, and testing rules;
+- update `ARCHITECTURE.md` data model, Model A, API, DB behavior, security, payments, repo structure, and env vars;
+- update `PROJECT_SPEC.md` scope, flows, FRs, screens, payments, and test strategy;
+- insert the R1-spike phase and rewrite R1–R4;
+- update `AI_HANDOFF.md` and mirror all changes in `SUCCRA_BLUEPRINT.md`.
 
 Acceptance:
+- only the six source-of-truth docs change;
+- no contracts, Hardhat config, env files, or code change;
+- no unresolved contradiction with the Model A decisions remains; the Variant B merchant-binding limitation is documented as a residual trust boundary;
+- docs committed and pushed on `robinhood-pivot`.
+
+## Phase R1-spike — ERC-1271 capability probe
+
+Objective: determine whether testnet USDG
+(`0x7E955252E15c84f5768B83c41a71F9eba181802F`) code-routes through
+`IERC1271.isValidSignature` when `from` is a contract.
+
+Deliverable: PASS/FAIL with on-chain evidence.
+
+Blocks: R1 implementation.
+
+Prerequisite: deployer wallet configured (Robinhood testnet network in Hardhat config, funded testnet ETH and USDG).
+
+Tasks:
+- deploy a minimal test-only ERC-1271 validator on testnet 46630;
+- fund it with testnet USDG;
+- build and sign an EIP-3009 `TransferWithAuthorization` with the validator as `from`;
+- attempt the transfer and record the tx hash, Transfer log, or revert trace;
+- verify the EIP-712 domain separator, `authorizationState`, and recipient balance;
+- return any residual USDG to the deployer; leave the validator deployed as evidence.
+
+If PASS: R1 implements Variant A.
+If FAIL: R1 implements Variant B.
+
+## Phase R1 — x402 client and vault integration
+
+Objective: replace the HSP payment rail with x402 and implement the R1-spike-selected vault variant while preserving the three-contract authority model, policy engine, violation streak, quarantine, succession, checkpoints, recovery authority, audit events, and UI.
+
+Tasks:
+- extend `SuccraMission.sol`: `deposit()`, `withdraw()`, session-key registration/revocation; Variant A `approvePayment()` + `isValidSignature()` + `approvedHashes`; Variant B `releaseForPayment()`;
+- add `packages/x402-client` for HTTP 402 `accepts[]` parsing, EIP-3009 `TransferWithAuthorization` typed data, session-key signing, facilitator verify/settle/receipt handling, and a mock facilitator;
+- switch chain config to Robinhood mainnet 4663 and testnet 46630, RPC `https://rpc.mainnet.chain.robinhood.com`, explorer `https://robinhoodchain.blockscout.com`, and USDG mainnet `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` / testnet `0x7E955252E15c84f5768B83c41a71F9eba181802F`;
+- replace any remaining legacy HashKey/HSP identifiers with Robinhood/X402 names in `.env.example`, runtime config, and deployment config;
+- preserve the three-contract topology and policy semantics; adapt identifiers/ABI/field names only as required by the x402 authorization model;
+- rewrite preflight to select an x402 offer, call `approvePayment` (Variant A) or `releaseForPayment` (Variant B), and return the approval/release tx hash plus EIP-3009 typed data for the session key;
+- rewrite submit to verify the agent `SuccraRequest`, verify the session-key EIP-3009 signature and on-chain approval/release, submit to the facilitator, and verify the receipt against the Robinhood Transfer log;
+- replace HSP persistence and webhook handling with x402 payment/receipt persistence and facilitator polling fallback;
+- update the wizard with a deposit step and the mission detail page with a withdraw button at all statuses;
+- update UI copy, decision receipts, timeline event formatting, and proof links for x402 payment IDs / authorization nonces and Robinhood transaction hashes;
+- add unit, integration, contract, and security tests for deposit/withdraw, session-key lifecycle, Variant A/B behavior, authorization binding, nonce replay, receipt forgery, facilitator failure, duplicate submission, budget exhaustion, stale state, unauthorized agents, and unauthorized merchants.
+
+Acceptance:
+- the owner can deposit USDG into SuccraMission;
+- the owner can withdraw USDG at any status, including `QUARANTINED`;
+- the owner registers the session key at creation;
+- the agent preflights, the runtime approves/releases, the session key signs, and the facilitator settles;
+- quarantine revokes the session key and the next payment fails;
+- succession registers a new session key with the reduced recovery cap;
+- the owner is never in the per-payment loop;
 - no HSP code path is required for the golden path;
-- the owner wallet signs EIP-3009 authorizations; agents never hold funds;
-- `SuccraMission` remains authoritative for policy and cumulative budget;
-- the facilitator settles only after on-chain authorization;
+- `SuccraMission` remains authoritative for policy, caps, and custody;
+- the facilitator settles only after on-chain approval/release;
 - settlement is confirmed only from the Robinhood Transfer log;
-- all relevant tests pass.
+- all relevant tests pass and CI is green.
 
 ## Phase R2 — Robinhood testnet deployment and live flow
 
 Objective: prove the full lifecycle on Robinhood Chain testnet (46630).
 
 Tasks:
-- deploy `GuardianRegistry`, `MissionFactory`, and `SuccraMission` to testnet;
+- deploy `GuardianRegistry`, `MissionFactory`, and `SuccraMission` to testnet with a funded deployer;
 - verify source on Blockscout;
-- configure the x402 facilitator, USDG/allowlisted asset, and guardian runtime;
-- run create → payment → violations → quarantine → succession → recovery on testnet;
+- configure the x402 facilitator, testnet USDG `0x7E955252E15c84f5768B83c41a71F9eba181802F` / allowlisted asset, and guardian runtime;
+- run create → deposit → session-key registration → payment → violations → quarantine (session-key revocation) → withdrawal at QUARANTINED → succession → new session key → recovery on testnet;
 - record transaction hashes, addresses, and evidence.
 
 Acceptance:
@@ -222,7 +270,7 @@ Tasks:
 - complete mainnet readiness review;
 - fund the deployer wallet;
 - deploy and verify the three contracts on mainnet Blockscout;
-- configure mainnet x402 facilitator and USDG asset;
+- configure mainnet x402 facilitator and USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`;
 - run a small-capital live demo only if explicitly approved;
 - publish contract addresses and evidence.
 
@@ -238,13 +286,13 @@ Objective: produce the World is Flat hackathon submission evidence.
 
 Tasks:
 - run the Playwright demo smoke test against the Robinhood build;
-- record the full lifecycle video;
+- record the full lifecycle video (ElevenLabs or Google Cloud TTS for narration);
 - publish the public site and evidence;
 - verify accessibility, responsive behavior, and proof links;
 - submit before 2026-11-12 17:30 UTC.
 
 Acceptance:
-- the demo proves create → payment → violations → quarantine → succession → recovery;
+- the demo proves create → deposit → payment → violations → quarantine → withdrawal → succession → recovery;
 - the smoke test passes with evidence;
 - video and public links are available;
 - no secret is exposed.
