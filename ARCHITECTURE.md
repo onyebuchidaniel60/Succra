@@ -6,7 +6,7 @@
 
 Succra uses three Solidity contracts:
 
-- `SuccraMission.sol` — one contract per mission. Holds mission authority, policy, status, violations, successors, state version, and checkpoint commitments. It never holds funds.
+- `SuccraMission.sol` — one contract per mission. Holds mission authority, policy, status, violations, successors, session key, mission USDG, state version, and checkpoint commitments. It is the mission's token holder and releases or withdraws funds only under its on-chain rules.
 - `MissionFactory.sol` — deploys `SuccraMission` contracts and indexes them by owner.
 - `GuardianRegistry.sol` — stores the global guardian address and allows the registry owner to rotate it.
 
@@ -28,6 +28,7 @@ The on-chain list is bounded to 8 unique addresses and excludes the primary agen
 struct MissionConfig {
     address paymentToken;              // USDG or allowlisted ERC-20
     uint256 budgetAtomic;              // budget envelope in token atomic units
+    uint256 initialDepositAtomic;      // minimum deposit required before ACTIVE
     uint256 maxPaymentAtomic;
     uint256 recoveryMaxPaymentAtomic;
     address[] merchantAllowlist;
@@ -65,14 +66,19 @@ struct AuthorityState {
     uint16 violationCount;
     uint64 lastViolationAt;
     uint256 confirmedSpentAtomic;      // mirrored from confirmed x402 settlements
+    address sessionKey;                // current runtime-held session key
+    uint256 depositedAtomic;           // total USDG deposited into the contract
+    uint256 withdrawnAtomic;           // total USDG withdrawn by the owner
     bytes32 lastCheckpointHash;
     uint64 lastCheckpointSequence;
 }
+
+mapping(bytes32 => bool) public approvedHashes;  // Variant A: EIP-3009 hashes approved by policy
 ```
 
 `DEGRADED` and `HALTED` are reserved values. No MVP transition enters `DEGRADED`; `HALTED` is written only to the off-chain mirror when no eligible successor exists, while the contract remains `QUARANTINED`. The reachable MVP state machine is defined in `PROJECT_SPEC.md` §6.
 
-`DRAFT` is the off-chain pre-deployment state. A deployed mission with a committed policy and x402 offer hash starts `ACTIVE`; the mirror follows the verified `MissionCreated` event.
+`DRAFT` is the pre-deposit on-chain state. A deployed mission with a committed policy and x402 offer hash starts `DRAFT`; it reaches `ACTIVE` only after the initial USDG deposit confirms. The off-chain mirror shows `FUNDED` while the deposit is pending. A `DRAFT` mission cannot execute payments.
 
 ### `Checkpoint`
 
@@ -86,7 +92,7 @@ struct Checkpoint {
 
 The full deterministic snapshot lives off-chain in `mission_checkpoints`; the contract stores the sequence/hash commitment. This preserves the existing checkpoint boundary without putting agent reasoning on-chain.
 
-### `PaymentAuthorization`
+### `PaymentAuthorization` (legacy agent-request record)
 
 ```solidity
 struct PaymentAuthorization {
@@ -98,9 +104,11 @@ struct PaymentAuthorization {
     uint64 paymentNonce;               // on-chain request nonce, distinct from the EIP-3009 nonce
     uint64 expiresAt;                  // request expiry; the EIP-3009 validBefore is bound in the hash
     bytes32 authorizationHash;         // EIP-3009 transferWithAuthorization typed-data digest
-    bytes agentSignature;              // agent request consent; owner EIP-3009 signature is verified before settlement
+    bytes agentSignature;              // agent request consent; the session-key EIP-3009 signature is verified before settlement
 }
 ```
+
+This struct records the agent's signed request for the off-chain mirror. It no longer authorizes a token transfer; the variant-specific `approvePayment`/`releaseForPayment` step is the on-chain authorization. R1 may remove or rename it in the contract ABI.
 
 ### `SuccessionRecord`
 
@@ -122,7 +130,13 @@ struct SuccessionRecord {
 - `PolicyUpdated(bytes32 indexed policyHash, uint64 stateVersion)`
 - `AgentAuthorized(address indexed agent, uint8 role, uint64 stateVersion)`
 - `AgentRevoked(address indexed agent, uint64 stateVersion)`
-- `PaymentAuthorized(bytes32 indexed requestId, address indexed merchant, uint256 amountAtomic, bytes32 authorizationHash)`
+- `FundsDeposited(address indexed owner, uint256 amount)`
+- `FundsWithdrawn(address indexed owner, uint256 amount)`
+- `SessionKeyRegistered(address indexed sessionKey, uint64 stateVersion)`
+- `SessionKeyRevoked(address indexed sessionKey, uint64 stateVersion)`
+- `PaymentApproved(bytes32 indexed authorizationHash, uint256 amount, address merchant)`
+- `PaymentReleased(address indexed sessionKey, uint256 amount)`
+- `PaymentAuthorized(bytes32 indexed requestId, address indexed merchant, uint256 amountAtomic, bytes32 authorizationHash)` — legacy agent-request event; superseded by `PaymentApproved`/`PaymentReleased`
 - `PaymentSettlementRecorded(bytes32 indexed paymentId, uint256 amountAtomic, bytes32 transactionHash)`
 - `ViolationRecorded(bytes32 indexed requestId, uint16 violationCount, uint64 stateVersion)`
 - `MissionQuarantined(address indexed guardian, uint64 stateVersion)`
@@ -140,6 +154,10 @@ Every state-changing function takes or checks an expected `stateVersion` so a st
 Owner-authorized:
 - `MissionFactory.createMission(MissionConfig)` — deploys a mission; the owner is `msg.sender`;
 - `updateDraftPolicy(...)` — `DRAFT` only;
+- `deposit(uint256 amountAtomic)` — pulls USDG via `transferFrom`, increments `depositedAtomic`, and moves `DRAFT` → `ACTIVE` when `initialDepositAtomic` is met; also callable in `ACTIVE`/`ACTIVE_RECOVERY` for top-ups;
+- `withdraw(uint256 amountAtomic)` — sends USDG to the owner; callable at any status, including `QUARANTINED`, `RECOVERING`, `ACTIVE_RECOVERY`, and `CANCELLED`;
+- `registerSessionKey(address sessionKey, uint64 expectedVersion)` — registers or replaces the runtime-held key; replacing invalidates pending approvals;
+- `revokeSessionKey(uint64 expectedVersion)` — owner revocation; also callable by the guardian only as part of quarantine;
 - `quarantine(uint64 expectedVersion)` — owner-initiated quarantine;
 - `cancel(expectedVersion)` — allowed non-terminal states;
 - `activateSuccessor(address successor, uint64 expectedVersion)` — owner fallback when the guardian is unavailable, using the same eligibility checks.
@@ -150,12 +168,15 @@ Guardian-authorized:
 - `activateSuccessor(address successor, uint64 expectedVersion)`;
 - `acknowledgeRecovery(uint64 expectedVersion)`;
 - `recordSettlement(bytes32 paymentId, uint256 amountAtomic, bytes32 txHash, uint64 expectedVersion)`;
-- `commitCheckpoint(uint64 sequence, bytes32 checkpointHash, uint64 expectedVersion)`.
+- `commitCheckpoint(uint64 sequence, bytes32 checkpointHash, uint64 expectedVersion)`;
+- `revokeSessionKey(uint64 expectedVersion)` — quarantine path only.
 
-Runtime-submitted, agent-signed:
-- `authorizePayment(PaymentAuthorization calldata authorization, uint64 expectedVersion)` — requires the agent's EIP-712 signature over the x402 authorization digest.
+Runtime-submitted (guardian-authorized):
+- `approvePayment(bytes32 authorizationHash, uint256 amountAtomic, address merchant, uint64 expectedVersion)` — Variant A; checks status, session key, per-payment ceiling, cumulative budget, merchant/token allowlist, expiry, and state version; stores `approvedHashes[authorizationHash] = true`; emits `PaymentApproved`;
+- `releaseForPayment(address sessionKey, uint256 amountAtomic, uint64 expectedVersion)` — Variant B; checks status, session key, per-payment ceiling, cumulative budget, expiry, and state version; transfers exactly `amountAtomic` USDG to the session key; emits `PaymentReleased`;
+- `isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4)` — Variant A ERC-1271 entry point; returns `0x1626ba7e` only when `approvedHashes[hash]` is true and `signature` recovers the registered session key.
 
-`authorizePayment` checks status, current agent, action type, merchant/token allowlist, per-payment ceiling, mirrored cumulative spend, expiry, payment nonce, state version, and the agent signature. It then emits `PaymentAuthorized` and advances `agentNonce`. It does not move funds. The guardian key may relay the call, but the guardian cannot authorize or spend alone.
+`authorizePayment` is replaced by the variant-specific approval/release step in R1. The runtime verifies the agent's `SuccraRequest` and current-agent assignment before calling; the contract enforces status, session-key state, caps, expiry, and state version. Variant A additionally binds the approved hash to the merchant and amount. Variant B's release signature carries the session key, amount, and version; the runtime checks the merchant allowlist before release and re-checks the signed EIP-3009 recipient before facilitator submission. The guardian key may relay the call, but the guardian cannot withdraw or spend alone.
 
 `GuardianRegistry.rotateGuardian(address nextGuardian)` is owner-authorized by the registry owner (deployer/owner multisig).
 
@@ -166,11 +187,13 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 `SuccraMission` is authoritative for:
 - mission existence, owner, current agent, status, and successor membership;
 - policy configuration and per-payment eligibility;
+- custody of mission USDG and the owner's unconditional withdrawal right;
 - the recovery per-payment ceiling selected by status;
+- session-key registration, rotation, revocation, and Variant A approved hashes;
 - guardian authorization and state-version checks;
 - checkpoint hash commitments.
 
-`SuccraMission` is **not** the custodian of funds and does not execute ERC-20 transfers. The x402 facilitator is authoritative for settlement. `SuccraMission` is authoritative for the cumulative budget and policy; the x402 offer constrains one payment, not the aggregate budget. The contract's `confirmedSpentAtomic` is a mirrored value updated only from confirmed x402 settlements; it is used for checkpoints and race detection, never as permission to move funds.
+`SuccraMission` is the mission's token holder. It enforces the cumulative budget, per-payment ceiling, merchant/token allowlist where supplied, expiry, status, and session-key state. The x402 facilitator is authoritative for signature/nonce verification and settlement. The x402 offer constrains one payment, not the aggregate budget. The contract's `confirmedSpentAtomic` is a mirrored value updated only from confirmed x402 settlements; it is used for checkpoints and race detection, never as permission to move funds. The owner's `withdraw` right is unconditional and cannot be blocked by the guardian, agent, or runtime.
 
 ## Off-chain Supabase mirror
 
@@ -203,8 +226,13 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - `owner_address` TEXT NOT NULL
 - `payment_token_address` TEXT NOT NULL
 - `budget_atomic` NUMERIC(78,0) NOT NULL
+- `initial_deposit_atomic` NUMERIC(78,0) NOT NULL
+- `total_deposited_atomic` NUMERIC(78,0) NOT NULL DEFAULT 0
+- `total_withdrawn_atomic` NUMERIC(78,0) NOT NULL DEFAULT 0
 - `remaining_budget_atomic` NUMERIC(78,0) NOT NULL
 - `status` TEXT NOT NULL
+- `session_key_address` TEXT NULL
+- `session_key_status` TEXT (`NONE`,`ACTIVE`,`REVOKED`,`REPLACED`)
 - `current_agent_id` UUID FK agents.id NULL
 - `current_agent_address` TEXT NOT NULL
 - `policy_version` INTEGER NOT NULL DEFAULT 1
@@ -396,7 +424,7 @@ The EIP-712 domain is:
 }
 ```
 
-Testnet uses chain ID `46630`. Wallet login uses a separate `SuccraLogin` typed-data domain without a verifying contract. EIP-3009 settlement uses the USDG/ERC-20 `TransferWithAuthorization` typed data; the owner/token holder signs it and Succra binds the resulting authorization hash and nonce into its own request record.
+Testnet uses chain ID `46630`. Wallet login uses a separate `SuccraLogin` typed-data domain without a verifying contract. EIP-3009 settlement uses the USDG/ERC-20 `TransferWithAuthorization` typed data. In Variant A the contract is `from`, the session key signs, and `SuccraMission.isValidSignature` validates the approved hash; in Variant B the session key is `from` and signs an authorization for funds released on demand by `SuccraMission`. Succra binds the resulting authorization hash and nonce into its own request record.
 
 ---
 
@@ -440,6 +468,17 @@ Testnet uses chain ID `46630`. Wallet login uses a separate `SuccraLogin` typed-
                   └──────────────────────┘
 ```
 
+Funds and signing paths:
+
+```text
+Owner ── deposit USDG ──────────────────────────────▶ SuccraMission (holds USDG)
+Owner ◀─ withdraw USDG at any status ─────────────── SuccraMission
+Owner ── register/revoke session key ───────────────▶ SuccraMission
+Runtime-held session key ── signs EIP-3009 ─────────▶ X402 facilitator
+Variant A: USDG sees from=SuccraMission ── ERC-1271 ─▶ SuccraMission.isValidSignature
+Variant B: SuccraMission ── releaseForPayment ──────▶ session key (from=sessionKey) ──▶ USDG
+```
+
 ## Architectural principle
 
 **On-chain = authority and policy.**
@@ -450,13 +489,32 @@ Testnet uses chain ID `46630`. Wallet login uses a separate `SuccraLogin` typed-
 
 The runtime can detect, preflight, and recommend, but it cannot override `SuccraMission` policy or facilitator settlement. x402 receipt verification against the Robinhood EIP-3009 Transfer log is the settlement-confirmation primitive. The database is a mirror and index, never the financial source of truth.
 
-## Non-custodial model (Model B)
+## Program-controlled vault model (Model A)
 
-- Funds remain in the owner's wallet.
-- The owner approves the mission's x402 offer policy (network, asset, payee, amount, expiry).
-- The agent submits an EIP-712 `SuccraRequest`; the owner wallet signs the per-payment EIP-3009 `transferWithAuthorization`.
-- Succra controls **which agent may request** and **what limits apply**; it never holds or moves funds.
-- The x402 facilitator verifies and settles; `SuccraMission` records authority, policy, and the on-chain authorization.
+Funds are held by the `SuccraMission` contract. The owner deposits mission funds at creation and can withdraw at any time. The contract is the token holder; the owner holds an unconditional withdrawal right that no other party (agent, guardian, runtime) can block.
+
+A session key (EOA) is registered by the owner at mission creation. The Succra runtime holds the session key server-side. The agent triggers payments via Succra's preflight API; the runtime submits the signed EIP-3009 authorization using the session key.
+
+Two variants satisfy the EIP-3009 signature requirement. R1-spike determines which is used:
+
+### Variant A (preferred — contract-signer via ERC-1271)
+
+`SuccraMission` implements `IERC1271.isValidSignature`. When the agent preflights a payment, the runtime computes the EIP-712 digest and the contract stores it in an `approvedHashes` mapping (single transaction, runtime-initiated). The session key signs the EIP-3009 authorization. When USDG calls `transferWithAuthorization` with `from=SuccraMission`, USDG code-routes to `SuccraMission.isValidSignature`, which:
+- verifies the hash is in `approvedHashes`;
+- recovers the signer and verifies it matches the registered session key;
+- returns MAGIC (`0x1626ba7e`).
+
+If USDG does not code-route (raw ecrecover), Variant A fails and Variant B is used.
+
+### Variant B (fallback — funder-then-EOA-signer)
+
+`SuccraMission` holds USDG but does not sign. On an approved payment, the runtime calls `SuccraMission.releaseForPayment(sessionKey, amount, expectedVersion)`, which transfers exactly `amount` USDG from `SuccraMission` to the session key's EOA. The session key then signs EIP-3009 with `from=sessionKey` and submits to the facilitator. The session key holds near-zero balance between payments. The contract's per-payment cap and cumulative budget are enforced at release time. Quarantine stops `releaseForPayment`; the session key's remaining balance is swept back by the runtime at the owner's direction and is recoverable by the owner.
+
+Both variants preserve: the owner never signs per payment; the owner can withdraw at any time; the session key cannot spend outside policy.
+
+### Invariant that survives both variants
+
+Succra never holds private keys to mission funds in a way the owner cannot override. The owner's withdrawal right is unconditional and unilateral.
 
 This is the core positioning: Succra is the safety and continuity layer around x402, not a replacement for it.
 
@@ -466,11 +524,12 @@ Succra Cloud is not a cryptographic root of trust. If the runtime is offline:
 - no new x402 payment can be preflighted or submitted by Succra;
 - previously signed EIP-3009 authorizations may still settle until their `validBefore`, so validity windows must be short;
 - automatic succession pauses;
+- the owner can still withdraw mission USDG directly from `SuccraMission` at any status;
 - the owner can still call `cancel` directly on the contract;
 - the owner can still use the pre-approved successor path when the guardian is unavailable, subject to the same eligibility and state-version checks;
 - existing on-chain authority remains intact.
 
-The owner cannot use the fallback to bypass policy, change successors, or move funds directly.
+The owner cannot use the fallback to bypass policy, change successors, or move funds except through the unconditional withdrawal right.
 
 ---
 
@@ -522,8 +581,8 @@ Use RLS for user-level resource isolation. The service-role key stays server-sid
 **x402 facilitator (self-hostable: `@402lane/facilitator`, `hood402`, `rhx402`)**
 
 - HTTP 402 `accepts[]` challenge/response.
-- EIP-3009 `transferWithAuthorization` signed by the owner/token holder.
-- USDG default settlement asset (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`); allowlisted ERC-20 supported.
+- EIP-3009 `transferWithAuthorization` signed by the runtime-held session key; Variant A uses `from=SuccraMission` with ERC-1271, Variant B uses `from=sessionKey` after on-demand release.
+- USDG default settlement asset (mainnet `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`; testnet `0x7E955252E15c84f5768B83c41a71F9eba181802F`); allowlisted ERC-20 supported.
 - Facilitator receipt plus on-chain Transfer-log verification.
 - Facilitator polling and Robinhood RPC fallback.
 - ERC-8004 optional agent identity metadata.
@@ -541,7 +600,9 @@ Only used for successor explanation/recommendation. Deterministic rules remain a
 - Payments: x402 facilitator
 
 ## Rejected alternatives
-- Custodial vault model: violates the non-custodial authority thesis.
+- Succra holding signing keys on behalf of the owner.
+- Any design where the owner cannot unilaterally withdraw.
+- Delegated authority that survives mission quarantine.
 - Direct ERC-20 transfers or arbitrary contract calls: bypasses x402 and expands the attack surface.
 - Multi-chain support in MVP: dilutes the Robinhood/x402 focus.
 - Redis: unnecessary for MVP.
@@ -594,6 +655,7 @@ Request: mission metadata + policy:
   "objective": "...",
   "paymentTokenAddress": "0x...",
   "budgetAtomic": "1000000000000000000",
+  "initialDepositAtomic": "1000000000000000000",
   "maxPaymentAtomic": "100000000000000000",
   "recoveryMaxPaymentAtomic": "50000000000000000",
   "merchantAllowlist": ["0x..."],
@@ -614,7 +676,7 @@ Success:
   "x402Offer": { "network": "eip155:4663", "asset": "0x...", "acceptedPayees": ["0x..."], "offerHash": "0x..." }
 }
 ```
-The runtime verifies the `MissionCreated` event and the committed `x402OfferHash` before setting the mirror to `ACTIVE`.
+The runtime verifies the `MissionCreated` event and the committed `x402OfferHash`, then sets the mirror to `FUNDED`. The mission reaches `ACTIVE` only after the initial USDG deposit confirms. A `DRAFT`/`FUNDED` mission cannot execute payments.
 
 ## `GET /api/missions`
 Auth: user session.
@@ -677,7 +739,7 @@ Headers:
 
 ## `POST /api/missions/:id/actions`
 Auth: registered current agent EIP-712 signature.
-Purpose: preflight policy evaluation and construct the unsigned EIP-3009 `transferWithAuthorization` typed data. Does NOT submit to the facilitator and does NOT move funds.
+Purpose: preflight policy evaluation, approve the on-chain payment authorization, and construct the unsigned EIP-3009 `transferWithAuthorization` typed data. The runtime, not the agent, submits `approvePayment` (Variant A) or `releaseForPayment` (Variant B). Does NOT submit to the facilitator or settle funds.
 Request:
 ```json
 {
@@ -702,12 +764,21 @@ Response (ALLOW):
   "decision": "ALLOW",
   "requestId": "<uuid>",
   "x402Payment": { "network": "eip155:4663", "asset": "0x...", "payTo": "0x...", "valueAtomic": "..." },
+  "variant": "A",
   "authorizationHash": "0x...",
+  "authorizationTxHash": "0x...",
   "authorizationNonce": "0x...",
   "eip3009TypedData": { "domain": {}, "types": {}, "primaryType": "TransferWithAuthorization", "message": {} },
   "expiresAt": "..."
 }
 ```
+
+After policy passes, the runtime:
+- **Variant A:** calls `SuccraMission.approvePayment(authorizationHash, amountAtomic, merchant, expectedVersion)` and waits for confirmation; the hash is now in `approvedHashes`.
+- **Variant B:** calls `SuccraMission.releaseForPayment(sessionKey, amountAtomic, expectedVersion)` and waits for confirmation; the session key now holds exactly the payment amount.
+
+The response includes the approval/release transaction hash. The agent never submits the approval transaction and never holds the session key.
+
 Response (BLOCK):
 ```json
 {
@@ -721,7 +792,7 @@ Errors: `DUPLICATE_REQUEST`, `INVALID_BODY`, `AGENT_NOT_CURRENT`, `MISSION_NOT_A
 
 ## `POST /api/missions/:id/actions/:requestId/submit`
 Auth: registered current agent EIP-712 signature.
-Purpose: verify the agent request and owner EIP-3009 signature, record on-chain authorization, submit the x402 payload to the facilitator, verify settlement, and mirror the result.
+Purpose: verify the agent request and session-key EIP-3009 signature, verify the on-chain approval/release, submit the x402 payload to the facilitator, verify settlement, and mirror the result.
 Request:
 ```json
 {
@@ -755,11 +826,29 @@ Errors: `AUTHORIZATION_MISMATCH`, `INVALID_SIGNATURE`, `ALREADY_SUBMITTED`, `REQ
 
 The runtime verifies:
 1. the agent's EIP-712 `SuccraRequest` recovers the registered agent address;
-2. the owner EIP-3009 signature recovers the token holder and matches the signed authorization hash;
+2. the session key's EIP-3009 signature recovers the registered session key and matches the signed authorization hash;
 3. the signed authorization hash, nonce, asset, payee, amount, and validity window equal the preflighted values;
 4. the request has not expired and its nonce/idempotency key is unused;
-5. `SuccraMission.authorizePayment` confirms before facilitator submission;
+5. Variant A: `approvedHashes[authorizationHash]` is true and the mission/session key are current; Variant B: `releaseForPayment` confirmed and the session key holds exactly the released amount;
 6. the facilitator settlement and the matching Robinhood Transfer log are authoritative.
+
+## `POST /api/missions/:id/deposit`
+Auth: owner session.
+Purpose: return the unsigned USDG `approve` plus `SuccraMission.deposit(amountAtomic)` transactions. `deposit` pulls the tokens via `transferFrom`, increments `depositedAtomic`, and activates the mission when `initialDepositAtomic` is met. Top-ups are allowed in `ACTIVE`/`ACTIVE_RECOVERY`.
+After confirmation: verify `depositedAtomic` increased, mirror `missions.total_deposited_atomic`, and write `mission.deposited`.
+
+## `POST /api/missions/:id/withdraw`
+Auth: owner session.
+Purpose: return the unsigned `SuccraMission.withdraw(amountAtomic)` transaction. Callable at any mission status, including `QUARANTINED`, `RECOVERING`, `ACTIVE_RECOVERY`, and `CANCELLED`; no guardian or agent approval is required.
+After confirmation: mirror `missions.total_withdrawn_atomic` and write `mission.withdrawn`.
+
+## `POST /api/missions/:id/session-key`
+Auth: owner session.
+Purpose: register or replace the runtime-held session key. Returns an unsigned `SuccraMission.registerSessionKey(sessionKey, expectedVersion)` transaction. Replacing the key invalidates the old key's pending approvals.
+
+## `DELETE /api/missions/:id/session-key`
+Auth: owner session; runtime guardian on quarantine.
+Purpose: revoke the session key. Returns an unsigned `SuccraMission.revokeSessionKey(expectedVersion)` transaction.
 
 ## `POST /api/missions/:id/quarantine`
 Auth: runtime guardian credential OR owner.
@@ -785,7 +874,7 @@ Purpose: audit timeline.
 
 ## `POST /api/missions/:id/cancel`
 Auth: owner wallet signature.
-Purpose: cancel the mission and stop future x402 payments. Already-signed EIP-3009 authorizations may settle until `validBefore`. Funds remain in the owner's wallet.
+Purpose: cancel the mission and stop future x402 payments. Already-signed EIP-3009 authorizations may settle until `validBefore`. The owner can withdraw the remaining contract balance at any time, including after cancellation.
 
 ## `GET /api/agents/:id/status`
 Auth: owner or mission-scoped agent.
@@ -846,7 +935,25 @@ Field order is fixed. `checkpoint_hash` is the hex-encoded keccak256 over those 
 2. insert the mission draft and policy version 1;
 3. insert agent assignments;
 4. return the unsigned `MissionFactory` create call and the committed x402 offer policy hash;
-5. after the `MissionCreated` event confirms the committed x402 offer hash, atomically update the mission to `ACTIVE` and create an audit event. There is no external x402 offer registration step.
+5. after the `MissionCreated` event confirms the committed x402 offer hash, atomically update the mission mirror to `FUNDED` and create an audit event. There is no external x402 offer registration step;
+6. after the initial deposit confirms, verify `depositedAtomic` and update the mirror to `ACTIVE`.
+
+## Deposit
+1. owner calls `POST /api/missions/:id/deposit` with `amountAtomic`;
+2. server returns unsigned USDG `approve` plus `SuccraMission.deposit(amountAtomic)`;
+3. owner signs and the transaction confirms;
+4. server verifies `SuccraMission.depositedAtomic` increased and the mission reached `ACTIVE`;
+5. DB mirrors `missions.total_deposited_atomic`;
+6. audit event `mission.deposited`.
+
+## Withdrawal
+1. owner calls `POST /api/missions/:id/withdraw` with `amountAtomic`;
+2. server returns unsigned `SuccraMission.withdraw(amountAtomic)`;
+3. owner signs and the transaction confirms;
+4. server verifies `withdrawnAtomic` increased and the token transfer to the owner;
+5. DB mirrors `missions.total_withdrawn_atomic`;
+6. audit event `mission.withdrawn`.
+No mission status, guardian, or agent approval can block this path.
 
 ## Preflight
 Database transaction:
@@ -855,13 +962,14 @@ Database transaction:
 3. evaluate policy;
 4. update the violation streak only when the decision is `BLOCK`;
 5. record the decision and authorization hash;
-6. return the unsigned EIP-3009 authorization typed data. Do not submit to the facilitator.
+6. for an ALLOW, the runtime calls `approvePayment` (Variant A) or `releaseForPayment` (Variant B) and waits for confirmation;
+7. return the approval/release transaction hash and the unsigned EIP-3009 typed data. Do not submit to the facilitator.
 
 ## Submit
-1. verify the agent's EIP-712 request and the owner's EIP-3009 signature, authorization hash, and nonce;
-2. lock the approved request with a compare-and-set;
-3. call `SuccraMission.authorizePayment` and wait for confirmation;
-4. mark the request `SUBMITTED` only after authorization confirms;
+1. verify the agent's EIP-712 request and the session key's EIP-3009 signature, authorization hash, and nonce;
+2. verify the variant-specific on-chain approval/release is confirmed and current;
+3. lock the approved request with a compare-and-set;
+4. mark the request `SUBMITTED` only after approval/release confirms;
 5. submit the x402 payload to the facilitator;
 6. verify the facilitator receipt and the on-chain EIP-3009 Transfer log; poll Robinhood RPC when the receipt is delayed;
 7. update `x402_payments` and the mission mirror only after authoritative confirmation;
@@ -872,10 +980,10 @@ Do not hold a database transaction open while waiting for x402 or Robinhood conf
 ## Quarantine
 Use compare-and-set semantics:
 `UPDATE missions SET status='QUARANTINED' WHERE id=? AND status='ACTIVE'`.
-Then submit the guardian contract call. If affected rows = 0, quarantine was already handled or mission state changed. The contract remains the ultimate arbiter.
+Then submit the guardian contract call. If affected rows = 0, quarantine was already handled or mission state changed. The contract remains the ultimate arbiter. Quarantine also revokes the session key; no new payment can be approved or released.
 
 ## Succession
-Use a database lock/transaction on the mission row to prevent two successor jobs from activating simultaneously. The contract `state_version` remains the ultimate arbiter.
+Use a database lock/transaction on the mission row to prevent two successor jobs from activating simultaneously. The contract `state_version` remains the ultimate arbiter. On activation, the contract revokes the previous session key and the owner/runtime registers a new key with `recoveryMaxPaymentAtomic` as the cap.
 
 ## Race scenarios
 
@@ -883,7 +991,10 @@ Use a database lock/transaction on the mission row to prevent two successor jobs
 |---|---|
 | Double action submission | Unique `(mission_id, idempotency_key)` and single-use nonce. |
 | Two payments consume last budget | `SuccraMission` enforces the cumulative budget and unique on-chain request nonces; the x402 offer constrains each payment; the contract mirrors confirmed spend. |
-| Quarantine races with payment | Contract checks status during authorization. An already-signed EIP-3009 authorization may still settle until `validBefore`; the runtime records the race explicitly and keeps authorization windows short. |
+| Quarantine races with payment | Contract checks status during approval/release. Quarantine revokes the session key. An already-signed EIP-3009 authorization may still settle until `validBefore`; the runtime records the race explicitly and keeps authorization windows short. |
+| Session key compromised | Quarantine revokes the key; owner withdraws the contract balance. Variant A damage is bounded by approved hashes and the per-payment cap; Variant B damage is bounded by released amounts and the per-payment cap. |
+| Variant B settlement fails after release | Session key holds the released amount; runtime sweeps it back to SuccraMission at the owner's direction; the payment is recorded `FAILED`. |
+| Owner withdraws during an in-flight payment | `withdraw` is allowed at any status; it can only withdraw the remaining contract balance, never an already-approved/released amount twice. |
 | Double succession | Contract `state_version` and succession nonce allow only one transition. |
 | Stale successor activation | Contract rejects activation if status/current agent/version does not match expected values. |
 | Duplicate x402 settlement receipt | Unique transaction hash plus authorization nonce; second delivery is a no-op. |
@@ -920,7 +1031,7 @@ Headers:
 `{nonce}` is the request-level replay-protection value, stored single-use in `agent_request_nonces`. It never advances on-chain state. `agentNonce` in the action request body is a distinct value passed to the contract's monotonic counter. The two values MUST NOT be the same variable.
 
 ## Settlement authorization
-Settlement uses EIP-3009 `TransferWithAuthorization` typed data signed by the owner/token holder. The agent's `SuccraRequest` authenticates the request but never authorizes a token transfer. Succra verifies both signatures and records the authorization hash on-chain before facilitator submission.
+Settlement uses EIP-3009 `TransferWithAuthorization` typed data signed by the runtime-held session key. The agent's `SuccraRequest` authenticates the request but never authorizes a token transfer. Succra verifies both signatures and records the authorization hash on-chain before facilitator submission. In Variant A the contract is `from` and validates the approved hash via ERC-1271; in Variant B the session key is `from` after an on-demand release from the contract.
 
 ## Resource authorization
 Every API request performs both:
@@ -937,7 +1048,8 @@ The guardian can only:
 - report a policy violation for the on-chain counter;
 - activate one of the pre-approved successors;
 - acknowledge recovery;
-- commit an approved checkpoint hash.
+- commit an approved checkpoint hash;
+- revoke the session key as part of quarantine.
 
 The guardian cannot:
 - withdraw or move funds;
@@ -950,14 +1062,16 @@ The guardian cannot:
 ## Owner authority
 Owner can:
 - create the mission;
+- deposit mission USDG;
+- withdraw mission USDG at any status, unilaterally and unconditionally;
+- register, replace, or revoke the session key;
 - update future policy subject to contract rules and state version;
 - add successors before activation;
 - cancel;
 - stop future x402 payments;
-- sign EIP-3009 payment authorizations while the mission is executable;
 - use the pre-approved successor fallback when the guardian is unavailable.
 
-Owner does not have a hidden API shortcut; owner authority is backed by wallet signatures and on-chain checks.
+Owner does not have a hidden API shortcut; owner authority is backed by wallet signatures and on-chain checks. The owner never signs per-payment EIP-3009 authorizations; the runtime-held session key does.
 
 ---
 
@@ -968,7 +1082,8 @@ Owner does not have a hidden API shortcut; owner authority is backed by wallet s
 Assume:
 - primary agent can become malicious;
 - primary agent key can be compromised;
-- runtime can be buggy or temporarily unavailable;
+- runtime can be buggy, malicious, or temporarily unavailable;
+- session key can be compromised;
 - attacker can replay signed requests;
 - attacker can modify API inputs;
 - facilitator receipts can duplicate or arrive out of order;
@@ -980,10 +1095,16 @@ Assume:
 ## Security controls
 
 ### Authority isolation
-Agents never hold owner funds or token signing keys. Funds remain in the owner's wallet constrained by the mission's x402 offer policy; the owner signs each EIP-3009 authorization. `SuccraMission` controls mission authority, not custody.
+Agents never hold mission funds, the session key, or any token signing key. Mission USDG is held by `SuccraMission`; the runtime holds the session key server-side and signs only within the contract-approved policy. The owner can withdraw the contract balance unilaterally at any status.
+
+### Owner withdrawal right
+The owner's withdrawal right is unilateral, unconditional, and callable at any mission status. No role (agent, guardian, runtime) can block it. A withdrawal can never exceed the contract's unallocated balance or double-spend an already-approved/released payment.
+
+### Session key
+The session key is single-purpose, revocable by the owner or by the guardian on quarantine, and never held by an agent. Variant B keeps it near-zero between payments; Variant A can sign only hashes already approved by the contract. A compromised session key is bounded by the per-payment cap and any in-flight approvals/releases; quarantine revokes it and the owner withdraws the remaining contract balance.
 
 ### Least privilege
-Successors start with lower recovery limits. Merchant and token allowlists are explicit. Guardian powers are limited to quarantine, activation, acknowledgement, and checkpoint commitment.
+Successors start with lower recovery limits. Merchant and token allowlists are explicit. Guardian powers are limited to quarantine, session-key revocation on quarantine, activation, acknowledgement, and checkpoint commitment.
 
 ### Replay protection
 Signed requests include timestamp + single-use nonce + unique idempotency key. EIP-712 typed data binds the mission, request ID, method, and body hash.
@@ -992,10 +1113,10 @@ Signed requests include timestamp + single-use nonce + unique idempotency key. E
 The signed EIP-3009 `TransferWithAuthorization` hash must equal the preflighted authorization hash, and the signed from/to/value/validity/nonce fields must match the preflighted values. A mismatch is rejected before on-chain authorization or facilitator submission.
 
 ### On-chain enforcement
-The backend cannot override `SuccraMission` policy. `authorizePayment` checks status, current agent, per-payment ceiling, merchant/token allowlist, expiry, recovery ceiling, state version, and the agent's EIP-712 signature before the runtime may submit to the facilitator. The owner's EIP-3009 signature is verified against the same authorization hash and nonce.
+The backend cannot override `SuccraMission` policy. Variant A `approvePayment` checks status, session key, per-payment ceiling, cumulative budget, merchant/token allowlist, expiry, recovery ceiling, and state version, then stores the authorization hash. Variant B `releaseForPayment` checks status, session key, per-payment ceiling, cumulative budget, expiry, recovery ceiling, and state version, then transfers exactly the approved amount. In both variants the runtime verifies the agent's EIP-712 signature and current-agent assignment before the on-chain call. The session-key EIP-3009 signature is verified by the token/facilitator against the same authorization hash and nonce.
 
 ### x402 enforcement
-The facilitator enforces the EIP-3009 signature, nonce, asset, recipient, amount, and validity window at settlement. It does not enforce the cumulative mission budget or the merchant allowlist; `SuccraMission` does. A payment outside the selected x402 offer is rejected even if the Succra mirror is stale.
+The facilitator enforces the EIP-3009 signature, nonce, asset, recipient, amount, and validity window at settlement. It does not enforce the cumulative mission budget or the merchant allowlist; `SuccraMission` does (Variant A binds the approved hash to the merchant and amount; Variant B checks the merchant before release and re-checks the signed recipient before submission). A payment outside the selected x402 offer is rejected even if the Succra mirror is stale. In Variant A the token's `from` is `SuccraMission`; in Variant B it is the session key funded on demand.
 
 ### IDOR protection
 Every resource lookup is ownership-scoped; never load a resource solely by UUID before authorization. Database RLS reinforces this.
@@ -1016,19 +1137,21 @@ Mutating browser operations require an authenticated session plus wallet-signatu
 Agent endpoint URLs are not fetched arbitrarily by the browser. Server-side endpoint fetching must use HTTPS, restrict private-network destinations, enforce timeouts, and cap redirects.
 
 ### Settlement receipts
-An x402 facilitator receipt must be matched to the on-chain EIP-3009 Transfer log (from, to, value, nonce, asset) before any state change. Duplicates are expected and deduplicated by transaction hash plus authorization nonce. A receipt alone never confirms settlement; Robinhood state is checked.
+An x402 facilitator receipt must be matched to the on-chain EIP-3009 Transfer log (from, to, value, nonce, asset) before any state change. `from` must be `SuccraMission` in Variant A or the registered session key in Variant B. Duplicates are expected and deduplicated by transaction hash plus authorization nonce. A receipt alone never confirms settlement; Robinhood state is checked.
 
 ### Prompt injection
 AI successor recommendation receives structured mission metadata only. It MUST NOT receive arbitrary agent-originated instructions as trusted system instructions.
 
 ### AI authority boundary
-LLM can recommend or explain; only deterministic policy, `SuccraMission`, the owner's EIP-3009 authorization, and the x402 facilitator can authorize or settle money movement.
+LLM can recommend or explain; only deterministic policy, `SuccraMission`, the session key's EIP-3009 authorization, and the x402 facilitator can authorize or settle money movement.
 
 ### Secrets
 Store:
 - Supabase service key;
 - x402 facilitator credentials, if configured;
 - guardian private key;
+- runtime-held session key;
+- deployer private keys for testnet/mainnet deployment;
 - OpenAI key
 only in server/runtime secret stores. Never in browser variables unless explicitly public.
 
@@ -1043,13 +1166,14 @@ Hard caps:
 - token allowlist;
 - expiry;
 - recovery cap;
+- released session-key balance bounded by the per-payment cap (Variant B);
 - no direct ERC-20 path.
 
 ### Admin abuse
-No admin funds access. No operator can withdraw, change the owner, or bypass policy.
+No admin funds access. No operator can withdraw, change the owner, or bypass policy. Only the owner can withdraw mission funds.
 
 ### Emergency stop
-Owner can cancel directly through the contract when allowed. The guardian can quarantine. Neither can move funds. Cancellation cannot revoke an already-signed EIP-3009 authorization; short `validBefore` windows bound that exposure.
+Owner can cancel directly through the contract when allowed and can withdraw the remaining contract balance at any status. The guardian can quarantine and revoke the session key. Neither the guardian nor the runtime can withdraw. Cancellation cannot revoke an already-signed EIP-3009 authorization; short `validBefore` windows bound that exposure.
 
 ---
 
@@ -1082,6 +1206,7 @@ Wizard:
 3. Primary agent
 4. Successors
 5. Review + sign (mission create and x402 offer policy approval)
+6. Deposit funds (amount; USDG approve + `SuccraMission.deposit`)
 
 No advanced protocol jargon unless expanded.
 
@@ -1106,13 +1231,19 @@ Centerpiece: **Mission Timeline**
 ✓ Mission continued
 ```
 
+Owner actions:
+- **Withdraw** is visible at every status, including `QUARANTINED`, `RECOVERING`, `ACTIVE_RECOVERY`, and `CANCELLED`.
+- **Deposit** is visible when status is `ACTIVE` or `ACTIVE_RECOVERY`.
+- **Session key** status and rotation are visible to the owner; the key itself is never displayed.
+
 ## Screen 5 — Agent page `/agents/:id`
 - identity (EVM address);
 - capabilities;
 - health;
 - last heartbeat;
 - missions;
-- current role.
+- current role;
+- note: agents never hold funds; the session key is runtime-held.
 
 ## Screen 6 — Succession event `/missions/:id/succession`
 Shows:
@@ -1216,8 +1347,9 @@ Credentials: public URL/key in browser where permitted; service role server-only
 Failure: UI degrades to retry state; on-chain authority and funds remain safe.
 
 ## x402 facilitator
-Purpose: verify and settle x402 payments. A resource server returns HTTP 402 with `accepts[]` offers; Succra constructs EIP-3009 `transferWithAuthorization` typed data, the owner/token holder signs it, and the facilitator verifies signature/nonce/network/asset before settling USDG or an allowlisted ERC-20 on Robinhood Chain. Self-hostable facilitators include `@402lane/facilitator`, `hood402`, and `rhx402`.
+Purpose: verify and settle x402 payments. A resource server returns HTTP 402 with `accepts[]` offers; Succra constructs EIP-3009 `transferWithAuthorization` typed data, the runtime-held session key signs it, and the facilitator verifies signature/nonce/network/asset before settling USDG or an allowlisted ERC-20 on Robinhood Chain. Variant A uses `from=SuccraMission` with ERC-1271; Variant B uses `from=sessionKey` after `releaseForPayment`. R1-spike determines which variant is used. Self-hostable facilitators include `@402lane/facilitator`, `hood402`, and `rhx402`.
 Credentials: `X402_FACILITATOR_URL`, `X402_NETWORK`, `X402_ASSET_ADDRESS` (optional overrides); any facilitator-specific key is server-only. No shared-secret HMAC/JWT flow is required by x402.
+Trust boundary: the facilitator is not Succra's trust anchor. `SuccraMission` is authoritative for policy, caps, custody, and withdrawal; USDG is authoritative for the token transfer; the facilitator is authoritative for signature/nonce verification and settlement execution.
 Failure: retry with backoff, poll the facilitator and Robinhood RPC, and never confirm a payment without a matching on-chain EIP-3009 Transfer log. Duplicate or out-of-order receipts are expected; deduplicate by transaction hash plus authorization nonce.
 
 ## Robinhood Chain RPC
@@ -1297,15 +1429,26 @@ The agent receives a verified checkpoint, policy, and explicit instruction to re
 
 # 18. PAYMENT / FINANCIAL ARCHITECTURE
 
-Succra uses a **non-custodial authority model (Model B)**. Funds remain in the owner's wallet. Succra never holds, receives, or transfers mission funds.
+Succra uses a **program-controlled vault model (Model A)**. Mission USDG is held by the `SuccraMission` contract. The owner deposits at creation and can withdraw at any time. The owner never signs per-payment EIP-3009 authorizations; a runtime-held session key signs. R1-spike determines whether the contract is the direct signer via ERC-1271 (Variant A) or releases exact funds to an EOA session key (Variant B).
 
 ## Supported value types
-- USDG at `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` by default;
+- USDG on mainnet at `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`;
+- USDG on testnet at `0x7E955252E15c84f5768B83c41a71F9eba181802F`;
 - one allowlisted ERC-20 per mission (USDG or an explicitly allowlisted token);
 - native ETH is gas only and is not a mission payment asset in MVP.
 
 ## Custody model
-The owner retains custody at all times and is the token holder whose EIP-3009 signature authorizes each transfer. Agents never hold mission funds or token signing keys. `SuccraMission` constrains which agent may request a payment and what limits apply; the x402 facilitator verifies and settles the signed authorization.
+`SuccraMission` is the mission's token holder. The owner has an unconditional, unilateral withdrawal right at every mission status. The runtime holds a session key but never holds mission funds long-term and cannot withdraw. Agents never hold funds, the session key, or any token signing key. The contract enforces policy and caps; the x402 facilitator verifies and settles the signed authorization.
+
+## Deposit flow
+1. Owner calls `POST /api/missions/:id/deposit` with `amountAtomic`.
+2. Server returns unsigned USDG `approve` plus `SuccraMission.deposit(amountAtomic)`.
+3. Owner signs; `deposit` pulls the tokens via `transferFrom` and confirms.
+4. Server verifies `SuccraMission.depositedAtomic` increased.
+5. DB mirrors `missions.total_deposited_atomic`.
+6. Audit event `mission.deposited`.
+
+A mission is `DRAFT`/`FUNDED` until the initial deposit confirms, then `ACTIVE`. A mission without a deposit cannot execute payments. Top-ups are allowed in `ACTIVE`/`ACTIVE_RECOVERY`; deposits do not change policy or budget.
 
 ## x402 accepts[] offer
 A resource server returns HTTP 402 with `accepts[]` offers. Each offer constrains the network, asset, `payTo`, amount, scheme, resource, and timeout for one payment. Succra selects only an offer that matches the mission policy and stores the approved x402 offer policy/hash on the mission.
@@ -1326,33 +1469,64 @@ TransferWithAuthorization(
 )
 ```
 
-The owner wallet signs this authorization. The agent's `SuccraRequest` authenticates the payment request, but it cannot move funds. Succra verifies the EIP-3009 signature, authorization hash, nonce, value, recipient, asset, and validity window before recording on-chain authorization in `SuccraMission` and submitting the x402 payload to the facilitator.
+The runtime-held session key signs this authorization. Variant A sets `from=SuccraMission`; Variant B sets `from=sessionKey`. The agent's `SuccraRequest` authenticates the payment request, but it cannot move funds or sign the authorization. Succra verifies the session-key signature, authorization hash, nonce, value, recipient, asset, and validity window before on-chain approval/release and facilitator submission.
 
-## Execution
+## Payment approval (Variant A)
 1. Agent requests a payment with an EIP-712 `SuccraRequest`.
 2. Succra preflights policy and selects a matching x402 `accepts[]` offer.
-3. Succra returns unsigned EIP-3009 typed data.
-4. The owner wallet signs the EIP-3009 authorization.
-5. Succra verifies the signature, authorization hash, nonce, asset, recipient, amount, and expiry.
-6. Succra calls `SuccraMission.authorizePayment` and waits for confirmation.
-7. Succra submits the signed payload to the x402 facilitator.
-8. The facilitator verifies the EIP-3009 signature/nonce and settles USDG or the allowlisted ERC-20 on Robinhood Chain.
-9. Succra verifies the facilitator receipt and the on-chain Transfer log.
-10. Succra mirrors the confirmed settlement and writes a checkpoint.
+3. Runtime calls `SuccraMission.approvePayment(authorizationHash, amountAtomic, merchant, expectedVersion)` and waits for confirmation.
+4. The hash is now in `approvedHashes`.
+5. Session key signs the EIP-3009 authorization with `from=SuccraMission`.
+6. Runtime submits the signed payload to the facilitator; USDG calls `SuccraMission.isValidSignature(hash, signature)`.
+7. `isValidSignature` verifies the hash is approved and the signature recovers the registered session key, then returns MAGIC (`0x1626ba7e`).
+8. Facilitator settles; runtime verifies the Transfer log and records settlement.
+
+## Fund release (Variant B)
+1. Agent requests a payment with an EIP-712 `SuccraRequest`.
+2. Succra preflights policy and selects a matching x402 `accepts[]` offer.
+3. Runtime calls `SuccraMission.releaseForPayment(sessionKey, amountAtomic, expectedVersion)` and waits for confirmation.
+4. The contract checks status, session key, per-payment cap, cumulative budget, expiry, and state version, then transfers exactly `amountAtomic` USDG to the session key.
+5. Session key signs EIP-3009 with `from=sessionKey`.
+6. Facilitator settles; runtime verifies the Transfer log and records settlement.
+7. If settlement fails, the runtime sweeps the session-key balance back to `SuccraMission` at the owner's direction; the payment is recorded `FAILED`.
+
+`releaseForPayment` is a bounded internal funding step, not a merchant payment; the merchant payment still executes through the x402 facilitator.
+
+## Facilitator settlement
+The facilitator verifies the EIP-3009 signature, nonce, network, asset, recipient, amount, and validity window, then settles USDG or the allowlisted ERC-20. Succra confirms only against the on-chain EIP-3009 Transfer log: `from` must be `SuccraMission` (Variant A) or the registered session key (Variant B), and `to`, `value`, `nonce`, and asset must match the preflighted payment. A facilitator receipt alone is never confirmation.
+
+## Withdrawal flow (any status)
+1. Owner calls `POST /api/missions/:id/withdraw` with `amountAtomic`.
+2. Server returns unsigned `SuccraMission.withdraw(amountAtomic)`.
+3. Owner signs; the contract sends USDG to the owner.
+4. Runtime verifies the transfer and `withdrawnAtomic`.
+5. DB mirrors `missions.total_withdrawn_atomic`; audit event `mission.withdrawn`.
+
+Withdrawal is allowed at `ACTIVE`, `QUARANTINED`, `RECOVERING`, `ACTIVE_RECOVERY`, and `CANCELLED`. No agent, guardian, or runtime approval can block it. It cannot exceed the unallocated contract balance or double-spend an already-approved/released payment.
+
+## Quarantine
+Quarantine revokes the session key and stops new `approvePayment`/`releaseForPayment` calls. The owner can withdraw the remaining contract balance immediately. An authorization signed before quarantine may still settle until `validBefore`; short validity windows bound that exposure.
+
+## Succession
+On activation, the contract revokes the previous session key and the owner/runtime registers a new key with `recoveryMaxPaymentAtomic` as the cap. The successor agent never holds the session key; the runtime does.
+
+## Owner never signs per payment
+The owner signs mission creation, policy approval, deposit, withdrawal, and session-key management. The owner does not sign individual x402 payments. The session key signs within the contract-enforced policy; the owner's withdrawal right remains unconditional.
 
 ## On-chain enforcement boundary
 `SuccraMission` enforces:
-- mission status and current agent;
+- mission status and current agent authority;
 - `X402_PAYMENT` action type;
 - per-payment ceiling (`maxPayment` or `recoveryMaxPayment`);
-- mirrored cumulative spend against `budgetAtomic`;
-- merchant and token allowlists;
+- cumulative spend against `budgetAtomic`;
+- merchant and token allowlists (Variant A binds merchant + amount to the approved hash; Variant B checks merchant before release and re-checks the signed recipient before submission);
 - expiry;
 - recovery ceiling;
-- payment nonce and state version;
+- session-key registration/revocation and state version;
+- the owner's unconditional withdrawal right;
 - guardian-only transitions.
 
-The runtime may submit to the facilitator only after `authorizePayment` confirms. The contract verifies the agent's EIP-712 request signature, records the authorization hash, and advances `agentNonce`; it does not move funds.
+The runtime may submit to the facilitator only after the variant-specific approval/release confirms. In Variant A the contract validates the EIP-3009 hash via ERC-1271. In Variant B the contract releases exact funds and the token validates the session-key signature via ecrecover.
 
 The x402 facilitator enforces:
 - EIP-3009 signature validity;
@@ -1360,19 +1534,19 @@ The x402 facilitator enforces:
 - network, asset, recipient, amount, and validity window;
 - settlement execution.
 
-The facilitator does not enforce the cumulative mission budget or the merchant/token allowlist; `SuccraMission` does. The contract's `confirmedSpentAtomic` is a mirror used for checkpoints and race detection. It never authorizes a transfer. If the mirror and settlement disagree, the Robinhood Transfer log is authoritative and the discrepancy is an incident.
+USDG enforces the token transfer and, in Variant A, the ERC-1271 call. The facilitator does not enforce the cumulative mission budget or the merchant/token allowlist; `SuccraMission` does. If the mirror and settlement disagree, the Robinhood Transfer log is authoritative and the discrepancy is an incident.
 
 ## Residual trust boundary
-The facilitator does not read `SuccraMission` state in MVP. A compromised owner signer or an already-signed authorization can settle within the EIP-3009 validity window even if the mission is quarantined or cancelled. Mitigations are short `validBefore` windows, on-chain authorization before facilitator submission, quarantine/cancel preventing new authorizations, and reconciliation alerts. Facilitator-side mission proofs or smart-account scoping are future hardening, not MVP claims.
+The facilitator does not read `SuccraMission` state in MVP. A compromised session key or an already-signed authorization can settle within the EIP-3009 validity window even if the mission is quarantined or cancelled. Mitigations are short `validBefore` windows, on-chain approval/release before facilitator submission, quarantine revoking the session key, the owner's unconditional withdrawal right, and reconciliation alerts. Variant B's `releaseForPayment` signature carries the session key, amount, and version but not the merchant; the runtime enforces the merchant allowlist before release and re-checks the signed EIP-3009 recipient before submission. Facilitator-side mission proofs or smart-account scoping are future hardening, not MVP claims.
 
 ## Remaining budget
 `SuccraMission` is authoritative for the cumulative budget and per-payment limits. The runtime reconciles confirmed x402 settlements against the mirror and updates `remaining_budget_atomic`. A stale mirror can block a valid payment conservatively; it must never permit an invalid one.
 
 ## Recovery limit
-Successor receives a smaller `recovery_max_payment`, enforced on-chain by mission state.
+Successor receives a smaller `recovery_max_payment`, enforced on-chain by mission state. The new session key registered at succession is capped by that recovery limit.
 
 ## Refund/cancel
-x402 has no native refund primitive. The owner can cancel the mission and stop creating new x402 payments. An already-signed EIP-3009 authorization may still settle until `validBefore`, so authorization validity must be short. Funds remain in the owner's wallet; there is no vault refund.
+x402 has no native refund for an already-settled payment. The owner can cancel the mission, stop creating new x402 payments, and withdraw the unspent contract balance at any time. An already-signed EIP-3009 authorization may still settle until `validBefore`, so authorization validity must be short.
 
 ## Reconciliation
 The Robinhood settlement transaction and a matching EIP-3009 Transfer log are authoritative. A facilitator receipt alone is not confirmation. Supabase is a mirror/index, never the financial source of truth.
@@ -1460,6 +1634,14 @@ Must cover:
 Must cover:
 - create mission;
 - commit x402 offer policy;
+- owner deposit and withdrawal (unilateral, no cooperation needed);
+- withdrawal at `QUARANTINED` status;
+- session key registration at creation;
+- session key revocation on quarantine;
+- session key rotation on succession with reduced cap;
+- payment reverts when session key is revoked or replaced;
+- Variant A `approvedHashes` validation and `isValidSignature` MAGIC;
+- Variant B `releaseForPayment` amount accuracy;
 - authorized x402 payment;
 - blocked x402 payment;
 - budget exhaustion;
@@ -1478,6 +1660,8 @@ Solidity contract tests must run before moving checkpoints.
 ## Integration tests
 - Supabase auth + RLS;
 - agent registration;
+- deposit and withdrawal mirroring;
+- session-key registration, rotation, and revocation;
 - EIP-712 payment submission;
 - x402 mock facilitator flow;
 - settlement confirmation mirror;
@@ -1487,12 +1671,15 @@ Solidity contract tests must run before moving checkpoints.
 Required golden path:
 ```text
 Create mission
-→ approve x402 offer policy and sign EIP-3009 authorizations
-→ register Alpha
-→ execute valid x402 payment
+→ approve x402 offer policy
+→ deposit USDG into SuccraMission
+→ register Alpha and the session key
+→ execute valid x402 payment (session key signs; contract approves/releases)
 → 3 blocked actions
-→ quarantine
+→ quarantine (session key revoked)
+→ owner withdraws remaining USDG at QUARANTINED
 → activate Beta
+→ register new session key with recovery cap
 → Beta executes valid recovery payment
 → audit receipt shows full chain
 ```
@@ -1509,6 +1696,9 @@ Create mission
 - authorization hash mismatch;
 - direct ERC-20 bypass;
 - x402 receipt replay/forgery and EIP-3009 nonce replay;
+- revoked/replaced session key cannot approve or sign;
+- owner withdrawal works at `QUARANTINED` and `CANCELLED`;
+- guardian cannot withdraw;
 - prompt injection into successor recommender.
 
 ## Acceptance definition
@@ -1575,7 +1765,7 @@ succra/
     └── runbooks/
 ```
 
-Directory rule: product UI stays in `apps/web`; persistent orchestration in `apps/runtime`; on-chain authority in `contracts/`; x402 integration and shared contracts/types in `packages/`.
+Directory rule: product UI stays in `apps/web`; persistent orchestration in `apps/runtime`; on-chain authority in `contracts/`; x402 integration and shared contracts/types in `packages/`. The vault is built into `contracts/src/SuccraMission.sol`; there is no separate `MissionVault.sol`. `packages/x402-client` and `apps/runtime/src/x402` carry the x402 client/runtime integration.
 
 ---
 
@@ -1588,6 +1778,8 @@ NEXT_PUBLIC_ROBINHOOD_CHAIN_ID=4663
 NEXT_PUBLIC_ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com
 NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL=
 NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL=https://robinhoodchain.blockscout.com
+NEXT_PUBLIC_TESTNET_USDG_ADDRESS=0x7E955252E15c84f5768B83c41a71F9eba181802F
+NEXT_PUBLIC_MAINNET_USDG_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
@@ -1609,6 +1801,8 @@ SUCCRA_MISSION_FACTORY_ADDRESS=
 SUCCRA_GUARDIAN_ADDRESS=
 ROBINHOOD_GUARDIAN_SECRET_KEY=
 ROBINHOOD_GUARDIAN_CREDENTIAL=
+ROBINHOOD_TESTNET_DEPLOYER_PRIVATE_KEY=
+ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY=
 SUCCRA_RUNTIME_SIGNER_SECRET_KEY=
 X402_FACILITATOR_URL=
 X402_NETWORK=eip155:4663
@@ -1620,6 +1814,8 @@ OPENAI_MODEL=
 Rules:
 - `NEXT_PUBLIC_*` must never contain secrets;
 - guardian secret is runtime-only;
+- session key is runtime-only and never exposed to agents or the browser;
+- deployer private keys are deployment/runtime-only;
 - Supabase service role is server-only;
 - x402 facilitator URL and any facilitator credentials are server-only;
 - agent private keys live with agents and never in Succra;
