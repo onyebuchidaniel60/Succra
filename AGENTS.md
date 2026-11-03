@@ -32,7 +32,7 @@ The runtime-held session key is a scoped EIP-3009 signer, not an owner/admin key
 - Solidity ^0.8.24 + Hardhat
 - Robinhood Chain mainnet (chain ID 4663, RPC https://rpc.mainnet.chain.robinhood.com)
 - x402 facilitator (HTTP 402 challenge/response, EIP-3009 transferWithAuthorization, receipt verification)
-- USDG default settlement token (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`), allowlisted ERC-20 supported
+- USDG default settlement token (mainnet `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`; testnet `0x7E955252E15c84f5768B83c41a71F9eba181802F`), allowlisted ERC-20 supported
 - SuccraMission holds mission USDG; ERC-20 deposit/withdraw
 - Session key management (registration, rotation, revocation)
 - ERC-8004 optional agent identity
