@@ -188,6 +188,7 @@ Phase R1-spike — ERC-1271 capability probe against testnet USDG `0x7E955252E15
 - EIP-3009 authorizations must have short `validBefore` windows; cancellation cannot revoke an already-signed authorization.
 - The runtime-held session key signs EIP-3009 authorizations; the owner never signs per payment, and agents never hold funds, the session key, or token signing keys.
 - Variant A depends on USDG code-routing through ERC-1271; if the R1-spike fails, Variant B is used. Variant B's `releaseForPayment` signature does not carry the merchant, so the runtime enforces the merchant allowlist before release and re-checks the signed recipient before submission.
+- `approvePayment`/`releaseForPayment` as specified do not carry `agentNonce` or the agent signature; R1 must keep the off-chain single-use request nonce as the replay guard and decide whether to extend the ABI to advance the on-chain counter.
 - Guardian is constrained and cannot spend; quarantine revokes the session key. Production should eventually move toward a stronger decentralized guardian/keeper design.
 - Mission checkpoint stores deterministic facts, not agent private reasoning.
 - The database mirrors on-chain and x402 settlement state; it does not authorize money movement.

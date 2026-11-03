@@ -220,6 +220,7 @@ Objective: replace the HSP payment rail with x402 and implement the R1-spike-sel
 
 Tasks:
 - extend `SuccraMission.sol`: `deposit()`, `withdraw()`, session-key registration/revocation; Variant A `approvePayment()` + `isValidSignature()` + `approvedHashes`; Variant B `releaseForPayment()`;
+- decide whether the variant approval/release ABI needs `agentNonce` or the agent signature to advance on-chain replay protection; otherwise keep the off-chain single-use request nonce as the replay guard;
 - add `packages/x402-client` for HTTP 402 `accepts[]` parsing, EIP-3009 `TransferWithAuthorization` typed data, session-key signing, facilitator verify/settle/receipt handling, and a mock facilitator;
 - switch chain config to Robinhood mainnet 4663 and testnet 46630, RPC `https://rpc.mainnet.chain.robinhood.com`, explorer `https://robinhoodchain.blockscout.com`, and USDG mainnet `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` / testnet `0x7E955252E15c84f5768B83c41a71F9eba181802F`;
 - replace any remaining legacy HashKey/HSP identifiers with Robinhood/X402 names in `.env.example`, runtime config, and deployment config;
