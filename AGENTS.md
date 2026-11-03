@@ -1,7 +1,7 @@
 # SUCCRA — AGENTS.md
 
 ## Project
-Succra is a HashKey Chain-native (EVM) continuity and authority layer for autonomous agent payment missions. Agents receive bounded execution authority over a mission; Succra can quarantine unsafe agents, preserve verified mission state, activate a pre-approved successor with restricted authority, and expose an audit trail. Funds remain in the owner's wallet; Succra controls authority, not custody.
+Succra is a Robinhood Chain-native (EVM, x402 payments) continuity and authority layer for autonomous agent payment missions. Agents receive bounded execution authority over a mission; Succra can quarantine unsafe agents, preserve verified mission state, activate a pre-approved successor with restricted authority, and expose an audit trail. Funds remain in the owner's wallet; Succra controls authority, not custody.
 
 ## Source of truth
 - `PROJECT_SPEC.md` controls product requirements.
@@ -12,14 +12,14 @@ Succra is a HashKey Chain-native (EVM) continuity and authority layer for autono
 
 ## Non-negotiable architecture invariants
 1. Succra never modifies agent code.
-2. Mission spending authority is controlled by the SuccraMission contract. Funds remain in the owner's wallet constrained by the HSP Cart Mandate. Succra does not custody.
+2. Mission spending authority is controlled by the SuccraMission contract. Funds remain in the owner's wallet constrained by the mission's x402 offer policy. Succra does not custody.
 3. The backend/database is not the source of truth for funds.
-4. The SuccraMission contract is authoritative for mission authority and policy. The HSP Gateway is authoritative for payment execution and settlement. The database is never authoritative for either.
+4. The SuccraMission contract is authoritative for mission authority and policy. The x402 facilitator is authoritative for payment execution and settlement. The database is never authoritative for either.
 5. Guardian may quarantine or activate only pre-approved successors; guardian cannot spend mission funds.
 6. Successors never inherit unrestricted authority.
 7. AI output is advisory and cannot authorize money movement.
-8. MVP payment adapters are limited to HSP Payment Mandate execution of native HSK or allowlisted ERC-20 transfers to allowlisted merchants.
-9. No arbitrary ERC-20 transfers, no arbitrary contract calls, no direct ERC-20 path bypassing HSP. Payments only via HSP Gateway.
+8. MVP payment adapters are limited to x402 EIP-3009 transferWithAuthorization settlement of USDG (default) or an allowlisted ERC-20 to allowlisted merchants. Native ETH is gas only.
+9. No arbitrary ERC-20 transfers, no arbitrary contract calls, no direct ERC-20 path bypassing x402. Payments only via the x402 facilitator.
 10. No new product feature may be added because it seems useful or impressive.
 
 ## Stack is fixed
@@ -28,9 +28,11 @@ Succra is a HashKey Chain-native (EVM) continuity and authority layer for autono
 - Supabase Auth + Postgres + RLS
 - Node.js 24 + TypeScript runtime
 - Solidity ^0.8.24 + Hardhat
-- HashKey Chain mainnet (chain ID 177, RPC https://mainnet.hsk.xyz)
-- HSP Merchant API (HMAC-SHA256, ES256K JWT, EIP-712 mandates, webhooks)
-- Blockscout for verification
+- Robinhood Chain mainnet (chain ID 4663, RPC https://rpc.mainnet.chain.robinhood.com)
+- x402 facilitator (HTTP 402 challenge/response, EIP-3009 transferWithAuthorization, receipt verification)
+- USDG default settlement token (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`), allowlisted ERC-20 supported
+- ERC-8004 optional agent identity
+- Blockscout for verification (`https://robinhoodchain.blockscout.com`)
 - OpenAI (advisory only)
 - Vercel + Railway + Supabase
 
@@ -40,12 +42,12 @@ Succra is a HashKey Chain-native (EVM) continuity and authority layer for autono
 - Prefer small, typed, testable functions.
 - Reuse shared types and schemas.
 - Validate all external input.
-- Treat on-chain and HSP rejection as authoritative.
+- Treat on-chain and x402 rejection as authoritative.
 - Never fabricate successful transactions or test results.
 - Never log secrets, private keys, auth tokens, or sensitive wallet material.
 - Use idempotency for money-moving operations.
 - Use explicit state machines for mission lifecycle.
-- Every payment path must go through HSP Gateway. No direct contract-to-ERC20 transfers.
+- Every payment path must go through x402 facilitator. No direct contract-to-ERC20 transfers.
 - EIP-712 typed data is the sole signing primitive; no home-rolled signature schemes.
 - Contract state transitions must include expected-version checks for race protection.
 
@@ -56,14 +58,14 @@ Succra is a HashKey Chain-native (EVM) continuity and authority layer for autono
 - Keep Supabase service-role and guardian keys server-only.
 - Never accept a client-provided `owner_id` as authorization.
 - Never trust an LLM recommendation as authorization.
-- Verify webhook authenticity and deduplicate events.
+- Verify x402 settlement receipts against the on-chain EIP-3009 Transfer log and deduplicate them. A receipt alone never confirms settlement.
 - Never expose arbitrary internal/private agent endpoint access.
-- HSP webhook HMAC-SHA256 must be verified before any state change.
-- EIP-712 signature must be verified against the registered agent address before preflight response.
-- Signed mandate hash must match the preflighted mandate hash before submission to HSP Gateway.
+- The EIP-3009 authorization is signed by the owner/token holder; agents never hold mission funds or token signing keys.
+- EIP-712 signature must be verified against the registered agent address before the preflight response.
+- The signed EIP-3009 authorization hash and nonce must match the preflighted values before submission to the x402 facilitator.
 
 ## Testing rules
-Every meaningful change must have appropriate unit/integration/contract/E2E tests. Before claiming completion, run the exact relevant commands and report actual results. Financial logic requires tests for duplicate requests, race conditions, budget exhaustion, stale state, unauthorized agents, and unauthorized merchants. Contract tests must cover on-chain policy enforcement for all preflight rejection paths.
+Every meaningful change must have appropriate unit/integration/contract/E2E tests. Before claiming completion, run the exact relevant commands and report actual results. Financial logic requires tests for duplicate requests, race conditions, budget exhaustion, stale state, unauthorized agents, and unauthorized merchants. Contract tests must cover on-chain policy enforcement for all preflight rejection paths. x402 integration tests must use a mock facilitator and verify EIP-3009 authorization binding, nonce replay, and settlement-receipt/Transfer-log matching.
 
 ## Git rules
 - One logical phase/task per commit where practical.

@@ -1,12 +1,24 @@
 # SUCCRA — AI_HANDOFF.md
 
 ## Project
-Succra — autonomous mission continuity and authority succession on HashKey Chain (EVM).
+Succra — autonomous mission continuity and authority succession on Robinhood Chain (EVM, x402).
+
+## Frozen product statement
+Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
 ## Current status
-**Phase 7c — remaining screens, design system, demo polish: complete on branch `phase-7-ux` (pending review/merge). Phase 7a and 7b are complete on the same branch. Phase 6 is complete and merged to `main` @ `549629d`. Phase 5 is complete and merged to `main` @ `3865500`. Phase 4 is complete and merged @ `1a93662`. Phase 3 is complete and merged @ `4bb1641`. Phase 2 is complete and merged @ `40abe03`; Phase 1 is complete and merged @ `fbce1c2`. Solana is archived as tag `solana-v1` at `a4e089a`; CI runs `web`, `supabase`, and `contracts`.**
+**Pivot notice (2026-11-03): Succra is pivoting from HashKey Chain (HSP) to Robinhood Chain (x402) for the World is Flat hackathon (submissions close 2026-11-12 17:30 UTC). The product thesis is unchanged: Succra is the continuity layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail. Missions don't have to.**
 
-Pivot context (2026-11-01): Succra is pivoting from Solana to HashKey Chain (EVM) for the HashKey Chain Horizon Hackathon 2026, Track 2 (Agent Payments & A2A Settlement). The product thesis is unchanged: Succra is the continuity and authority layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail; missions continue.
+- HashKey implementation archived at annotated tag `hashkey-v1` → `phase-7-ux` @ `cc0f90b` (Phase 7a/7b/7c complete; not merged to main). `main` is @ `549629d` (Phase 6 merge).
+- Carried forward unchanged: the three Solidity contracts and their authority/policy model, violation streak, quarantine, succession, checkpoints, recovery authority, audit events, dashboard, timeline, and decision receipts. Contract topology and policy semantics remain fixed; R1 may adapt identifiers/ABI/field names for x402.
+- Replaced: HSP payment rail → x402 (HTTP 402 `accepts[]`, EIP-3009 `transferWithAuthorization`), HashKey Chain → Robinhood Chain (4663/46630), HSK → ETH gas, HSP mandate IDs → x402 payment IDs / authorization nonces, and the Blockscout URL.
+- Default settlement asset: USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`; allowlisted ERC-20 supported. Native ETH is gas only.
+- Non-custodial model retained: funds stay in the owner wallet; the owner/token holder signs EIP-3009 authorizations; agents never hold funds.
+- Phase sequence: **R0** (archive + docs pivot; this task), **R1** (x402 client + chain swap; not authorized), **R2** (testnet 46630), **R3** (mainnet 4663), **R4** (Playwright smoke + video/submission).
+- Phase 7c UI work is rail-agnostic and complete at `cc0f90b`; it can be merged or carried into `robinhood-pivot` after R0. No further 7c work is authorized.
+- R0: docs-only pivot complete on branch `robinhood-pivot` (from `cc0f90b`); awaiting reviewer approval. Next assigned task: **R1 — x402 client and chain config swap, not begun.**
+
+## Historical HashKey delivery (archived at `hashkey-v1`)
 
 Phase 1 delivery (merged @ `fbce1c2`):
 - `GuardianRegistry` with global guardian and owner-only rotation;
@@ -122,17 +134,14 @@ Phase 7c delivery on branch `phase-7-ux` (complete, pending review/merge):
 
 Phase 7c checkpoint: branch `phase-7-ux` (pending review/merge).
 
-Next assigned task: **STOP — await approval to merge `phase-7-ux` to `main`. Phase 8 has not started.**
-
-## Frozen product statement
-Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
+Historical next-task note: Phase 7c was awaiting merge to `main` when the HashKey implementation was archived. The merge is not part of R0.
 
 ## Frozen architecture
-User wallet → Next.js web → Supabase / Succra runtime → SuccraMission contract + HSP Gateway → HashKey Chain settlement. Agents communicate through EIP-712-signed requests and never custody mission funds.
+User wallet → Next.js web → Supabase / Succra runtime → SuccraMission contract + x402 facilitator → Robinhood Chain settlement. Agents communicate through EIP-712-signed requests and never custody mission funds. The owner/token holder signs EIP-3009 settlement authorizations.
 
 ## Frozen MVP
-- HashKey Chain (EVM) only
-- native HSK + allowlisted ERC-20 via HSP
+- Robinhood Chain (EVM) only, mainnet 4663 / testnet 46630
+- USDG by default or an allowlisted ERC-20 via x402 EIP-3009; ETH is gas only
 - allowlisted merchants
 - deterministic policy engine
 - 3 consecutive blocked policy violations → quarantine
@@ -151,23 +160,25 @@ User wallet → Next.js web → Supabase / Succra runtime → SuccraMission cont
 - unrestricted agent wallets
 - production decentralized keeper network
 - custodial vault model
-- direct ERC-20 transfers bypassing HSP
+- direct ERC-20 transfers bypassing x402
 - support for Solana
 
-## First phase
-**Phase 0 — Repository pivot.**
+## Current phase
+**Phase R0 — Archive HashKey, authorize Robinhood Chain / x402 docs pivot.**
 
-The coding agent must preserve the prior implementation as an archive, remove prior-chain code from the mainline, and establish the EVM/HSP workspace. It must not implement product functionality.
+R0 is complete: the HashKey implementation is archived, `robinhood-pivot` is branched from the archive target, and the six source-of-truth docs are amended. No code, contracts, env files, or Hardhat config changed. R1 is not authorized.
 
-## Required first-task wording
-> Implement Phase 0 — Repository pivot only, exactly as defined in `IMPLEMENTATION_PLAN.md`. Do not implement Solidity contracts, HSP integration, database schema, authentication, UI screens, agent runtime logic, or any product feature. Archive the prior implementation, remove prior-chain code and CI, establish the EVM/HSP workspace, update `.env.example`, run the required verification commands, report actual results, show changed files, create the Phase 0 Git checkpoint, and STOP.
+## Next phase (not begun)
+Phase R1 — x402 client and chain config swap. Replace `packages/hsp-client` with `packages/x402-client`, switch chain 4663/46630, USDG, facilitator, and preflight/submit to x402/EIP-3009. Do not begin without explicit authorization.
 
 ## Known design assumptions
-- Succra Cloud can go offline; on-chain mission authority remains intact, but new HSP payments cannot be authorized until the runtime/owner can act.
-- HSP is the payment execution and settlement authority; Succra is the authority and policy layer around it.
+- Succra Cloud can go offline; on-chain authority remains intact, but new x402 payments cannot be authorized until the owner/runtime can act.
+- The x402 facilitator is the settlement authority; SuccraMission is the authority and policy layer. The facilitator does not read SuccraMission state.
+- EIP-3009 authorizations must have short `validBefore` windows; cancellation cannot revoke an already-signed authorization.
+- The owner/token holder signs EIP-3009 authorizations; agents never hold funds or token signing keys.
 - Guardian is constrained and cannot spend. Production should eventually move toward a stronger decentralized guardian/keeper design.
 - Mission checkpoint stores deterministic facts, not agent private reasoning.
-- The database mirrors on-chain and HSP state; it does not authorize money movement.
+- The database mirrors on-chain and x402 settlement state; it does not authorize money movement.
 - Funds remain in the owner's wallet; Succra never takes custody.
 
 ## Verification rule

@@ -1,14 +1,15 @@
 # SUCCRA — Complete Implementation-Ready Project Blueprint
 
-**Status:** Pivot in progress / architecture amended for HashKey Chain (EVM)
+**Status:** Pivot in progress / architecture amended for Robinhood Chain (EVM, x402)
 **Product:** Succra
 **Primary principle:** Agents can fail. Missions continue.
-**Target:** HashKey Chain-native autonomous agent payment missions
+**Target:** Robinhood Chain-native autonomous agent payment missions using x402
 
 ## Source methodology
 This blueprint follows the supplied `PROPER_VIBE_CODING_WORKFLOW.md`: define the problem before code, freeze the MVP and architecture, create a source-of-truth specification, use small independently testable phases, require evidence-based verification, commit checkpoints, and keep product decisions with the human rather than the coding agent. fileciteturn0file0L13-L30 fileciteturn0file0L78-L100 fileciteturn0file0L170-L180
 
 ---
+
 
 # 1. PRODUCT DEFINITION
 
@@ -16,7 +17,7 @@ This blueprint follows the supplied `PROPER_VIBE_CODING_WORKFLOW.md`: define the
 **Succra**
 
 ## One-line description
-**Succra is a HashKey Chain-native (EVM) continuity and authority layer that lets an autonomous agent payment mission survive agent failure by revoking unsafe authority, preserving verified state, and transferring constrained authority to a pre-approved successor.**
+**Succra is a Robinhood Chain-native (EVM, x402 payments) continuity and authority layer that lets an autonomous agent payment mission survive agent failure by revoking unsafe authority, preserving verified state, and transferring constrained authority to a pre-approved successor.**
 
 ## Problem
 Autonomous agents can make decisions and control economic resources continuously, but most agent systems bind the mission too tightly to the current agent. When the agent becomes unsafe, unavailable, compromised, or otherwise unfit to continue, the available responses are usually to stop the mission, manually intervene, restart the workflow, or give a new agent broad access from scratch.
@@ -37,7 +38,7 @@ These approaches may solve individual pieces, but Succra focuses on the complete
 
 ## Target users
 ### Primary
-Developers and operators building autonomous agents that can control money or other consequential payment authority on HashKey Chain.
+Developers and operators building autonomous agents that can control money or other consequential payment authority on Robinhood Chain.
 
 ### Secondary
 - AI-agent application builders
@@ -48,10 +49,10 @@ Developers and operators building autonomous agents that can control money or ot
 
 ## User roles
 ### Mission Owner
-Human EVM wallet owner who creates the mission, signs the HSP Cart Mandate, defines policy, approves successors, and retains ultimate control.
+Human EVM wallet owner who creates the mission, approves the mission's x402 offer policy, signs EIP-3009 payment authorizations, defines policy, approves successors, and retains ultimate control.
 
 ### Primary Agent
-The autonomous agent currently authorized to request HSP payments under the mission policy.
+The autonomous agent currently authorized to request x402 payments under the mission policy.
 
 ### Successor Agent
 A pre-approved agent eligible to receive authority when the primary loses mission authority.
@@ -77,9 +78,10 @@ Succra gives users:
 Succra treats **mission continuity** as the primitive. It does not attempt to modify, restart, or inspect an agent's private internals. It controls the authority surrounding the agent and transfers only policy-approved, verifiable mission state.
 
 ## Primary use case
-A user creates a payment/rebalancing mission, including A2A settlement flows, and signs an HSP Cart Mandate for the budget envelope. Agent Alpha executes authorized HSP payments. Alpha makes repeated policy violations. Succra quarantines Alpha, preserves the last verified checkpoint, activates successor Beta with a lower emergency authority limit, and lets Beta continue the mission.
+A user creates a payment/rebalancing mission, including A2A API payments, and approves the mission's x402 offer policy. Agent Alpha requests authorized x402 payments; the owner wallet signs the EIP-3009 authorizations. Alpha makes repeated policy violations. Succra quarantines Alpha, preserves the last verified checkpoint, activates successor Beta with a lower emergency authority limit, and lets Beta continue the mission.
 
 ## Secondary use cases
+- x402 agent-to-agent API payments;
 - autonomous payment agents;
 - recurring treasury operations;
 - DeFi position management;
@@ -97,7 +99,7 @@ Succra MVP does **not**:
 - guarantee agent profitability;
 - guarantee perfect detection of malicious behavior;
 - custody user private keys;
-- execute arbitrary contracts, arbitrary ERC-20 transfers, or any payment path that bypasses HSP;
+- execute arbitrary contracts, arbitrary ERC-20 transfers, or any payment path that bypasses x402;
 - trust an LLM as the authoritative security decision-maker;
 - support Solana in MVP;
 - use a custodial vault model;
@@ -115,17 +117,17 @@ Succra MVP does **not**:
    - per-payment limit;
    - merchant allowlist;
    - allowed token address;
-   - HSP_PAYMENT action type;
+   - X402_PAYMENT action type;
    - expiry;
    - primary agent;
    - ordered successor list.
-4. HSP Cart Mandate as the budget envelope; SuccraMission contract enforcement of mission policy; non-custodial funds in the owner's wallet.
+4. x402 accepts[] offers constrain each payment (asset, network, payee, amount, expiry); SuccraMission enforces per-payment ceilings and cumulative budget; non-custodial funds in the owner's wallet.
 5. Agent registration with EVM address and EIP-712 possession proof.
 6. EIP-712-signed agent payment requests.
 7. Deterministic policy engine.
-8. Payment execution only through HSP:
-   - native HSK;
-   - allowlisted ERC-20 token.
+8. Payment execution only through x402:
+   - USDG (default) or allowlisted ERC-20; native ETH is gas only;
+   - EIP-3009 transferWithAuthorization settlement.
 9. Consecutive policy-violation tracking.
 10. Automatic quarantine after 3 consecutive blocked actions within the mission's configured window.
 11. Succra guardian quarantine authority that cannot spend mission funds.
@@ -134,7 +136,7 @@ Succra MVP does **not**:
 14. Restricted recovery authority for successor.
 15. Successful successor execution.
 16. Audit timeline for actions, failures, quarantine, succession, and execution.
-17. Publicly verifiable HashKey transaction hash and HSP payment mandate ID for executed mission payments.
+17. Publicly verifiable Robinhood transaction hash and x402 payment ID / EIP-3009 authorization nonce for executed mission payments.
 18. End-to-end demo path proving continuity.
 
 ## SHOULD HAVE
@@ -143,7 +145,7 @@ Succra MVP does **not**:
 3. AI-generated successor recommendation/explanation, never authoritative.
 4. On-chain checkpoint hash commitment.
 5. Mission continuity metrics: recovery time, capital preserved, number of violations.
-6. HSP webhook-driven settlement monitoring with HashKey RPC polling fallback.
+6. x402 settlement receipt verification with facilitator polling and Robinhood RPC fallback.
 7. Read-only public mission audit page.
 
 ## NICE TO HAVE
@@ -167,7 +169,7 @@ Succra MVP does **not**:
 - SDK adapters for major agent frameworks.
 
 ## OUT OF SCOPE
-- arbitrary contract calls or direct ERC-20 transfers bypassing HSP;
+- arbitrary contract calls or direct ERC-20 transfers bypassing x402;
 - unrestricted wallet custody;
 - custodial vault model;
 - automated trading strategy engine;
@@ -184,8 +186,8 @@ Succra MVP does **not**:
 
 | Role | Can do | Cannot do |
 |---|---|---|
-| Mission Owner | create/update/cancel mission, sign the HSP Cart Mandate, define policy, approve successors, revoke the mandate after cancel/completion | bypass immutable policy without an owner-signed call |
-| Primary Agent | submit HSP payment requests, heartbeat, submit candidate checkpoint | change policy, change successor set, move funds directly |
+| Mission Owner | create/update/cancel mission, approve the x402 offer policy, sign EIP-3009 payment authorizations, define policy, approve successors, stop future payments after cancel/completion | bypass immutable policy without an owner-signed call |
+| Primary Agent | submit x402 payment requests, heartbeat, submit candidate checkpoint | change policy, change successor set, sign token transfers, move funds directly |
 | Successor Agent | act only after activation and within recovery limits | activate itself, change mission policy, access old agent authority |
 | Succra Guardian | quarantine mission, activate pre-approved successor within policy | spend funds, add unapproved successor, rewrite mission owner or policy |
 | Public Viewer | view public audit page and on-chain proofs | view private user metadata or internal agent credentials |
@@ -222,17 +224,17 @@ POST /api/missions
   ↓
 Server validates policy
   ↓
-Succra builds the HSP Multi-Pay Cart Mandate typed data
+Succra builds the mission's x402 offer policy (accepts[] constraints and EIP-3009 requirements)
   ↓
-Owner signs HSP Cart Mandate
+Owner approves the x402 offer policy in the mission review
   ↓
-Succra computes mandate hash
+Succra computes the x402 offer hash
   ↓
-Owner signs MissionFactory create transaction (commits mandate hash)
+Owner signs MissionFactory create transaction (commits the x402 offer hash)
   ↓
 SuccraMission deployed + policy committed
   ↓
-HSP Cart Mandate registration verified
+MissionCreated event verified
   ↓
 Mission mirror becomes ACTIVE
   ↓
@@ -240,7 +242,7 @@ Dashboard shows mission
 ```
 
 Database changes: mission row, policy row, agent assignments, audit row.
-On-chain changes: SuccraMission address, owner, settlement token, policy hash, primary/successor addresses, Cart Mandate hash.
+On-chain changes: SuccraMission address, owner, settlement token, policy hash, primary/successor addresses, x402 offer hash.
 
 ## Flow C — Connect/register an agent
 Entry: Mission → Add Agent
@@ -269,19 +271,19 @@ Deterministic policy evaluation
   ↓
 ALLOW / BLOCK
   ↓
-If ALLOW → construct HSP Payment Mandate
+If ALLOW → select the x402 accepts[] offer and construct EIP-3009 transferWithAuthorization typed data
   ↓
-Return unsigned mandate + EIP-712 typed data
+Return unsigned EIP-3009 authorization + typed data
   ↓
-Agent signs EIP-712
+Owner wallet signs EIP-3009 (token holder; the agent never holds funds)
   ↓
-Succra records on-chain payment authorization in SuccraMission
+Succra verifies the agent request and owner authorization, then records on-chain payment authorization in SuccraMission
   ↓
-Succra submits to HSP Gateway
+Succra submits the x402 payment payload to the facilitator
   ↓
-HSP settles on HashKey Chain
+Facilitator verifies the EIP-3009 signature and settles USDG/allowlisted ERC-20 on Robinhood Chain
   ↓
-Succra verifies webhook or polls chain
+Succra verifies the settlement receipt and on-chain Transfer log
   ↓
 Update authoritative off-chain mirror
   ↓
@@ -291,14 +293,14 @@ Audit UI
 ```
 
 ## Flow E — Three violations → quarantine
-1. Agent submits a blocked HSP payment request.
+1. Agent submits a blocked x402 payment request.
 2. Action is recorded as `BLOCKED`.
 3. Consecutive violation counter increments atomically.
 4. Counter reaches 3.
 5. Runtime submits a guardian `quarantine` call to SuccraMission.
 6. Contract verifies guardian and sets mission `QUARANTINED`.
 7. Current agent authority is invalidated.
-8. No new HSP Payment Mandate is authorized for the quarantined agent.
+8. No new x402 payment is authorized for the quarantined agent.
 9. Last verified checkpoint is marked the recovery boundary.
 10. Succession engine begins.
 
@@ -318,10 +320,10 @@ Failure protection: quarantine is allowed to happen even if the agent is still o
 Phase 6 resolution (spec amendment): activation is two guardian-signed calls, not one (`activate_successor`: `QUARANTINED` → `RECOVERING`; `acknowledge_recovery`: `RECOVERING` → `ACTIVE_RECOVERY`). Collapsing `RECOVERING` into the activation step is a Phase 9 simplification candidate, not a Phase 6 change. The guardian is the normal activator; if the runtime/guardian is unavailable, the owner may trigger the same pre-approved successor path with the same eligibility and state-version checks.
 
 ## Flow G — Recovery execution
-1. Successor proposes an HSP payment.
+1. Successor proposes an x402 payment.
 2. Policy engine uses recovery limits, not primary limits.
-3. If valid, Succra builds the Payment Mandate; the successor signs it with EIP-712; Succra records on-chain authorization; HSP settles it.
-4. HashKey transaction confirms.
+3. If valid, Succra constructs the EIP-3009 authorization; the owner wallet signs it; Succra records on-chain authorization; the x402 facilitator settles it.
+4. Robinhood transaction confirms.
 5. Mission checkpoint is updated.
 6. Mission remains under recovery authority until explicit promotion logic exists.
 
@@ -335,7 +337,7 @@ The UI constructs a receipt from:
 - failure counter at decision time;
 - checkpoint hash;
 - succession event if applicable;
-- HashKey transaction hash and HSP payment mandate ID;
+- Robinhood transaction hash and x402 payment ID / EIP-3009 authorization nonce;
 - timestamp and block number when available.
 
 The audit page distinguishes:
@@ -347,10 +349,10 @@ AI explanations are never presented as cryptographic proof.
 
 ## Flow I — Cancel mission
 1. Owner selects Cancel.
-2. System checks no HSP payment is in flight.
+2. System checks no x402 payment is in flight.
 3. Owner signs the cancel transaction.
 4. Contract sets `CANCELLED`.
-5. Owner revokes the HSP Cart Mandate; funds remain in the owner's wallet.
+5. Owner stops future x402 payments; any already-signed EIP-3009 authorization can settle only until its `validBefore`, so authorizations must be short-lived. Funds remain in the owner's wallet.
 6. Runtime marks future agent requests invalid.
 
 ## Flow J — Expiry
@@ -367,7 +369,7 @@ At expiry:
 ## FR-01 Mission creation
 **Actor:** Mission Owner
 
-Inputs: mission name, objective, settlement token address, budget, max payment amount, merchant allowlist, expiry, primary agent, successors, recovery max.
+Inputs: mission name, objective, settlement token (USDG by default or an allowlisted ERC-20), budget, max payment amount, merchant allowlist, expiry, primary agent, successors, recovery max.
 
 Rules:
 - budget > 0;
@@ -382,8 +384,8 @@ Acceptance criteria:
 - SuccraMission contract exists;
 - policy is committed;
 - owner is recorded;
-- HSP Cart Mandate is linked by ID/hash;
-- dashboard reports `ACTIVE` after the Cart Mandate is confirmed.
+- the x402 offer policy is committed by hash;
+- dashboard reports `ACTIVE` after `MissionCreated` confirms.
 
 ## FR-02 Agent authentication
 Agent requests MUST be EIP-712-signed over the canonical `SuccraRequest(missionId, requestId, nonce, timestamp, methodHash, bodyHash)` typed data by the registered agent address.
@@ -396,18 +398,18 @@ Acceptance criteria:
 
 ## FR-03 Action evaluation
 Supported MVP action type:
-- `HSP_PAYMENT`
+- `X402_PAYMENT`
 
 Decision checks:
 1. mission is active/recovery-active;
 2. agent is current agent;
-3. action type is `HSP_PAYMENT`;
+3. action type is `X402_PAYMENT`;
 4. merchant is allowed;
 5. amount <= current per-payment max;
-6. cumulative spend + amount <= remaining budget envelope;
+6. cumulative spend + amount <= remaining budget;
 7. request not expired;
 8. request nonce/idempotency key unused;
-9. token address is allowed and the Payment Mandate matches the mission policy.
+9. token address is allowed and the EIP-3009 authorization matches the mission policy and selected x402 accepts[] offer.
 
 Phase 6 resolutions (spec amendment): the payment execution path accepts `Active` and `ActiveRecovery` (see FR-06 for which ceiling applies in each state). `Recovering` and `Quarantined` are non-executable. The contract and the gateway ABI decoder must be deployed together whenever new `MissionStatus` discriminant values are added; a decoder that sees an unknown value must fail closed, never treat the mission as `Active`.
 
@@ -417,14 +419,14 @@ Quarantine MUST be triggered after 3 consecutive blocked policy violations in th
 The counter resets after a valid successful payment or after a configured quiet period of 15 minutes.
 
 Two distinct reset mechanisms apply:
-  (a) Any CONFIRMED HSP settlement resets the consecutive counter to zero.
+  (a) Any CONFIRMED x402 settlement resets the consecutive counter to zero.
   (b) Any violation older than violation_window_seconds is no longer
       counted toward the streak.
 Both mechanisms operate independently. A streak is the number of
 policy-blocked actions within the window since the most recent
 CONFIRMED settlement (or since mission activation, whichever is later).
 
-Guardian quarantine MUST NOT transfer funds or create a Payment Mandate.
+Guardian quarantine MUST NOT transfer funds or create an x402 payment authorization.
 
 ## FR-05 Succession
 Successor MUST:
@@ -463,8 +465,8 @@ A checkpoint contains only deterministic/verified mission facts:
 - mission ID;
 - sequence;
 - confirmed payment IDs;
-- confirmed HashKey transaction hashes;
-- HSP payment mandate IDs;
+- confirmed Robinhood transaction hashes;
+- x402 payment IDs / EIP-3009 authorization nonces;
 - remaining budget;
 - current authority limits;
 - policy version/hash;
@@ -474,7 +476,7 @@ A checkpoint contains only deterministic/verified mission facts:
 Agent reasoning, raw chain-of-thought, or model-private context is never stored as a trusted checkpoint.
 
 Phase 6 resolutions (spec amendment):
-- `state_snapshot` schema: `{confirmed_payment_ids, confirmed_transaction_hashes, hsp_mandate_ids, authority_limits_at_checkpoint, policy_version, policy_hash}`.
+- `state_snapshot` schema: `{confirmed_payment_ids, confirmed_transaction_hashes, x402_payment_ids, authority_limits_at_checkpoint, policy_version, policy_hash}`.
 - `status` ∈ {`CANDIDATE`, `VERIFIED`, `SUPERSEDED`}; `CANDIDATE` is reserved for future use and unused in Phase 6.
 - `committed_tx_hash` is populated when the Phase 6 checkpoint commitment transaction confirms; `CANDIDATE` remains reserved and unused.
 - Cadence: a `VERIFIED` checkpoint is written on every CONFIRMED settlement, plus an initial `sequence=0` checkpoint at mission activation, so a checkpoint always exists.
@@ -494,7 +496,7 @@ Phase 6 resolutions (spec amendment) — Phase 6 writes these audit event types 
 Phase 7 reads these rows only and writes none.
 
 ## FR-09 Owner control
-Owner can cancel a mission and revoke the HSP Cart Mandate according to on-chain rules. Funds remain in the owner's wallet. No application administrator can move mission funds.
+Owner can cancel a mission and stop future x402 payments according to on-chain rules. Already-signed EIP-3009 authorizations can settle only until `validBefore`; short validity windows are mandatory. Funds remain in the owner's wallet. No application administrator can move mission funds.
 
 ---
 
@@ -503,7 +505,7 @@ Owner can cancel a mission and revoke the HSP Cart Mandate according to on-chain
 ## Mission state machine
 ```text
 DRAFT
-  │ create + Cart Mandate
+  │ create + x402 offer
   ▼
 ACTIVE
   │ 3 violations / authorized liveness trigger
@@ -571,7 +573,7 @@ RECEIVED
       APPROVED
         ↓
       SUBMITTED
-        ├── HSP/chain fail → FAILED
+        ├── x402/chain fail → FAILED
         └── confirmed → CONFIRMED
 ```
 
@@ -582,6 +584,21 @@ A blocked request counts toward the streak only when:
 - it was rejected by a mission policy rule.
 
 Malformed/unauthenticated requests do not increase the agent's policy violation count because they may be network abuse rather than agent behavior.
+
+Countable policy violations (streak increments) are:
+- `INVALID_ACTION_TYPE`
+- `MERCHANT_NOT_ALLOWED`
+- `TOKEN_NOT_ALLOWED`
+- `AMOUNT_EXCEEDS_MAX`
+- `BUDGET_EXHAUSTED`
+
+Non-countable rejections (streak does NOT increment):
+- authentication failures (`AGENT_NOT_CURRENT`, `INVALID_SIGNATURE`)
+- replay protection (`STALE_TIMESTAMP`, `STALE_NONCE`, `DUPLICATE_REQUEST`)
+- environmental (`MISSION_NOT_ACTIVE`, `MISSION_EXPIRED`, `REQUEST_EXPIRED`)
+- any future reason code not explicitly listed above
+
+A violation counts only when it is (a) authenticated, (b) signed by the current agent, (c) rejected by one of the countable policy rules.
 
 ## Duplicate prevention
 - Every action has client-generated `idempotency_key`.
@@ -596,9 +613,11 @@ Malformed/unauthenticated requests do not increase the agent's policy violation 
 - Owner policy update and guardian succession cannot race past each other because contract state version is checked.
 
 ## Irreversible actions
-- Actual HSP settlements are irreversible once confirmed.
+- Actual x402 settlements are irreversible once confirmed.
 - Quarantine is reversible only through explicit owner/recovery logic defined later; MVP keeps quarantined missions non-executable except succession/cancel.
 - Succession revokes the previous agent and cannot silently restore old authority.
+
+---
 
 ---
 
@@ -628,7 +647,7 @@ The on-chain list is bounded to 8 unique addresses and excludes the primary agen
 
 ```solidity
 struct MissionConfig {
-    address paymentToken;              // native HSK sentinel or ERC-20 address
+    address paymentToken;              // USDG or allowlisted ERC-20
     uint256 budgetAtomic;              // budget envelope in token atomic units
     uint256 maxPaymentAtomic;
     uint256 recoveryMaxPaymentAtomic;
@@ -639,7 +658,7 @@ struct MissionConfig {
     Successor[] successors;            // bounded, unique, primary excluded
     uint16 violationThreshold;         // default 3
     uint64 violationWindowSeconds;     // default 900
-    bytes32 cartMandateHash;           // owner-signed HSP Cart Mandate
+    bytes32 x402OfferHash;             // hash of the approved x402 offer policy
 }
 ```
 
@@ -666,7 +685,7 @@ struct AuthorityState {
     uint64 stateVersion;               // 0 at creation, bumped on every transition
     uint16 violationCount;
     uint64 lastViolationAt;
-    uint256 confirmedSpentAtomic;      // mirrored from confirmed HSP settlements
+    uint256 confirmedSpentAtomic;      // mirrored from confirmed x402 settlements
     bytes32 lastCheckpointHash;
     uint64 lastCheckpointSequence;
 }
@@ -674,7 +693,7 @@ struct AuthorityState {
 
 `DEGRADED` and `HALTED` are reserved values. No MVP transition enters `DEGRADED`; `HALTED` is written only to the off-chain mirror when no eligible successor exists, while the contract remains `QUARANTINED`. The reachable MVP state machine is defined in `PROJECT_SPEC.md` §6.
 
-`DRAFT` is the off-chain pre-deployment state. A deployed mission with a committed policy and Cart Mandate hash starts `ACTIVE`; the mirror remains pending until HSP Cart Mandate registration is verified.
+`DRAFT` is the off-chain pre-deployment state. A deployed mission with a committed policy and x402 offer hash starts `ACTIVE`; the mirror follows the verified `MissionCreated` event.
 
 ### `Checkpoint`
 
@@ -697,10 +716,10 @@ struct PaymentAuthorization {
     address merchant;
     address token;
     uint256 amountAtomic;
-    uint64 paymentNonce;
-    uint64 expiresAt;
-    bytes32 mandateHash;               // HSP Payment Mandate EIP-712 digest
-    bytes agentSignature;              // agent consent; required on-chain
+    uint64 paymentNonce;               // on-chain request nonce, distinct from the EIP-3009 nonce
+    uint64 expiresAt;                  // request expiry; the EIP-3009 validBefore is bound in the hash
+    bytes32 authorizationHash;         // EIP-3009 transferWithAuthorization typed-data digest
+    bytes agentSignature;              // agent request consent; owner EIP-3009 signature is verified before settlement
 }
 ```
 
@@ -724,7 +743,7 @@ struct SuccessionRecord {
 - `PolicyUpdated(bytes32 indexed policyHash, uint64 stateVersion)`
 - `AgentAuthorized(address indexed agent, uint8 role, uint64 stateVersion)`
 - `AgentRevoked(address indexed agent, uint64 stateVersion)`
-- `PaymentAuthorized(bytes32 indexed requestId, address indexed merchant, uint256 amountAtomic, bytes32 mandateHash)`
+- `PaymentAuthorized(bytes32 indexed requestId, address indexed merchant, uint256 amountAtomic, bytes32 authorizationHash)`
 - `PaymentSettlementRecorded(bytes32 indexed paymentId, uint256 amountAtomic, bytes32 transactionHash)`
 - `ViolationRecorded(bytes32 indexed requestId, uint16 violationCount, uint64 stateVersion)`
 - `MissionQuarantined(address indexed guardian, uint64 stateVersion)`
@@ -755,7 +774,7 @@ Guardian-authorized:
 - `commitCheckpoint(uint64 sequence, bytes32 checkpointHash, uint64 expectedVersion)`.
 
 Runtime-submitted, agent-signed:
-- `authorizePayment(PaymentAuthorization calldata authorization, uint64 expectedVersion)` — requires the agent's EIP-712 signature over the Payment Mandate digest.
+- `authorizePayment(PaymentAuthorization calldata authorization, uint64 expectedVersion)` — requires the agent's EIP-712 signature over the x402 authorization digest.
 
 `authorizePayment` checks status, current agent, action type, merchant/token allowlist, per-payment ceiling, mirrored cumulative spend, expiry, payment nonce, state version, and the agent signature. It then emits `PaymentAuthorized` and advances `agentNonce`. It does not move funds. The guardian key may relay the call, but the guardian cannot authorize or spend alone.
 
@@ -772,7 +791,7 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - guardian authorization and state-version checks;
 - checkpoint hash commitments.
 
-`SuccraMission` is **not** the custodian of funds and does not execute ERC-20 transfers. HSP is authoritative for settlement and for the aggregate Cart Mandate envelope. The contract's `confirmedSpentAtomic` is a mirrored value updated only from confirmed HSP settlements; it is used for checkpoints and race detection, never as permission to move funds.
+`SuccraMission` is **not** the custodian of funds and does not execute ERC-20 transfers. The x402 facilitator is authoritative for settlement. `SuccraMission` is authoritative for the cumulative budget and policy; the x402 offer constrains one payment, not the aggregate budget. The contract's `confirmedSpentAtomic` is a mirrored value updated only from confirmed x402 settlements; it is used for checkpoints and race detection, never as permission to move funds.
 
 ## Off-chain Supabase mirror
 
@@ -811,8 +830,8 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - `current_agent_address` TEXT NOT NULL
 - `policy_version` INTEGER NOT NULL DEFAULT 1
 - `policy_hash` TEXT NOT NULL
-- `cart_mandate_id` TEXT NULL
-- `cart_mandate_hash` TEXT NOT NULL
+- `x402_offer_id` TEXT NULL
+- `x402_offer_hash` TEXT NOT NULL
 - `expires_at` TIMESTAMPTZ NOT NULL
 - `created_at`
 - `updated_at`
@@ -835,9 +854,9 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - `version` INTEGER
 - `max_payment_atomic` NUMERIC(78,0)
 - `recovery_max_payment_atomic` NUMERIC(78,0)
-- `allowed_action_types` JSONB (`["HSP_PAYMENT"]`)
+- `allowed_action_types` JSONB (`["X402_PAYMENT"]`)
 - `allowed_merchants` JSONB
-- `allowed_token_addresses` JSONB (MVP: one settlement token)
+- `allowed_token_addresses` JSONB (MVP: USDG default or one allowlisted ERC-20)
 - `violation_threshold` INTEGER DEFAULT 3
 - `violation_window_seconds` INTEGER DEFAULT 900
 - `policy_json` JSONB NOT NULL
@@ -852,7 +871,7 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - `checkpoint_hash` TEXT NOT NULL
 - `confirmed_payment_ids` JSONB
 - `confirmed_transaction_hashes` JSONB
-- `hsp_mandate_ids` JSONB
+- `authorization_nonces` JSONB
 - `remaining_budget_atomic` NUMERIC(78,0)
 - `state_snapshot` JSONB
 - `committed_tx_hash` TEXT NULL
@@ -872,18 +891,19 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - `decision` TEXT
 - `decision_reason_code` TEXT
 - `violation_count_after` INTEGER
-- `hsp_payment_id` UUID NULL
+- `x402_payment_id` UUID NULL
 - `submitted_at`
 - `created_at`
 - unique `(mission_id, idempotency_key)`
 - unique `(mission_id, agent_nonce)`
 
-### `hsp_payments`
+### `x402_payments`
 - `id` UUID PK
 - `mission_id` UUID FK
 - `action_request_id` UUID FK
-- `hsp_payment_mandate_id` TEXT UNIQUE NOT NULL
-- `mandate_hash` TEXT NOT NULL
+- `x402_payment_id` TEXT UNIQUE NOT NULL
+- `authorization_hash` TEXT NOT NULL
+- `authorization_nonce` TEXT UNIQUE NOT NULL
 - `amount_atomic` NUMERIC(78,0) NOT NULL
 - `token_address` TEXT NOT NULL
 - `merchant_address` TEXT NOT NULL
@@ -900,7 +920,7 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - `id` UUID PK
 - `mission_id` UUID FK
 - `action_request_id` UUID NULL
-- `hsp_payment_id` UUID NULL
+- `x402_payment_id` UUID NULL
 - `tx_hash` TEXT UNIQUE
 - `block_number` BIGINT NULL
 - `status` TEXT
@@ -908,7 +928,7 @@ The workflow names `activate_successor` and `acknowledge_recovery` map to the So
 - `confirmed_at` TIMESTAMPTZ NULL
 - `created_at`
 
-This table mirrors contract calls (create, quarantine, succession, checkpoint commitment) that are not HSP settlements.
+This table mirrors contract calls (create, quarantine, succession, checkpoint commitment) that are not x402 settlements.
 
 ### `succession_events`
 - `id` UUID PK
@@ -939,13 +959,13 @@ Every material mission event writes an immutable audit event. Public audit reads
 
 - `agent_challenges` — single-use EIP-712 registration challenge; RLS enabled with no policies (service-role only).
 - `agent_request_nonces` — single-use request nonces; unique `(agent_id, nonce)`; service-role only.
-- `hsp_webhook_events` — unique `event_id`, payment mandate ID, payload hash, signature-verified flag, processed timestamp; service-role only.
+- `x402_settlement_receipts` — unique settlement transaction hash and EIP-3009 authorization nonce, facilitator receipt payload hash, Transfer-log-verified flag, processed timestamp; service-role only.
 
 ### Sensitive data
 
 Never store:
 - private keys or wallet seeds;
-- HSP API secrets, HMAC secrets, or JWTs beyond their verification window;
+- x402 facilitator credentials if configured, beyond their verification window;
 - Supabase service-role keys in the browser;
 - raw model chain-of-thought;
 - user auth tokens in logs;
@@ -954,8 +974,8 @@ Never store:
 Public data:
 - mission contract address;
 - public mission status;
-- HashKey transaction hashes;
-- HSP payment mandate IDs;
+- Robinhood transaction hashes;
+- x402 payment IDs and EIP-3009 authorization nonces;
 - public audit events explicitly marked public.
 
 Private data:
@@ -992,12 +1012,12 @@ The EIP-712 domain is:
 {
   "name": "Succra",
   "version": "1",
-  "chainId": 177,
+  "chainId": 4663,
   "verifyingContract": "<SuccraMission address>"
 }
 ```
 
-Testnet uses chain ID `133`. Wallet login uses a separate `SuccraLogin` typed-data domain without a verifying contract. HSP Payment Mandates use the domain and types supplied by HSP; Succra binds the resulting mandate hash into its own request record.
+Testnet uses chain ID `46630`. Wallet login uses a separate `SuccraLogin` typed-data domain without a verifying contract. EIP-3009 settlement uses the USDG/ERC-20 `TransferWithAuthorization` typed data; the owner/token holder signs it and Succra binds the resulting authorization hash and nonce into its own request record.
 
 ---
 
@@ -1025,50 +1045,51 @@ Testnet uses chain ID `133`. Wallet login uses a separate `SuccraLogin` typed-da
                              │
               ┌──────────────┴──────────────┐
               ▼                             ▼
-   ┌─────────────────────┐       ┌──────────────────┐
-   │ SUCCRA CONTRACTS    │       │  HSP GATEWAY     │
-   │ SuccraMission       │       │ Cart/Payment     │
-   │ MissionFactory      │       │ Mandates         │
-   │ GuardianRegistry    │       │ HMAC + ES256K    │
-   └──────────┬──────────┘       └────────┬─────────┘
-              │                           │
-              └─────────────┬─────────────┘
-                            ▼
-                 ┌─────────────────────┐
-                 │   HASHKEY CHAIN     │
-                 │  authority state    │
-                 │  HSP settlement     │
-                 └─────────────────────┘
+   ┌─────────────────────┐       ┌──────────────────────┐
+   │ SUCCRA CONTRACTS    │       │  X402 FACILITATOR    │
+   │ SuccraMission       │       │ HTTP 402 accepts[]   │
+   │ MissionFactory      │       │ EIP-3009 verify      │
+   │ GuardianRegistry    │       │ receipt / settlement │
+   └──────────┬──────────┘       └──────────┬───────────┘
+              │                             │
+              └──────────────┬──────────────┘
+                             ▼
+                  ┌──────────────────────┐
+                  │   ROBINHOOD CHAIN    │
+                  │  authority state     │
+                  │  USDG / ERC-20       │
+                  └──────────────────────┘
 ```
 
 ## Architectural principle
 
 **On-chain = authority and policy.**
 
-**HSP = payment execution and settlement.**
+**x402 facilitator = payment verification and settlement.**
 
 **Off-chain = orchestration, monitoring, indexing, UI, and agent communication.**
 
-The runtime can detect, preflight, and recommend, but it cannot override `SuccraMission` policy or HSP settlement. The database is a mirror and index, never the financial source of truth.
+The runtime can detect, preflight, and recommend, but it cannot override `SuccraMission` policy or facilitator settlement. x402 receipt verification against the Robinhood EIP-3009 Transfer log is the settlement-confirmation primitive. The database is a mirror and index, never the financial source of truth.
 
 ## Non-custodial model (Model B)
 
 - Funds remain in the owner's wallet.
-- The owner signs an HSP Multi-Pay Cart Mandate that constrains the budget envelope.
-- The Payment Agent constructs per-payment HSP Payment Mandates inside that envelope.
-- Succra controls **which agent may sign** and **what limits apply**; it never holds or moves funds.
-- HSP executes settlement; `SuccraMission` records authority and policy.
+- The owner approves the mission's x402 offer policy (network, asset, payee, amount, expiry).
+- The agent submits an EIP-712 `SuccraRequest`; the owner wallet signs the per-payment EIP-3009 `transferWithAuthorization`.
+- Succra controls **which agent may request** and **what limits apply**; it never holds or moves funds.
+- The x402 facilitator verifies and settles; `SuccraMission` records authority, policy, and the on-chain authorization.
 
-This is the core positioning: Succra is the safety and continuity layer around HSP, not a replacement for it.
+This is the core positioning: Succra is the safety and continuity layer around x402, not a replacement for it.
 
 ## Off-chain failure boundary
 
 Succra Cloud is not a cryptographic root of trust. If the runtime is offline:
-- no new Payment Mandate can be preflighted or submitted by Succra;
+- no new x402 payment can be preflighted or submitted by Succra;
+- previously signed EIP-3009 authorizations may still settle until their `validBefore`, so validity windows must be short;
 - automatic succession pauses;
 - the owner can still call `cancel` directly on the contract;
 - the owner can still use the pre-approved successor path when the guardian is unavailable, subject to the same eligibility and state-version checks;
-- existing on-chain authority and HSP mandate constraints remain intact.
+- existing on-chain authority remains intact.
 
 The owner cannot use the fallback to bypass policy, change successors, or move funds directly.
 
@@ -1099,7 +1120,7 @@ Why: eliminates an unnecessary second HTTP API service for ordinary request/resp
 ## Runtime/guardian
 **Node.js 24 + TypeScript + `tsx`**
 
-Responsibilities: agent gateway, heartbeat monitor, HSP client, succession engine, HashKey event monitor, checkpoint verification, webhook processing.
+Responsibilities: agent gateway, heartbeat monitor, x402 client, succession engine, Robinhood event monitor, checkpoint verification, facilitator receipt verification.
 
 ## Database
 **Supabase Postgres**
@@ -1109,23 +1130,24 @@ Use RLS for user-level resource isolation. The service-role key stays server-sid
 ## Contracts
 **Solidity ^0.8.24 + Hardhat**
 
-`SuccraMission`, `MissionFactory`, and `GuardianRegistry`. Contracts are tested locally, deployed to HashKey testnet first, and verified on Blockscout.
+`SuccraMission`, `MissionFactory`, and `GuardianRegistry`. Contracts are tested locally, deployed to Robinhood testnet first, and verified on Blockscout.
 
 ## Chain
-**HashKey Chain**
+**Robinhood Chain**
 
-- Mainnet: chain ID `177`, RPC `https://mainnet.hsk.xyz`, native token HSK.
-- Testnet: chain ID `133`.
-- Explorer: Blockscout.
+- Mainnet: chain ID `4663`, RPC `https://rpc.mainnet.chain.robinhood.com`, native gas token ETH.
+- Testnet: chain ID `46630`; RPC supplied by `NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL` (no default assumed).
+- Explorer: `https://robinhoodchain.blockscout.com`.
 
 ## Payments
-**HSP Merchant API**
+**x402 facilitator (self-hostable: `@402lane/facilitator`, `hood402`, `rhx402`)**
 
-- HMAC-SHA256 request signing.
-- ES256K JWT authentication.
-- EIP-712 Cart Mandates and Payment Mandates.
-- Signed settlement webhooks.
-- HashKey RPC polling fallback.
+- HTTP 402 `accepts[]` challenge/response.
+- EIP-3009 `transferWithAuthorization` signed by the owner/token holder.
+- USDG default settlement asset (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`); allowlisted ERC-20 supported.
+- Facilitator receipt plus on-chain Transfer-log verification.
+- Facilitator polling and Robinhood RPC fallback.
+- ERC-8004 optional agent identity metadata.
 
 ## AI
 **OpenAI API as a non-authoritative recommendation layer**
@@ -1136,13 +1158,13 @@ Only used for successor explanation/recommendation. Deterministic rules remain a
 - Web: Vercel
 - Runtime: Railway
 - Database/Auth: Supabase
-- Contracts: HashKey testnet first; mainnet only after explicit security verification
-- Payments: HSP Merchant API
+- Contracts: Robinhood testnet first; mainnet only after explicit security verification
+- Payments: x402 facilitator
 
 ## Rejected alternatives
 - Custodial vault model: violates the non-custodial authority thesis.
-- Direct ERC-20 transfers or arbitrary contract calls: bypasses HSP and expands the attack surface.
-- Multi-chain support in MVP: dilutes the HashKey/HSP focus.
+- Direct ERC-20 transfers or arbitrary contract calls: bypasses x402 and expands the attack surface.
+- Multi-chain support in MVP: dilutes the Robinhood/x402 focus.
 - Redis: unnecessary for MVP.
 - Kafka/queues: unnecessary for MVP.
 - Microservices: unnecessary for MVP.
@@ -1185,7 +1207,7 @@ Success: `{ user, session }`
 
 ## `POST /api/missions`
 Auth: user session.
-Purpose: create a mission draft and prepare the on-chain create call plus the HSP Cart Mandate payload.
+Purpose: create a mission draft, commit the mission's x402 offer policy hash, and prepare the on-chain create call.
 Request: mission metadata + policy:
 ```json
 {
@@ -1209,11 +1231,11 @@ Success:
   "missionId": "<uuid>",
   "contractAddress": "<predicted address>",
   "policyHash": "0x...",
-  "unsignedTransaction": { "chainId": 177, "to": "<factory>", "data": "0x...", "value": "0" },
-  "cartMandate": { "typedData": {}, "mandateHash": "0x..." }
+  "unsignedTransaction": { "chainId": 4663, "to": "<factory>", "data": "0x...", "value": "0" },
+  "x402Offer": { "network": "eip155:4663", "asset": "0x...", "acceptedPayees": ["0x..."], "offerHash": "0x..." }
 }
 ```
-The runtime reconciles the `MissionCreated` event and the HSP Cart Mandate registration before setting the mirror to `ACTIVE`.
+The runtime verifies the `MissionCreated` event and the committed `x402OfferHash` before setting the mirror to `ACTIVE`.
 
 ## `GET /api/missions`
 Auth: user session.
@@ -1221,7 +1243,7 @@ Purpose: list owned missions.
 
 ## `GET /api/missions/:id`
 Auth: owner or public audit mode.
-Purpose: mission detail, contract state, policy, Cart Mandate status.
+Purpose: mission detail, contract state, policy, x402 offer status.
 
 ## `PATCH /api/missions/:id`
 Auth: owner session + owner EIP-712 signature.
@@ -1276,14 +1298,14 @@ Headers:
 
 ## `POST /api/missions/:id/actions`
 Auth: registered current agent EIP-712 signature.
-Purpose: preflight policy evaluation and construct the unsigned HSP Payment Mandate. Does NOT submit to HSP and does NOT move funds.
+Purpose: preflight policy evaluation and construct the unsigned EIP-3009 `transferWithAuthorization` typed data. Does NOT submit to the facilitator and does NOT move funds.
 Request:
 ```json
 {
   "requestId": "<client-generated UUID>",
   "idempotencyKey": "...",
   "agentNonce": 14,
-  "actionType": "HSP_PAYMENT",
+  "actionType": "X402_PAYMENT",
   "payload": {
     "merchantAddress": "0x...",
     "tokenAddress": "0x...",
@@ -1300,9 +1322,10 @@ Response (ALLOW):
 {
   "decision": "ALLOW",
   "requestId": "<uuid>",
-  "paymentMandate": {},
-  "mandateHash": "0x...",
-  "typedData": { "domain": {}, "types": {}, "primaryType": "...", "message": {} },
+  "x402Payment": { "network": "eip155:4663", "asset": "0x...", "payTo": "0x...", "valueAtomic": "..." },
+  "authorizationHash": "0x...",
+  "authorizationNonce": "0x...",
+  "eip3009TypedData": { "domain": {}, "types": {}, "primaryType": "TransferWithAuthorization", "message": {} },
   "expiresAt": "..."
 }
 ```
@@ -1319,11 +1342,11 @@ Errors: `DUPLICATE_REQUEST`, `INVALID_BODY`, `AGENT_NOT_CURRENT`, `MISSION_NOT_A
 
 ## `POST /api/missions/:id/actions/:requestId/submit`
 Auth: registered current agent EIP-712 signature.
-Purpose: verify the signed mandate, record on-chain authorization, submit it to HSP, wait for settlement, and mirror the result.
+Purpose: verify the agent request and owner EIP-3009 signature, record on-chain authorization, submit the x402 payload to the facilitator, verify settlement, and mirror the result.
 Request:
 ```json
 {
-  "mandateHash": "0x...",
+  "authorizationHash": "0x...",
   "signature": "0x..."
 }
 ```
@@ -1333,7 +1356,7 @@ Response (CONFIRMED):
   "decision": "ALLOW",
   "requestId": "<uuid>",
   "authorizationTxHash": "0x...",
-  "hspPaymentMandateId": "...",
+  "x402PaymentId": "...",
   "transactionHash": "0x...",
   "blockNumber": 123,
   "status": "CONFIRMED"
@@ -1349,19 +1372,20 @@ Response (FAILED):
   "error": { "code": "...", "message": "..." }
 }
 ```
-Errors: `MANDATE_MISMATCH`, `INVALID_SIGNATURE`, `ALREADY_SUBMITTED`, `REQUEST_EXPIRED`, `HSP_REJECTION`, `HSP_UNAVAILABLE`.
+Errors: `AUTHORIZATION_MISMATCH`, `INVALID_SIGNATURE`, `ALREADY_SUBMITTED`, `REQUEST_EXPIRED`, `X402_REJECTION`, `X402_UNAVAILABLE`.
 
 The runtime verifies:
-1. the EIP-712 signature recovers the registered agent address;
-2. the signed mandate hash equals the preflighted mandate hash;
-3. the request has not expired and its nonce/idempotency key is unused;
-4. `SuccraMission.authorizePayment` confirms before any HSP submission;
-5. HSP and the resulting HashKey settlement are authoritative.
+1. the agent's EIP-712 `SuccraRequest` recovers the registered agent address;
+2. the owner EIP-3009 signature recovers the token holder and matches the signed authorization hash;
+3. the signed authorization hash, nonce, asset, payee, amount, and validity window equal the preflighted values;
+4. the request has not expired and its nonce/idempotency key is unused;
+5. `SuccraMission.authorizePayment` confirms before facilitator submission;
+6. the facilitator settlement and the matching Robinhood Transfer log are authoritative.
 
 ## `POST /api/missions/:id/quarantine`
 Auth: runtime guardian credential OR owner.
 Purpose: request quarantine.
-Business rule: guardian can only quarantine; cannot spend or create a Payment Mandate.
+Business rule: guardian can only quarantine; cannot spend or create an x402 payment authorization.
 
 ## `POST /api/missions/:id/succession`
 Auth: runtime guardian or owner fallback.
@@ -1382,7 +1406,7 @@ Purpose: audit timeline.
 
 ## `POST /api/missions/:id/cancel`
 Auth: owner wallet signature.
-Purpose: cancel the mission and revoke the HSP Cart Mandate. Funds remain in the owner's wallet.
+Purpose: cancel the mission and stop future x402 payments. Already-signed EIP-3009 authorizations may settle until `validBefore`. Funds remain in the owner's wallet.
 
 ## `GET /api/agents/:id/status`
 Auth: owner or mission-scoped agent.
@@ -1411,7 +1435,7 @@ Required for:
 - quarantine;
 - succession;
 - checkpoint commit;
-- HSP webhook processing.
+- x402 settlement receipt processing.
 
 ### Canonical checkpoint serialization
 The checkpoint preimage is:
@@ -1422,7 +1446,7 @@ keccak256(abi.encode(
   sequence,
   keccak256(confirmedPaymentIds),
   keccak256(confirmedTransactionHashes),
-  keccak256(hspMandateIds),
+  keccak256(authorizationNonces),
   remainingBudgetAtomic,
   maxPaymentAtCheckpoint,
   recoveryMaxPaymentAtCheckpoint,
@@ -1442,8 +1466,8 @@ Field order is fixed. `checkpoint_hash` is the hex-encoded keccak256 over those 
 1. validate the owner and policy;
 2. insert the mission draft and policy version 1;
 3. insert agent assignments;
-4. return the unsigned `MissionFactory` create call and Cart Mandate typed data;
-5. after the `MissionCreated` event confirms the committed Cart Mandate hash, verify HSP mandate registration, then atomically update the mission to `ACTIVE` and create an audit event.
+4. return the unsigned `MissionFactory` create call and the committed x402 offer policy hash;
+5. after the `MissionCreated` event confirms the committed x402 offer hash, atomically update the mission to `ACTIVE` and create an audit event. There is no external x402 offer registration step.
 
 ## Preflight
 Database transaction:
@@ -1451,20 +1475,20 @@ Database transaction:
 2. lock/read the mission mirror and contract state;
 3. evaluate policy;
 4. update the violation streak only when the decision is `BLOCK`;
-5. record the decision and mandate hash;
-6. return the unsigned Payment Mandate. Do not submit to HSP.
+5. record the decision and authorization hash;
+6. return the unsigned EIP-3009 authorization typed data. Do not submit to the facilitator.
 
 ## Submit
-1. verify the EIP-712 signature and mandate hash;
+1. verify the agent's EIP-712 request and the owner's EIP-3009 signature, authorization hash, and nonce;
 2. lock the approved request with a compare-and-set;
 3. call `SuccraMission.authorizePayment` and wait for confirmation;
 4. mark the request `SUBMITTED` only after authorization confirms;
-5. submit to HSP;
-6. process the signed webhook or poll HashKey RPC;
-7. update `hsp_payments` and the mission mirror only after authoritative confirmation;
+5. submit the x402 payload to the facilitator;
+6. verify the facilitator receipt and the on-chain EIP-3009 Transfer log; poll Robinhood RPC when the receipt is delayed;
+7. update `x402_payments` and the mission mirror only after authoritative confirmation;
 8. write the checkpoint and audit event.
 
-Do not hold a database transaction open while waiting for HSP or HashKey confirmation. Use an explicit `SUBMITTED → CONFIRMED/FAILED` transition.
+Do not hold a database transaction open while waiting for x402 or Robinhood confirmation. Use an explicit `SUBMITTED → CONFIRMED/FAILED` transition.
 
 ## Quarantine
 Use compare-and-set semantics:
@@ -1479,13 +1503,13 @@ Use a database lock/transaction on the mission row to prevent two successor jobs
 | Scenario | Handling |
 |---|---|
 | Double action submission | Unique `(mission_id, idempotency_key)` and single-use nonce. |
-| Two payments consume last budget | HSP Cart Mandate allows only the valid payment(s); the contract mirrors confirmed spend and treats rejection as authoritative failure. |
-| Quarantine races with payment | Contract checks status during authorization; a payment authorized immediately before quarantine may still settle if already submitted, so the runtime records the race explicitly. |
+| Two payments consume last budget | `SuccraMission` enforces the cumulative budget and unique on-chain request nonces; the x402 offer constrains each payment; the contract mirrors confirmed spend. |
+| Quarantine races with payment | Contract checks status during authorization. An already-signed EIP-3009 authorization may still settle until `validBefore`; the runtime records the race explicitly and keeps authorization windows short. |
 | Double succession | Contract `state_version` and succession nonce allow only one transition. |
 | Stale successor activation | Contract rejects activation if status/current agent/version does not match expected values. |
-| Duplicate HSP webhook | Unique `event_id`; second delivery is a no-op. |
-| Webhook arrives before RPC receipt | Store pending, poll HashKey, then confirm; never confirm from the webhook alone. |
-| HSP rejects after wallet signature | Record `FAILED`; do not retry with a different mandate silently. |
+| Duplicate x402 settlement receipt | Unique transaction hash plus authorization nonce; second delivery is a no-op. |
+| Facilitator receipt arrives before RPC receipt | Store pending, poll Robinhood, then confirm only against the EIP-3009 Transfer log. |
+| x402 rejects after owner signature | Record `FAILED`; do not retry with a different authorization silently. |
 
 ---
 
@@ -1515,6 +1539,9 @@ Headers:
 - `x-succra-signature`
 
 `{nonce}` is the request-level replay-protection value, stored single-use in `agent_request_nonces`. It never advances on-chain state. `agentNonce` in the action request body is a distinct value passed to the contract's monotonic counter. The two values MUST NOT be the same variable.
+
+## Settlement authorization
+Settlement uses EIP-3009 `TransferWithAuthorization` typed data signed by the owner/token holder. The agent's `SuccraRequest` authenticates the request but never authorizes a token transfer. Succra verifies both signatures and records the authorization hash on-chain before facilitator submission.
 
 ## Resource authorization
 Every API request performs both:
@@ -1547,7 +1574,8 @@ Owner can:
 - update future policy subject to contract rules and state version;
 - add successors before activation;
 - cancel;
-- revoke the HSP Cart Mandate;
+- stop future x402 payments;
+- sign EIP-3009 payment authorizations while the mission is executable;
 - use the pre-approved successor fallback when the guardian is unavailable.
 
 Owner does not have a hidden API shortcut; owner authority is backed by wallet signatures and on-chain checks.
@@ -1564,16 +1592,16 @@ Assume:
 - runtime can be buggy or temporarily unavailable;
 - attacker can replay signed requests;
 - attacker can modify API inputs;
-- webhook deliveries can duplicate or arrive out of order;
+- facilitator receipts can duplicate or arrive out of order;
 - user can be phished into signing malicious typed data;
 - LLM output can be manipulated;
 - clients can attempt cross-user resource access;
-- HSP or HashKey RPC can be unavailable or return inconsistent results.
+- x402 or Robinhood RPC can be unavailable or return inconsistent results.
 
 ## Security controls
 
 ### Authority isolation
-Agents never hold owner funds. Funds remain in the owner's wallet constrained by the HSP Cart Mandate. `SuccraMission` controls mission authority, not custody.
+Agents never hold owner funds or token signing keys. Funds remain in the owner's wallet constrained by the mission's x402 offer policy; the owner signs each EIP-3009 authorization. `SuccraMission` controls mission authority, not custody.
 
 ### Least privilege
 Successors start with lower recovery limits. Merchant and token allowlists are explicit. Guardian powers are limited to quarantine, activation, acknowledgement, and checkpoint commitment.
@@ -1581,14 +1609,14 @@ Successors start with lower recovery limits. Merchant and token allowlists are e
 ### Replay protection
 Signed requests include timestamp + single-use nonce + unique idempotency key. EIP-712 typed data binds the mission, request ID, method, and body hash.
 
-### Mandate binding
-The signed HSP Payment Mandate hash must equal the preflighted mandate hash, and the signed mandate fields must match the authorization fields. A mismatch is rejected before on-chain authorization or HSP submission.
+### Authorization binding
+The signed EIP-3009 `TransferWithAuthorization` hash must equal the preflighted authorization hash, and the signed from/to/value/validity/nonce fields must match the preflighted values. A mismatch is rejected before on-chain authorization or facilitator submission.
 
 ### On-chain enforcement
-The backend cannot override `SuccraMission` policy. `authorizePayment` checks status, current agent, per-payment ceiling, merchant/token allowlist, expiry, recovery ceiling, state version, and the agent's EIP-712 signature before the runtime may submit to HSP.
+The backend cannot override `SuccraMission` policy. `authorizePayment` checks status, current agent, per-payment ceiling, merchant/token allowlist, expiry, recovery ceiling, state version, and the agent's EIP-712 signature before the runtime may submit to the facilitator. The owner's EIP-3009 signature is verified against the same authorization hash and nonce.
 
-### HSP enforcement
-HSP enforces the Cart Mandate envelope at settlement. A payment outside the envelope is rejected even if the Succra mirror is stale.
+### x402 enforcement
+The facilitator enforces the EIP-3009 signature, nonce, asset, recipient, amount, and validity window at settlement. It does not enforce the cumulative mission budget or the merchant allowlist; `SuccraMission` does. A payment outside the selected x402 offer is rejected even if the Succra mirror is stale.
 
 ### IDOR protection
 Every resource lookup is ownership-scoped; never load a resource solely by UUID before authorization. Database RLS reinforces this.
@@ -1608,30 +1636,30 @@ Mutating browser operations require an authenticated session plus wallet-signatu
 ### SSRF
 Agent endpoint URLs are not fetched arbitrarily by the browser. Server-side endpoint fetching must use HTTPS, restrict private-network destinations, enforce timeouts, and cap redirects.
 
-### Webhooks
-HSP webhook HMAC-SHA256 signatures must be verified before any state change. Duplicates are expected and processed idempotently by event ID. A webhook alone never confirms settlement; HashKey state is checked.
+### Settlement receipts
+An x402 facilitator receipt must be matched to the on-chain EIP-3009 Transfer log (from, to, value, nonce, asset) before any state change. Duplicates are expected and deduplicated by transaction hash plus authorization nonce. A receipt alone never confirms settlement; Robinhood state is checked.
 
 ### Prompt injection
 AI successor recommendation receives structured mission metadata only. It MUST NOT receive arbitrary agent-originated instructions as trusted system instructions.
 
 ### AI authority boundary
-LLM can recommend or explain; only deterministic policy, `SuccraMission`, and HSP can authorize or settle money movement.
+LLM can recommend or explain; only deterministic policy, `SuccraMission`, the owner's EIP-3009 authorization, and the x402 facilitator can authorize or settle money movement.
 
 ### Secrets
 Store:
 - Supabase service key;
-- HSP API secret, HMAC secret, and webhook secret;
+- x402 facilitator credentials, if configured;
 - guardian private key;
 - OpenAI key
 only in server/runtime secret stores. Never in browser variables unless explicitly public.
 
 ### Race conditions
-Contract `state_version`, database row locks/compare-and-set, unique mandate hashes, and single-use nonces prevent duplicate succession, duplicate payments, and inconsistent status.
+Contract `state_version`, database row locks/compare-and-set, unique authorization hashes, and single-use nonces prevent duplicate succession, duplicate payments, and inconsistent status.
 
 ### Financial abuse
 Hard caps:
 - per-payment limit;
-- total Cart Mandate budget;
+- total mission budget;
 - merchant allowlist;
 - token allowlist;
 - expiry;
@@ -1642,7 +1670,9 @@ Hard caps:
 No admin funds access. No operator can withdraw, change the owner, or bypass policy.
 
 ### Emergency stop
-Owner can cancel directly through the contract when allowed. The guardian can quarantine. Neither can move funds.
+Owner can cancel directly through the contract when allowed. The guardian can quarantine. Neither can move funds. Cancellation cannot revoke an already-signed EIP-3009 authorization; short `validBefore` windows bound that exposure.
+
+---
 
 ---
 
@@ -1722,7 +1752,7 @@ Two-column layout:
 - event timeline;
 - selected decision receipt.
 
-Every receipt has `View on Blockscout` when a HashKey transaction hash exists, plus the HSP payment mandate ID.
+Every receipt has `View on Blockscout` at `https://robinhoodchain.blockscout.com` when a Robinhood transaction hash exists, plus the x402 payment ID / EIP-3009 authorization nonce.
 
 ## Screen 8 — Settings `/settings`
 - connected wallet;
@@ -1809,23 +1839,26 @@ Purpose: auth + Postgres + RLS.
 Credentials: public URL/key in browser where permitted; service role server-only.
 Failure: UI degrades to retry state; on-chain authority and funds remain safe.
 
-## HSP
-Purpose: payment execution and settlement, including A2A payment flows. HSP accepts owner-signed Cart Mandates and agent-signed Payment Mandates, authenticates Succra with HMAC-SHA256 request signing and ES256K JWT, and sends signed settlement webhooks.
-Credentials: `HSP_API_BASE_URL`, `HSP_MERCHANT_ID`, `HSP_API_SECRET`, `HSP_HMAC_SECRET`, `HSP_WEBHOOK_SECRET`; all server-only.
-Failure: retry with backoff, fall back to HashKey RPC polling for settlement status, and never confirm a payment without an authoritative chain result. HSP webhook duplicate delivery is expected; use event/payment IDs for idempotency.
+## x402 facilitator
+Purpose: verify and settle x402 payments, including A2A API payments. A resource server returns HTTP 402 with `accepts[]` offers; Succra constructs an EIP-3009 `transferWithAuthorization` payload and the facilitator verifies the signature/nonce/network/asset before settling USDG or an allowlisted ERC-20 on Robinhood Chain. Self-hostable facilitators include `@402lane/facilitator`, `hood402`, and `rhx402`.
+Credentials: `X402_FACILITATOR_URL`, `X402_NETWORK`, `X402_ASSET_ADDRESS` (optional overrides); any facilitator-specific key is server-only. No shared-secret HMAC/JWT flow is part of x402.
+Failure: retry with backoff, poll the facilitator and Robinhood RPC, and never confirm a payment without a matching on-chain EIP-3009 Transfer log. Duplicate or out-of-order receipts are expected; deduplicate by transaction hash plus authorization nonce.
 
-## HashKey Chain RPC
+## Robinhood Chain RPC
 Purpose: contract reads/writes and settlement confirmation.
-Networks: mainnet chain ID 177 (`https://mainnet.hsk.xyz`); testnet chain ID 133.
+Networks: mainnet chain ID 4663 (`https://rpc.mainnet.chain.robinhood.com`); testnet chain ID 46630 (RPC supplied by deployment configuration; no default is assumed).
 Failure: retry with backoff; do not treat an RPC timeout as a successful settlement.
 
 ## Blockscout
-Purpose: public contract and transaction verification.
+Purpose: public contract and transaction verification at `https://robinhoodchain.blockscout.com`.
 Failure: UI shows the transaction hash even when the explorer link is temporarily unavailable.
 
 ## EVM wallets
 Purpose: wallet connection and EIP-712 signing.
 MVP target: MetaMask, OKX, TokenPocket, ImToken, and other wagmi/viem-compatible wallets through WalletConnect.
+
+## ERC-8004 (optional)
+Purpose: optional agent identity metadata for cross-application agent discovery. It is not authoritative for mission authority or payments.
 
 ## OpenAI
 Purpose: optional successor recommendation/explanation.
@@ -1891,49 +1924,60 @@ The agent receives a verified checkpoint, policy, and explicit instruction to re
 Succra uses a **non-custodial authority model (Model B)**. Funds remain in the owner's wallet. Succra never holds, receives, or transfers mission funds.
 
 ## Supported value types
-- native HSK;
-- one allowlisted ERC-20 settlement token per mission.
+- USDG at `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` by default;
+- one allowlisted ERC-20 per mission (USDG or an explicitly allowlisted token);
+- native ETH is gas only and is not a mission payment asset in MVP.
 
 ## Custody model
-The owner retains custody at all times. The HSP Cart Mandate constrains the mission budget envelope; SuccraMission constrains which agent may request a payment and what policy applies.
+The owner retains custody at all times and is the token holder whose EIP-3009 signature authorizes each transfer. Agents never hold mission funds or token signing keys. `SuccraMission` constrains which agent may request a payment and what limits apply; the x402 facilitator verifies and settles the signed authorization.
 
-## HSP Cart Mandate
-The owner signs an HSP Multi-Pay Cart Mandate authorizing:
-- total budget;
-- per-payment limit;
-- merchant allowlist;
-- token address;
-- expiry;
-- mission reference.
+## x402 accepts[] offer
+A resource server returns HTTP 402 with `accepts[]` offers. Each offer constrains the network, asset, `payTo`, amount, scheme, resource, and timeout for one payment. Succra selects only an offer that matches the mission policy and stores the approved x402 offer policy/hash on the mission.
 
-Succra stores the Cart Mandate ID/hash and uses it as the budget envelope. HSP is authoritative for whether a settlement fits the mandate.
+The x402 offer is a per-payment constraint, not an aggregate budget. `SuccraMission` enforces the per-payment ceiling and the cumulative mission budget.
 
-## HSP Payment Mandate
-For each payment, the Payment Agent constructs an HSP Payment Mandate inside the Cart Mandate envelope. Succra preflights the mandate against SuccraMission policy and the mission mirror, returns it unsigned with EIP-712 typed data, the agent signs it, Succra records on-chain authorization in SuccraMission, and Succra submits it to the HSP Gateway.
+## EIP-3009 transferWithAuthorization
+For each allowed payment, Succra builds EIP-3009 typed data:
+
+```text
+TransferWithAuthorization(
+  address from,
+  address to,
+  uint256 value,
+  uint256 validAfter,
+  uint256 validBefore,
+  bytes32 nonce
+)
+```
+
+The owner wallet signs this authorization. The agent's `SuccraRequest` authenticates the payment request, but it cannot move funds. Succra verifies the EIP-3009 signature, authorization hash, nonce, value, recipient, asset, and validity window before recording on-chain authorization in `SuccraMission` and submitting the x402 payload to the facilitator.
 
 ## Execution
-1. Agent requests a payment.
-2. Succra preflights policy and the Cart Mandate envelope.
-3. Succra returns the unsigned Payment Mandate and EIP-712 typed data.
-4. Agent signs the mandate.
-5. Succra verifies the signature and mandate hash.
-6. Succra records on-chain payment authorization in SuccraMission.
-7. Succra submits to HSP Gateway.
-8. HSP executes settlement on HashKey Chain.
-9. Succra verifies the webhook or polls the chain.
+1. Agent requests a payment with an EIP-712 `SuccraRequest`.
+2. Succra preflights policy and selects a matching x402 `accepts[]` offer.
+3. Succra returns unsigned EIP-3009 typed data.
+4. The owner wallet signs the EIP-3009 authorization.
+5. Succra verifies the signature, authorization hash, nonce, asset, recipient, amount, and expiry.
+6. Succra records on-chain payment authorization in `SuccraMission`.
+7. Succra submits the signed payload to the x402 facilitator.
+8. The facilitator verifies the EIP-3009 signature/nonce and settles USDG or the allowlisted ERC-20 on Robinhood Chain.
+9. Succra verifies the facilitator receipt and the on-chain Transfer log.
 10. Succra mirrors the confirmed settlement and writes a checkpoint.
 
 ## Remaining budget
-The Cart Mandate is authoritative for the aggregate budget envelope. SuccraMission records the policy limits and the confirmed/mirrored spend used for checkpoints and per-payment enforcement. The runtime reconciles confirmed HSP settlements against the mirror; a discrepancy is treated as an incident, not as permission to spend.
+`SuccraMission` is authoritative for the cumulative budget and per-payment limits. The x402 facilitator is authoritative for settlement of the signed EIP-3009 authorization. The database mirror is never permission to spend. A stale mirror can block a valid payment conservatively; it must never permit an invalid one.
 
 ## Recovery limit
 Successor receives a smaller `recovery_max_payment`, enforced on-chain by mission state.
 
 ## Refund/cancel
-Owner can cancel and revoke the Cart Mandate according to terminal-state rules. Funds remain in the owner's wallet; there is no vault refund.
+x402 has no native refund primitive. The owner can cancel the mission and stop creating new x402 payments. An already-signed EIP-3009 authorization may still settle until `validBefore`, so authorization validity must be short. Funds remain in the owner's wallet; there is no vault refund.
 
 ## Reconciliation
-HashKey settlement and HSP mandate state are authoritative. Supabase is a mirror/index, never the financial source of truth.
+The Robinhood settlement transaction and a matching EIP-3009 Transfer log are authoritative. A facilitator receipt alone is not confirmation. Supabase is a mirror/index, never the financial source of truth.
+
+## Residual trust boundary
+The facilitator does not read `SuccraMission` state. A compromised owner signer or an already-signed authorization can settle within the EIP-3009 validity window even if the mission is quarantined or cancelled. Mitigations are short `validBefore` windows, on-chain authorization before facilitator submission, quarantine/cancel preventing new authorizations, and reconciliation alerts. Facilitator-side mission proofs or smart-account scoping are future hardening, not MVP claims.
 
 ## Fees
 No Succra protocol fee in MVP. Future fee model may be introduced after the continuity primitive is validated.
@@ -1950,8 +1994,8 @@ No general admin dashboard in MVP.
 Internal operational controls:
 - runtime health endpoint;
 - guardian signer health;
-- SuccraMission/MissionFactory/GuardianRegistry addresses and HashKey network;
-- HSP webhook health;
+- SuccraMission/MissionFactory/GuardianRegistry addresses and Robinhood network;
+- x402 settlement receipt health;
 - failed job counter;
 - recent succession events.
 
@@ -1977,26 +2021,26 @@ Emergency operational action is limited to:
 | Wrong current agent | 403 |
 | Merchant not allowed | BLOCKED |
 | Amount too large | BLOCKED |
-| Budget envelope exhausted | BLOCKED |
+| Budget exhausted | BLOCKED |
 | Mission quarantined | BLOCKED |
-| HSP submission fails | action FAILED, no false success |
-| HashKey settlement reverts | action FAILED, no false success |
-| HSP webhook duplicated | ignored after idempotency check |
-| HSP webhook signature invalid | rejected, no state change |
-| HSP unavailable | fallback to HashKey RPC polling; no confirmation without chain |
-| Mandate hash mismatch | rejected before HSP submission |
-| Direct ERC-20 bypass attempt | rejected; payments only via HSP |
+| x402 submission fails | action FAILED, no false success |
+| Robinhood settlement reverts | action FAILED, no false success |
+| x402 settlement receipt duplicated | ignored after idempotency check |
+| x402 receipt does not match the on-chain Transfer log | rejected, no state change |
+| x402 facilitator unavailable | fallback to Robinhood RPC polling; no confirmation without chain |
+| Authorization hash mismatch | rejected before x402 submission |
+| Direct ERC-20 bypass attempt | rejected; payments only via x402 |
 | Succession triggered twice | only one succeeds |
 | No eligible successor | HALTED + owner notification |
 | Successor unavailable during activation | succession remains pending/failed safely |
 | Agent endpoint unreachable | no authority expansion; may trigger liveness rule if enabled |
-| DB unavailable while chain/HSP action exists | reconcile from chain/HSP later |
+| DB unavailable while chain/x402 action exists | reconcile from chain/x402 later |
 | Runtime crashes after submit | settlement reconciliation recovers status |
 | AI unavailable | deterministic successor selection |
 | AI recommends ineligible agent | ignored |
 | User changes wallet account | session re-authentication required |
 | Mission expiry during request | contract state decides; expired request rejected |
-| Two payments spend remaining budget | HSP Cart Mandate allows only the valid payment(s); the contract mirrors confirmed spend |
+| Two payments spend remaining budget | SuccraMission budget enforcement and unique EIP-3009 nonces allow only the valid payment(s); the contract mirrors confirmed spend |
 
 ---
 
@@ -2010,14 +2054,15 @@ Must cover:
 - checkpoint hashing;
 - canonical request signing/verification;
 - state transition guards;
-- authority limit calculation.
+- authority limit calculation;
+- EIP-3009 authorization hash, nonce, recipient, asset, and validity binding.
 
 ## Solidity contract tests
 Must cover:
 - create mission;
-- activate Cart Mandate policy;
-- authorized HSP payment;
-- blocked HSP payment;
+- commit x402 offer policy;
+- authorized x402 payment;
+- blocked x402 payment;
 - budget envelope exhaustion;
 - quarantine;
 - successor activation;
@@ -2027,7 +2072,7 @@ Must cover:
 - unauthorized guardian attempt;
 - unauthorized agent attempt;
 - direct ERC-20 bypass rejection;
-- mandate hash mismatch.
+- authorization hash mismatch.
 
 Solidity contract tests must run before moving checkpoints.
 
@@ -2035,17 +2080,17 @@ Solidity contract tests must run before moving checkpoints.
 - Supabase auth + RLS;
 - agent registration;
 - EIP-712 payment submission;
-- HSP mock flow;
+- x402 mock facilitator flow;
 - settlement confirmation mirror;
-- webhook idempotency and signature verification.
+- x402 receipt verification, on-chain Transfer-log matching, and deduplication.
 
 ## E2E tests
 Required golden path:
 ```text
 Create mission
-→ sign HSP Cart Mandate
+→ approve x402 offer policy and sign EIP-3009 authorizations
 → register Alpha
-→ execute valid HSP payment
+→ execute valid x402 payment
 → 3 blocked actions
 → quarantine
 → activate Beta
@@ -2061,10 +2106,10 @@ Create mission
 - owner/agent role confusion;
 - unauthorized merchant;
 - policy race;
-- HSP/chain rejection spoofing;
-- mandate hash mismatch;
+- x402/chain rejection spoofing;
+- authorization hash mismatch;
 - direct ERC-20 bypass;
-- webhook replay and signature forgery;
+- x402 receipt replay/forgery and EIP-3009 nonce replay;
 - prompt injection into successor recommender.
 
 ## Acceptance definition
@@ -2076,6 +2121,8 @@ A feature is complete only when:
 5. checkpoint commit created.
 
 This follows the workflow rule that implementation must be followed by test, inspection, fixes, and commit rather than trusting an agent's claim that something works. fileciteturn0file0L305-L369
+
+---
 
 ---
 
@@ -2111,13 +2158,13 @@ succra/
 │       │   ├── agents/
 │       │   ├── succession/
 │       │   ├── checkpoints/
-│       │   ├── hsp/
+│       │   ├── x402/
 │       │   └── monitor/
 │       └── tests/
 ├── packages/
 │   ├── sdk/
 │   ├── shared/
-│   └── hsp-client/
+│   └── x402-client/
 ├── supabase/
 │   ├── migrations/
 │   └── seed/
@@ -2131,7 +2178,7 @@ succra/
     └── runbooks/
 ```
 
-Directory rule: product UI stays in `apps/web`; persistent orchestration in `apps/runtime`; on-chain authority in `contracts/`; HSP integration and shared contracts/types in `packages/`.
+Directory rule: product UI stays in `apps/web`; persistent orchestration in `apps/runtime`; on-chain authority in `contracts/`; x402 integration and shared contracts/types in `packages/`.
 
 ---
 
@@ -2140,18 +2187,18 @@ Directory rule: product UI stays in `apps/web`; persistent orchestration in `app
 ## Web/server
 ```text
 NEXT_PUBLIC_APP_URL=
-NEXT_PUBLIC_HASHKEY_CHAIN_ID=177
-NEXT_PUBLIC_HASHKEY_RPC_URL=https://mainnet.hsk.xyz
+NEXT_PUBLIC_ROBINHOOD_CHAIN_ID=4663
+NEXT_PUBLIC_ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com
+NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL=
+NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL=https://robinhoodchain.blockscout.com
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 SUCCRA_MISSION_FACTORY_ADDRESS=
 SUCCRA_GUARDIAN_ADDRESS=
-HSP_API_BASE_URL=
-HSP_MERCHANT_ID=
-HSP_API_SECRET=
-HSP_HMAC_SECRET=
-HSP_WEBHOOK_SECRET=
+X402_FACILITATOR_URL=
+X402_NETWORK=eip155:4663
+X402_ASSET_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
 OPENAI_API_KEY=
 OPENAI_MODEL=
 ```
@@ -2163,12 +2210,12 @@ SUPABASE_SERVICE_ROLE_KEY=
 SUCCRA_RPC_URL=
 SUCCRA_MISSION_FACTORY_ADDRESS=
 SUCCRA_GUARDIAN_ADDRESS=
-SUCCRA_GUARDIAN_SECRET_KEY=
-HSP_API_BASE_URL=
-HSP_MERCHANT_ID=
-HSP_API_SECRET=
-HSP_HMAC_SECRET=
-HSP_WEBHOOK_SECRET=
+ROBINHOOD_GUARDIAN_SECRET_KEY=
+ROBINHOOD_GUARDIAN_CREDENTIAL=
+SUCCRA_RUNTIME_SIGNER_SECRET_KEY=
+X402_FACILITATOR_URL=
+X402_NETWORK=eip155:4663
+X402_ASSET_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
 OPENAI_API_KEY=
 OPENAI_MODEL=
 ```
@@ -2177,13 +2224,17 @@ Rules:
 - `NEXT_PUBLIC_*` must never contain secrets;
 - guardian secret is runtime-only;
 - Supabase service role is server-only;
-- HSP API, HMAC, and webhook secrets are server-only;
+- x402 facilitator URL and any facilitator credentials are server-only;
 - agent private keys live with agents and never in Succra;
 - `.env*` excluded from git except `.env.example`.
 
 ---
 
+---
+
 # 24. PHASED IMPLEMENTATION PLAN
+
+> **Historical note:** Phases 0–6 below were executed against HashKey Chain / HSP and are archived at tag `hashkey-v1`. They are retained as history. The active plan is Phase R0–R4 for Robinhood Chain / x402.
 
 ## Phase 0 — Repository pivot
 Objective: preserve the prior chain implementation, remove it from the mainline, and establish the EVM/HSP workspace without implementing product behavior.
@@ -2213,8 +2264,10 @@ Tasks:
 - implement `SuccraMission.sol` with `MissionConfig`, `AuthorityState`, `Successor`, `MissionStatus`, and `Checkpoint` types;
 - implement `MissionFactory.sol` to deploy one mission contract per mission and index missions by owner;
 - implement `GuardianRegistry.sol` with a global guardian address rotatable by the registry owner;
-- implement mission creation, policy validation, owner/guardian access control, and status transitions for `DRAFT`, `ACTIVE`, `CANCELLED`, and `EXPIRED`;
-- emit `MissionCreated`, `MissionStatusChanged`, `PolicyUpdated`, `AgentAuthorized`, `AgentRevoked`, and `GuardianRotated` events;
+- implement mission creation, policy validation, owner/guardian access control, and status transitions for `ACTIVE`, `CANCELLED`, and `EXPIRED` (DRAFT is a reserved off-chain mirror state only; policies are immutable at creation);
+- implement `authorizePayment` in `SuccraMission` (agent-signed, policy-enforcing, records `PaymentAuthorization`, advances `agentNonce`; does not move funds);
+- `authorizePayment` advances both `agentNonce` and `stateVersion`; only one payment per mission can be in-flight.
+- emit `MissionCreated`, `MissionStatusChanged`, `PolicyUpdated`, `AgentAuthorized`, `AgentRevoked`, `MissionCancelled`, and `GuardianRotated` events;
 - add `state_version` to every state-changing path;
 - add contract unit tests for creation, validation, authorization, and state transitions.
 
@@ -2333,73 +2386,101 @@ Acceptance:
 - the recovery ceiling is enforced on-chain;
 - all checkpoint and succession tests pass.
 
-## Phase 7 — Audit and polished UX
-Objective: make the full mission lifecycle understandable without developer terminology.
+## Current plan — Robinhood Chain / x402
+
+Phase 7c UI work is complete on branch `phase-7-ux` at `cc0f90b` and is rail-agnostic. It may be merged or carried into `robinhood-pivot` after R0; it is not part of the R0–R4 implementation sequence below. No further Phase 7c work is authorized.
+
+## Phase R0 — Archive HashKey, authorize Robinhood / x402
+
+Objective: preserve the HashKey implementation and amend the source-of-truth docs before any code changes.
 
 Tasks:
-- build the mission timeline from `audit_events` (read-only);
-- build the decision receipt with policy hash, request hash, decision, violation count, checkpoint hash, succession record, HashKey transaction hash, and HSP mandate ID;
-- add Blockscout proof links;
-- build succession visualization;
-- add error, empty, loading, and retry states;
-- verify responsive behavior and accessibility.
+- create and push annotated tag `hashkey-v1` at the most complete HashKey-era commit (`phase-7-ux` @ `cc0f90b`, which includes 7a, 7b, and 7c);
+- branch `robinhood-pivot` from the same commit;
+- amend `PROJECT_SPEC.md`, `ARCHITECTURE.md`, `IMPLEMENTATION_PLAN.md`, `AGENTS.md`, `AI_HANDOFF.md`, and `SUCCRA_BLUEPRINT.md` for Robinhood Chain / x402;
+- keep contracts, HSP code, env files, and Hardhat config untouched;
+- commit docs only and push the branch.
 
 Acceptance:
-- the full lifecycle can be understood from the UI;
-- every receipt links to the correct HashKey proof and HSP mandate;
-- no screen writes audit rows;
-- accessibility and responsive checks pass.
+- `hashkey-v1` exists locally and on the remote;
+- `robinhood-pivot` starts at the archived commit;
+- only the six source-of-truth docs changed;
+- no code, contracts, env files, or Hardhat config changed;
+- docs-only commit pushed and reported.
 
-## Phase 8 — AI advisory layer
-Objective: add optional successor explanation without granting authority.
+## Phase R1 — x402 client and chain swap
+
+Objective: replace the HSP payment rail with x402 while preserving the three-contract authority model, policy engine, violation streak, quarantine, succession, checkpoints, recovery authority, audit events, and UI.
 
 Tasks:
-- implement structured candidate explanation;
-- enforce deterministic eligibility before any AI call;
-- cap input to structured mission and candidate metadata;
-- add timeout, fallback, and caching;
-- test prompt injection and ineligible-candidate recommendations.
+- add `packages/x402-client` for HTTP 402 `accepts[]` parsing, EIP-3009 `TransferWithAuthorization` typed data, facilitator verify/settle/receipt handling, and a mock facilitator;
+- switch chain config to Robinhood mainnet 4663 and testnet 46630, RPC `https://rpc.mainnet.chain.robinhood.com`, explorer `https://robinhoodchain.blockscout.com`, and USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`;
+- rename `HASHKEY_*` to `ROBINHOOD_*` and `HSP_*` to `X402_*` in `.env.example`, runtime config, and deployment config;
+- preserve the three-contract topology and policy semantics; adapt identifiers/ABI/field names only as required by the x402 authorization model;
+- rewrite preflight to select an x402 offer and return EIP-3009 typed data for the owner/token holder;
+- rewrite submit to verify the agent `SuccraRequest` and owner EIP-3009 signature, record on-chain authorization, submit to the facilitator, and verify the receipt against the Robinhood Transfer log;
+- replace HSP persistence and webhook handling with x402 payment/receipt persistence and facilitator polling fallback;
+- update UI copy, decision receipts, timeline event formatting, and proof links for x402 payment IDs / authorization nonces and Robinhood transaction hashes;
+- add unit, integration, contract, and security tests for authorization binding, nonce replay, receipt forgery, facilitator failure, duplicate submission, budget exhaustion, stale state, unauthorized agents, and unauthorized merchants.
 
 Acceptance:
-- AI cannot authorize an ineligible successor;
-- AI failure leaves deterministic selection intact;
-- no secret or raw reasoning is sent to the model;
-- all AI-boundary tests pass.
+- no HSP code path is required for the golden path;
+- the owner wallet signs EIP-3009 authorizations; agents never hold funds;
+- `SuccraMission` remains authoritative for policy and cumulative budget;
+- the facilitator settles only after on-chain authorization;
+- settlement is confirmed only from the Robinhood Transfer log;
+- all relevant tests pass.
 
-## Phase 9 — E2E and security hardening
-Objective: prove the golden path and close security gaps.
+## Phase R2 — Robinhood testnet deployment and live flow
+
+Objective: prove the full lifecycle on Robinhood Chain testnet (46630).
 
 Tasks:
-- run the full golden-path E2E on HashKey testnet with HSP sandbox or mock;
-- add duplicate-submission, budget-exhaustion, quarantine-race, and double-succession tests;
-- add replay, IDOR, malformed-payload, and role-confusion tests;
-- add HSP webhook replay and signature-forgery tests;
-- add direct-ERC-20-bypass and arbitrary-call rejection tests;
-- review secrets, RLS, and deployment configuration;
-- record evidence and residual risks.
+- deploy `GuardianRegistry`, `MissionFactory`, and `SuccraMission` to testnet;
+- verify source on Blockscout;
+- configure the x402 facilitator, USDG/allowlisted asset, and guardian runtime;
+- run create → payment → violations → quarantine → succession → recovery on testnet;
+- record transaction hashes, addresses, and evidence.
 
 Acceptance:
-- the golden path completes end to end;
-- all security tests pass;
-- no unresolved critical or high finding remains;
-- deployment checklist is complete.
+- contracts verified on testnet Blockscout;
+- full lifecycle completes end to end;
+- evidence is recorded;
+- no secret is exposed.
 
-## Phase 10 — Deployment and demo
-Objective: deploy the hackathon demo and record evidence.
+## Phase R3 — Robinhood mainnet deployment and verification
+
+Objective: deploy and verify the hackathon build on Robinhood Chain mainnet (4663).
 
 Tasks:
-- rehearse on HashKey testnet (chain ID 133);
-- complete mainnet readiness review for chain ID 177;
-- fund the deployer wallet and verify contract addresses;
-- configure HSP merchant credentials and webhook endpoint;
-- deploy contracts and verify source on Blockscout;
+- complete mainnet readiness review;
+- fund the deployer wallet;
+- deploy and verify the three contracts on mainnet Blockscout;
+- configure mainnet x402 facilitator and USDG asset;
 - run a small-capital live demo only if explicitly approved;
-- record the demo and publish the public site.
+- publish contract addresses and evidence.
 
 Acceptance:
-- contracts are deployed and verified;
+- contracts deployed and verified on mainnet;
+- x402 configuration is live;
+- demo evidence is recorded;
+- no unresolved critical or high finding remains.
+
+## Phase R4 — Demo smoke test, video, and submission
+
+Objective: produce the World is Flat hackathon submission evidence.
+
+Tasks:
+- run the Playwright demo smoke test against the Robinhood build;
+- record the full lifecycle video;
+- publish the public site and evidence;
+- verify accessibility, responsive behavior, and proof links;
+- submit before 2026-11-12 17:30 UTC.
+
+Acceptance:
 - the demo proves create → payment → violations → quarantine → succession → recovery;
-- all deployment evidence is recorded;
+- the smoke test passes with evidence;
+- video and public links are available;
 - no secret is exposed.
 
 ---
@@ -2417,7 +2498,7 @@ Required source-of-truth rules:
 - new product features require explicit human approval;
 - implementation may not silently broaden supported payment paths;
 - financial policy logic is deterministic;
-- all payments go through HSP.
+- all payments go through x402.
 
 ---
 
@@ -2428,12 +2509,12 @@ The full architecture source of truth is Sections 7–13 and 22–23.
 Architecture invariants:
 1. funds remain in the owner's wallet; Succra does not custody;
 2. SuccraMission controls mission authority and policy;
-3. HSP controls payment execution and settlement;
+3. the x402 facilitator controls payment verification and settlement;
 4. the backend/database is not the source of truth for funds;
 5. guardian cannot spend or change owner/policy/successors;
 6. successor must be pre-approved and starts with a lower recovery ceiling;
 7. AI cannot authorize money movement;
-8. no arbitrary contract calls or direct ERC-20 path in MVP; payments only via HSP.
+8. no arbitrary contract calls or direct ERC-20 path in MVP; payments only via x402.
 
 ---
 
@@ -2470,8 +2551,8 @@ See the dedicated `AI_HANDOFF.md` artifact generated with this blueprint. It con
 ### "Succra modifies agents" vs "Succra controls authority"
 Resolved: Succra never modifies agent code. It controls mission authority.
 
-### "On-chain contract vs HSP settlement"
-Resolved: SuccraMission is authoritative for mission authority and policy; HSP is authoritative for payment execution and settlement. The runtime records on-chain authorization before HSP submission.
+### "On-chain contract vs x402 settlement"
+Resolved: SuccraMission is authoritative for mission authority and policy; the x402 facilitator is authoritative for payment verification and settlement. The runtime records on-chain authorization before facilitator submission.
 
 ### "AI decides successor"
 Resolved: deterministic eligibility is mandatory; AI only recommends/explains.
@@ -2480,7 +2561,7 @@ Resolved: deterministic eligibility is mandatory; AI only recommends/explains.
 Resolved: checkpoint contains only verified facts and hashes; agent reasoning is not authoritative.
 
 ### "Generic payment execution"
-Resolved: MVP supports only HSP Payment Mandate execution of native HSK or allowlisted ERC-20 transfers to allowlisted merchants. Arbitrary contract calls and direct ERC-20 paths are out of scope.
+Resolved: MVP supports only x402 EIP-3009 settlement of USDG or an allowlisted ERC-20 to allowlisted merchants. Native ETH is gas only. Arbitrary contract calls and direct ERC-20 paths are out of scope.
 
 ### "Failure detection"
 Resolved: MVP uses three authenticated policy violations as the automatic safety trigger. Heartbeat/liveness is a SHOULD feature rather than a dependency for the first working lifecycle.
@@ -2489,7 +2570,7 @@ Resolved: MVP uses three authenticated policy violations as the automatic safety
 Resolved: successor starts with a lower recovery ceiling and cannot expand its own authority.
 
 ### "Custody"
-Resolved: Succra never receives the user's wallet seed/private key and never holds funds. Funds remain in the owner's wallet constrained by the HSP Cart Mandate.
+Resolved: Succra never receives the user's wallet seed/private key and never holds funds. Funds remain in the owner's wallet; the owner/token holder signs EIP-3009 authorizations.
 
 ### "Admin override"
 Resolved: there is no admin withdrawal path.
@@ -2516,7 +2597,7 @@ The coding agent MUST NOT decide:
 - token utility requirements.
 
 ## Final readiness conclusion
-The project is sufficiently specified for a coding agent to begin implementation without redesigning the product. The MVP is intentionally narrower than a general autonomous-agent platform: one chain, one purpose-built mission contract per mission, one HSP payment adapter, one deterministic policy engine, one quarantine trigger, pre-approved successors, constrained recovery, verified checkpoints, and a visible audit trail.
+The project is sufficiently specified for a coding agent to begin implementation without redesigning the product. The MVP is intentionally narrower than a general autonomous-agent platform: one chain, one purpose-built mission contract per mission, one x402 payment adapter, one deterministic policy engine, one quarantine trigger, pre-approved successors, constrained recovery, verified checkpoints, and a visible audit trail.
 
 ---
 
@@ -2524,8 +2605,8 @@ The project is sufficiently specified for a coding agent to begin implementation
 
 **Do not implement the whole application.**
 
-The first assigned task is:
+Phase R0 (archive HashKey and amend the docs for Robinhood Chain / x402) is complete. The next assigned task is **R1 — x402 client and chain config swap**, which is not authorized yet.
 
-> **Implement Phase 0 — Repository pivot only, exactly as defined in `IMPLEMENTATION_PLAN.md`. Do not implement Solidity contracts, HSP integration, database schema, authentication, UI screens, agent runtime logic, or any product feature. Archive the prior implementation, remove prior-chain code and CI, establish the EVM/HSP workspace, update `.env.example`, run the required verification commands, report actual results, show changed files, create the Phase 0 Git checkpoint, and STOP.**
+> Do not begin R1 without explicit approval. Do not modify contracts, delete HSP code, or change env files outside R1.
 
 This operating model follows the supplied workflow's central rule: the human controls direction, scope, product intent, architecture, security, acceptance criteria, and verification, while the coding agent primarily accelerates implementation, testing, debugging, refactoring, and documentation. fileciteturn0file0L472-L496 fileciteturn0file0L654-L689

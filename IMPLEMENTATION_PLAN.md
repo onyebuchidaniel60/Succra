@@ -1,5 +1,7 @@
 # 24. PHASED IMPLEMENTATION PLAN
 
+> **Historical note:** Phases 0–6 below were executed against HashKey Chain / HSP and are archived at tag `hashkey-v1`. They are retained as history. The active plan is Phase R0–R4 for Robinhood Chain / x402.
+
 ## Phase 0 — Repository pivot
 Objective: preserve the prior chain implementation, remove it from the mainline, and establish the EVM/HSP workspace without implementing product behavior.
 
@@ -150,73 +152,101 @@ Acceptance:
 - the recovery ceiling is enforced on-chain;
 - all checkpoint and succession tests pass.
 
-## Phase 7 — Audit and polished UX
-Objective: make the full mission lifecycle understandable without developer terminology.
+## Current plan — Robinhood Chain / x402
+
+Phase 7c UI work is complete on branch `phase-7-ux` at `cc0f90b` and is rail-agnostic. It may be merged or carried into `robinhood-pivot` after R0; it is not part of the R0–R4 implementation sequence below. No further Phase 7c work is authorized.
+
+## Phase R0 — Archive HashKey, authorize Robinhood / x402
+
+Objective: preserve the HashKey implementation and amend the source-of-truth docs before any code changes.
 
 Tasks:
-- build the mission timeline from `audit_events` (read-only);
-- build the decision receipt with policy hash, request hash, decision, violation count, checkpoint hash, succession record, HashKey transaction hash, and HSP mandate ID;
-- add Blockscout proof links;
-- build succession visualization;
-- add error, empty, loading, and retry states;
-- verify responsive behavior and accessibility.
+- create and push annotated tag `hashkey-v1` at the most complete HashKey-era commit (`phase-7-ux` @ `cc0f90b`, which includes 7a, 7b, and 7c);
+- branch `robinhood-pivot` from the same commit;
+- amend `PROJECT_SPEC.md`, `ARCHITECTURE.md`, `IMPLEMENTATION_PLAN.md`, `AGENTS.md`, `AI_HANDOFF.md`, and `SUCCRA_BLUEPRINT.md` for Robinhood Chain / x402;
+- keep contracts, HSP code, env files, and Hardhat config untouched;
+- commit docs only and push the branch.
 
 Acceptance:
-- the full lifecycle can be understood from the UI;
-- every receipt links to the correct HashKey proof and HSP mandate;
-- no screen writes audit rows;
-- accessibility and responsive checks pass.
+- `hashkey-v1` exists locally and on the remote;
+- `robinhood-pivot` starts at the archived commit;
+- only the six source-of-truth docs changed;
+- no code, contracts, env files, or Hardhat config changed;
+- docs-only commit pushed and reported.
 
-## Phase 8 — AI advisory layer
-Objective: add optional successor explanation without granting authority.
+## Phase R1 — x402 client and chain swap
+
+Objective: replace the HSP payment rail with x402 while preserving the three-contract authority model, policy engine, violation streak, quarantine, succession, checkpoints, recovery authority, audit events, and UI.
 
 Tasks:
-- implement structured candidate explanation;
-- enforce deterministic eligibility before any AI call;
-- cap input to structured mission and candidate metadata;
-- add timeout, fallback, and caching;
-- test prompt injection and ineligible-candidate recommendations.
+- add `packages/x402-client` for HTTP 402 `accepts[]` parsing, EIP-3009 `TransferWithAuthorization` typed data, facilitator verify/settle/receipt handling, and a mock facilitator;
+- switch chain config to Robinhood mainnet 4663 and testnet 46630, RPC `https://rpc.mainnet.chain.robinhood.com`, explorer `https://robinhoodchain.blockscout.com`, and USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`;
+- rename `HASHKEY_*` to `ROBINHOOD_*` and `HSP_*` to `X402_*` in `.env.example`, runtime config, and deployment config;
+- preserve the three-contract topology and policy semantics; adapt identifiers/ABI/field names only as required by the x402 authorization model;
+- rewrite preflight to select an x402 offer and return EIP-3009 typed data for the owner/token holder;
+- rewrite submit to verify the agent `SuccraRequest` and owner EIP-3009 signature, record on-chain authorization, submit to the facilitator, and verify the receipt against the Robinhood Transfer log;
+- replace HSP persistence and webhook handling with x402 payment/receipt persistence and facilitator polling fallback;
+- update UI copy, decision receipts, timeline event formatting, and proof links for x402 payment IDs / authorization nonces and Robinhood transaction hashes;
+- add unit, integration, contract, and security tests for authorization binding, nonce replay, receipt forgery, facilitator failure, duplicate submission, budget exhaustion, stale state, unauthorized agents, and unauthorized merchants.
 
 Acceptance:
-- AI cannot authorize an ineligible successor;
-- AI failure leaves deterministic selection intact;
-- no secret or raw reasoning is sent to the model;
-- all AI-boundary tests pass.
+- no HSP code path is required for the golden path;
+- the owner wallet signs EIP-3009 authorizations; agents never hold funds;
+- `SuccraMission` remains authoritative for policy and cumulative budget;
+- the facilitator settles only after on-chain authorization;
+- settlement is confirmed only from the Robinhood Transfer log;
+- all relevant tests pass.
 
-## Phase 9 — E2E and security hardening
-Objective: prove the golden path and close security gaps.
+## Phase R2 — Robinhood testnet deployment and live flow
+
+Objective: prove the full lifecycle on Robinhood Chain testnet (46630).
 
 Tasks:
-- run the full golden-path E2E on HashKey testnet with HSP sandbox or mock;
-- add duplicate-submission, budget-exhaustion, quarantine-race, and double-succession tests;
-- add replay, IDOR, malformed-payload, and role-confusion tests;
-- add HSP webhook replay and signature-forgery tests;
-- add direct-ERC-20-bypass and arbitrary-call rejection tests;
-- review secrets, RLS, and deployment configuration;
-- record evidence and residual risks.
+- deploy `GuardianRegistry`, `MissionFactory`, and `SuccraMission` to testnet;
+- verify source on Blockscout;
+- configure the x402 facilitator, USDG/allowlisted asset, and guardian runtime;
+- run create → payment → violations → quarantine → succession → recovery on testnet;
+- record transaction hashes, addresses, and evidence.
 
 Acceptance:
-- the golden path completes end to end;
-- all security tests pass;
-- no unresolved critical or high finding remains;
-- deployment checklist is complete.
+- contracts verified on testnet Blockscout;
+- full lifecycle completes end to end;
+- evidence is recorded;
+- no secret is exposed.
 
-## Phase 10 — Deployment and demo
-Objective: deploy the hackathon demo and record evidence.
+## Phase R3 — Robinhood mainnet deployment and verification
+
+Objective: deploy and verify the hackathon build on Robinhood Chain mainnet (4663).
 
 Tasks:
-- rehearse on HashKey testnet (chain ID 133);
-- complete mainnet readiness review for chain ID 177;
-- fund the deployer wallet and verify contract addresses;
-- configure HSP merchant credentials and webhook endpoint;
-- deploy contracts and verify source on Blockscout;
+- complete mainnet readiness review;
+- fund the deployer wallet;
+- deploy and verify the three contracts on mainnet Blockscout;
+- configure mainnet x402 facilitator and USDG asset;
 - run a small-capital live demo only if explicitly approved;
-- record the demo and publish the public site.
+- publish contract addresses and evidence.
 
 Acceptance:
-- contracts are deployed and verified;
+- contracts deployed and verified on mainnet;
+- x402 configuration is live;
+- demo evidence is recorded;
+- no unresolved critical or high finding remains.
+
+## Phase R4 — Demo smoke test, video, and submission
+
+Objective: produce the World is Flat hackathon submission evidence.
+
+Tasks:
+- run the Playwright demo smoke test against the Robinhood build;
+- record the full lifecycle video;
+- publish the public site and evidence;
+- verify accessibility, responsive behavior, and proof links;
+- submit before 2026-11-12 17:30 UTC.
+
+Acceptance:
 - the demo proves create → payment → violations → quarantine → succession → recovery;
-- all deployment evidence is recorded;
+- the smoke test passes with evidence;
+- video and public links are available;
 - no secret is exposed.
 
 ---
