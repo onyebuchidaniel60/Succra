@@ -21,9 +21,10 @@ import {
   signTransferWithAuthorization,
 } from '@succra/x402-client';
 
-const MAINNET_MODE = process.env.SUCCRA_DEMO_MODE === 'mainnet';
+const MAINNET_MODE =
+  process.env['SUCCRA_DEMO_MODE'] === 'mainnet' || process.env['RENDER'] === 'true';
 const RPC_URL =
-  process.env.SUCCRA_DEMO_RPC_URL ??
+  process.env['SUCCRA_DEMO_RPC_URL'] ??
   (MAINNET_MODE
     ? 'https://rpc.mainnet.chain.robinhood.com'
     : 'http://127.0.0.1:8545');
