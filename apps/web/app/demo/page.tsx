@@ -1,7 +1,5 @@
-import DemoConsole from '@/components/DemoConsole';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default function DemoPage(): React.JSX.Element {
-  return <DemoConsole />;
+export default function DemoPage(): never {
+  redirect('/missions/demo');
 }

@@ -14,10 +14,10 @@ export default function LandingPage(): React.JSX.Element {
               <p className="text-sm text-zinc-500">Mission continuity layer</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <Link href="/missions/new" className="hidden rounded-full border border-white/10 px-4 py-2 text-zinc-300 hover:border-white/25 sm:block">New mission</Link>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Link href="/dashboard" className="rounded-full border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/25 hover:text-white">Dashboard</Link>
+            <Link href="/missions/new" className="rounded-full bg-[#e8ff63] px-4 py-2 font-semibold text-black transition hover:bg-[#f2ff92]">New Mission</Link>
             <ConnectWalletButton />
-            <Link href="/dashboard" className="rounded-full bg-[#e8ff63] px-5 py-2 font-semibold text-black">Open console</Link>
           </div>
         </nav>
 
@@ -38,10 +38,10 @@ export default function LandingPage(): React.JSX.Element {
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <Link href="/dashboard" className="rounded-full bg-[#e8ff63] px-6 py-3 font-semibold text-black transition hover:bg-[#f2ff92]">
-                Enter live console →
+                Open Dashboard →
               </Link>
-              <Link href="/missions/new" className="rounded-full border border-white/15 bg-white/[0.03] px-6 py-3 text-zinc-200 transition hover:border-white/30">
-                Create a mission
+              <Link href="/missions/demo" className="rounded-full border border-white/15 bg-white/[0.03] px-6 py-3 text-zinc-200 transition hover:border-white/30">
+                View Live Demo Mission
               </Link>
             </div>
             <div className="mt-12 grid max-w-2xl grid-cols-3 gap-4 border-t border-white/10 pt-6 text-sm">

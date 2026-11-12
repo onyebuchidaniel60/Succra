@@ -29,13 +29,13 @@ Succra is a Robinhood Chain-native continuity layer for autonomous economic miss
 
 ## Quick start — use the live app
 
-1. **Connect your wallet.** Click **Connect Wallet** and choose MetaMask, OKX, or another injected EVM wallet. The UI shows the connected address and chain.
-2. **Open the console.** Go to `/dashboard` and inspect the live mainnet mission state.
-3. **Create or inspect a mission.** `/missions/new` lets you select USDG or the WIF vault and review the deposit path.
-4. **Watch the agent operate.** The USDG mission demonstrates x402 EIP-3009 settlement through the contract’s ERC-1271 signer.
-5. **Trigger continuity.** Use **Inject 3 violations** → **Quarantine + withdraw** → **Activate successor** → **Recovery payment** to walk the full lifecycle.
+1. **Connect your wallet.** Click **Connect Wallet** and choose MetaMask, OKX, or another injected EVM wallet. The dashboard is scoped to the connected address.
+2. **Inspect your dashboard.** `/dashboard` shows only missions owned by the connected wallet. A wallet with no missions gets a clean empty state — the deployer’s private missions are never returned.
+3. **Open the demo.** Click **View Live Demo Mission** to enter `/missions/demo`. This is the only public view of the deployer’s live mainnet missions. The owner wallet can additionally sign a short message to unlock private dashboard state.
+4. **Create a mission.** `/missions/new` selects USDG or the WIF vault, deposits into the live USDG vault, and redirects to `/missions/<vault>` after success.
+5. **Trigger continuity.** Inside the demo mission detail, use **Inject 3 violations** → **Quarantine + withdraw** → **Activate successor** → **Recovery payment** to walk the full lifecycle. Simulator controls live only on the mission detail page.
 
-The wallet connection is for identity display; the live demo orchestrator executes the mainnet transactions server-side so judges can reproduce the flow without funding a wallet.
+The live demo orchestrator executes mainnet transactions server-side so judges can reproduce the flow without funding a wallet. The owner-scoped dashboard requires a signed wallet challenge; a bare `?owner=0x...` query is not authorization.
 
 ---
 
@@ -209,6 +209,7 @@ The legacy HashKey/Solana test suites are retained for historical reference and 
 
 ## Security and limitations
 
+- Private mission state is owner-scoped. The backend returns an empty state unless the request comes from the verified owner; the deployer address alone is public and is never accepted as a credential.
 - Succra never holds owner private keys. The runtime holds only a scoped, revocable session key.
 - Settlement is verified against the on-chain EIP-3009 Transfer log; a facilitator receipt alone is never confirmation.
 - The live demo settles directly on-chain; the x402 client includes a mock facilitator, but no public facilitator is wired into the live path.

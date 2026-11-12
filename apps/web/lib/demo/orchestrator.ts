@@ -828,6 +828,33 @@ export async function getDemoState(): Promise<DemoState> {
   return store.state;
 }
 
+export function demoOwnerAddress(): string {
+  return owner.address;
+}
+
+export function isDemoOwner(address: string | null | undefined): boolean {
+  return Boolean(address) && address!.toLowerCase() === owner.address.toLowerCase();
+}
+
+export function emptyDemoState(ownerAddress?: string | null): DemoState {
+  return {
+    initialized: false,
+    phase: 'No missions',
+    chainId: CHAIN_ID,
+    label: MAINNET_MODE ? 'Robinhood Chain · live mainnet' : 'Robinhood Chain · local',
+    registry: '',
+    factory: '',
+    owner: ownerAddress ?? '',
+    guardian: '',
+    primary: '',
+    successor: '',
+    merchant: '',
+    missions: [],
+    events: [],
+    note: 'No active missions found for this wallet.',
+  };
+}
+
 export async function runDemoAction(action: string): Promise<DemoState> {
   if (action === 'reset') {
     store.state = undefined;
