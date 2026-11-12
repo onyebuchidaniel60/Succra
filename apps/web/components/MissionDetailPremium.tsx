@@ -68,7 +68,7 @@ export default function MissionDetailPremium({ missionId }: { missionId: string 
                   </span>
                 </div>
               </div>
-              <div className="reference-glow rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="reference-glow succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.03] p-6">
                 <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">Vault position</p>
                 <p className="mt-3 font-mono text-5xl text-[#e8ff63]">
                   {formatAtomic(mission.available, mission.decimals)}
@@ -84,7 +84,7 @@ export default function MissionDetailPremium({ missionId }: { missionId: string 
             </section>
 
             <section className="mt-8 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+              <div className="succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.02] p-6">
                 <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-zinc-400">Authority boundary</h2>
                 <div className="mt-5 grid gap-4 text-sm">
                   <div className="flex justify-between gap-4 border-b border-white/[0.06] pb-3"><span className="text-zinc-500">Vault</span><span className="font-mono">{mission.missionAddress}</span></div>
@@ -96,7 +96,7 @@ export default function MissionDetailPremium({ missionId }: { missionId: string 
                   WIF is shown as a vault asset, but the live WIF token is a plain ERC-20 without EIP-3009 or ERC-1271. Only USDG settles through x402 on this deployment.
                 </div>
               </div>
-              <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+              <div className="succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.02] p-6">
                 <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-zinc-400">Recent proof</h2>
                 <ol className="mt-5 space-y-3">
                   {state.events.slice(0, 6).map((event, index) => (

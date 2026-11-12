@@ -276,7 +276,7 @@ export default function DemoConsole(): React.JSX.Element {
               <article
                 key={mission.key}
                 data-testid={`mission-${mission.key}`}
-                className="reference-glow rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-white/[0.02] p-5"
+                className="reference-glow succra-lift succra-rise rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-white/[0.02] p-5"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>

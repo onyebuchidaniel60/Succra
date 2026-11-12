@@ -76,7 +76,61 @@ export default function LandingPage(): React.JSX.Element {
           </div>
         </section>
 
-        <footer className="border-t border-white/10 py-6 text-xs text-zinc-600">
+        <section className="mt-6 grid gap-4 lg:grid-cols-6" aria-label="Succra system">
+          <article className="succra-lift succra-rise lg:col-span-4 rounded-[1.6rem] border border-white/10 bg-gradient-to-br from-white/[0.06] via-white/[0.03] to-transparent p-6">
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#e8ff63]">01 · Vault</p>
+                <h2 className="mt-3 max-w-lg text-3xl font-semibold tracking-tight">The mission owns the money. The agent only gets authority.</h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-500">Deposit USDG into SuccraMission. The owner keeps an unconditional exit; the contract enforces caps, merchants, expiry, and recovery limits.</p>
+              </div>
+              <div className="hidden shrink-0 rounded-2xl border border-white/10 bg-black/30 p-4 sm:block">
+                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-600">available</p>
+                <p className="mt-2 font-mono text-3xl text-[#e8ff63]">0.96</p>
+                <p className="mt-1 text-[11px] text-zinc-600">USDG · live mainnet</p>
+              </div>
+            </div>
+            <div className="mt-6 grid grid-cols-3 gap-3">
+              {[
+                ['Deposit', 'owner'],
+                ['Policy', 'on-chain'],
+                ['Withdraw', 'any status'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-white/[0.07] bg-black/20 px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-600">{label}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-300">{value}</p>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="succra-lift succra-rise lg:col-span-2 rounded-[1.6rem] border border-white/10 bg-white/[0.03] p-6">
+            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#e8ff63]">02 · ERC-1271</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight">Contract as signer.</h2>
+            <p className="mt-3 text-sm leading-6 text-zinc-500">Paxos USDG code-routed to <span className="font-mono text-zinc-300">isValidSignature</span> and returned MAGIC on mainnet.</p>
+            <div className="mt-6 rounded-xl border border-[#e8ff63]/20 bg-[#e8ff63]/[0.06] p-3 font-mono text-xs text-[#e8ff63]">0x1626ba7e</div>
+          </article>
+
+          <article className="succra-lift succra-rise lg:col-span-2 rounded-[1.6rem] border border-white/10 bg-white/[0.03] p-6">
+            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">03 · Quarantine</p>
+            <p className="mt-4 font-mono text-4xl text-[#e8ff63]">3 → 1</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">Three blocked policy requests revoke the session key and freeze the current agent.</p>
+          </article>
+
+          <article className="succra-lift succra-rise lg:col-span-2 rounded-[1.6rem] border border-white/10 bg-white/[0.03] p-6">
+            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">04 · Succession</p>
+            <p className="mt-4 text-2xl font-semibold tracking-tight">New authority.<br />Same mission.</p>
+            <p className="mt-3 text-sm leading-6 text-zinc-500">A pre-approved successor gets a fresh session key and a lower recovery ceiling.</p>
+          </article>
+
+          <article className="succra-lift succra-rise lg:col-span-2 rounded-[1.6rem] border border-amber-300/15 bg-amber-300/[0.04] p-6">
+            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber-200/80">05 · WIF</p>
+            <p className="mt-4 text-2xl font-semibold tracking-tight">Vault asset.</p>
+            <p className="mt-3 text-sm leading-6 text-amber-100/60">The live WIF token is a plain ERC-20 without EIP-3009 or ERC-1271. It is held in the vault; USDG settles x402.</p>
+          </article>
+        </section>
+
+        <footer className="mt-8 border-t border-white/10 py-6 text-xs text-zinc-600">
           Succra controls authority, not custody. Live USDG mission on Robinhood Chain mainnet.
         </footer>
       </div>
