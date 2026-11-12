@@ -160,7 +160,9 @@ const TOKEN_ABI = parseAbi([
   'function transferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce,bytes signature)',
 ]);
 
-function abiFor(kind: keyof typeof ABI_KINDS): Abi {
+type AbiKind = 'registry' | 'factory' | 'mission' | 'token';
+
+function abiFor(kind: AbiKind): Abi {
   switch (kind) {
     case 'registry':
       return REGISTRY_ABI;
@@ -172,13 +174,6 @@ function abiFor(kind: keyof typeof ABI_KINDS): Abi {
       return TOKEN_ABI;
   }
 }
-
-const ABI_KINDS = {
-  registry: true,
-  factory: true,
-  mission: true,
-  token: true,
-} as const;
 
 export type DemoEvent = {
   label: string;
@@ -262,7 +257,7 @@ async function wait(hash: Hex): Promise<{ block: number }> {
   return { block: Number(receipt.blockNumber) };
 }
 
-async function deploy(kind: keyof typeof ABI_KINDS, args: unknown[], account = owner): Promise<Address> {
+async function deploy(kind: AbiKind, args: unknown[], account = owner): Promise<Address> {
   const wallet = walletFor(account);
   const compiled = artifact(
     kind === 'registry'
@@ -286,7 +281,7 @@ async function deploy(kind: keyof typeof ABI_KINDS, args: unknown[], account = o
 }
 
 async function write(
-  kind: keyof typeof ABI_KINDS,
+  kind: AbiKind,
   address: Address,
   functionName: string,
   args: unknown[],
@@ -304,7 +299,7 @@ async function write(
 }
 
 async function read<T>(
-  kind: keyof typeof ABI_KINDS,
+  kind: AbiKind,
   address: Address,
   functionName: string,
   args: unknown[] = []
