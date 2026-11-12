@@ -17,12 +17,15 @@ Succra allows an economic mission to survive primary-agent failure by maintainin
   - A session key is registered at mission creation, held server-side by the runtime, revoked on quarantine, and replaced on succession with the reduced recovery cap.
   - Two EIP-3009 variants: **A** (contract signer via ERC-1271) and **B** (session key funded on-demand); R1-spike decides.
   - The owner is never in the per-payment loop.
-- Phase sequence: **R0** (archive + docs pivot; complete), **R0b** (Model A docs amendment; complete), **R1** (implementation; complete locally), **R2/R3** (mainnet deploy; blocked on signer), **R4** (local demo video; complete).
-- **R1 implementation complete locally:** `SuccraMission` now has the vault (`deposit`/`withdraw`), session-key lifecycle, Variant A `approvePayment` + ERC-1271 `isValidSignature`, Variant B `releaseForPayment`, USDG/WIF token allowlist support, and the existing policy/quarantine/succession/checkpoint model. `packages/x402-client`, the `/demo` console, and the demo orchestrator are implemented.
-- **Variant A local proof: PASS.** The mock EIP-3009 token code-routed to `SuccraMission.isValidSignature`, returned MAGIC, transferred value with `from=mission`, and set `authorizationState`. Contract suite: **107 passing**.
-- **Mainnet deploy: BLOCKED.** `contracts/.env.local` still has no `ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY`; the only configured deployer `0x28F4410836a0EEF1251726D733c555975fA4b2f4` has 0 mainnet ETH/USDG/WIF. No mainnet contract addresses or transactions exist. Deployment scripts are ready in `contracts/scripts/deploy-mainnet.ts`.
-- **R4 local demo complete:** `demo-video/succra_demo.mp4` (1920×1080, 68.3s), scene-synced ElevenLabs voiceover, royalty-free music, Playwright choreography, and real local state transitions. Submission text: `SUBMISSION.md`.
-- **Next assigned task: supply a funded mainnet signer, deploy `GuardianRegistry` + `MissionFactory`, configure USDG/WIF, and run the real ERC-1271 check.** R3 remains blocked until then.
+- Phase sequence: **R0** (archive + docs pivot; complete), **R0b** (Model A docs amendment; complete), **R1** (implementation; complete), **R2/R3** (mainnet deployment + live flow; complete), **R4** (live Vercel/Render video; complete).
+- **R1 implementation complete:** vault, session-key lifecycle, Variant A `approvePayment` + ERC-1271 `isValidSignature`, Variant B `releaseForPayment`, USDG/WIF factory allowlist, x402 client, premium UI, and mainnet orchestrator. Contract suite: **107 passing**.
+- **Mainnet deployment complete:** GuardianRegistry `0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B`; MissionFactory `0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917`; USDG mission `0x37522496E38f7859C96bCAC058d23f7296BB646b`; WIF mission `0x84Dab564B5d553686A2980Ddb42E0ac7Fe3Feed1`.
+- **Real Paxos USDG ERC-1271 probe: PASS.** `transferWithAuthorization` with `from=mission` succeeded, `authorizationState=true`, tx `0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8`. Variant A is live.
+- **Live mainnet continuity flow complete:** x402 payment, three violations, quarantine, owner withdrawal, successor activation, recovery payment. Evidence is in `demo-video/mainnet-state.json` and linked from the live UI.
+- **WIF finding:** the real WIF token is a plain ERC-20 with no `transferWithAuthorization` or `isValidSignature` selectors. WIF cannot settle through x402; the live WIF mission is a vault-only position. No WIF payment is claimed.
+- **Deployment:** frontend https://succra.vercel.app; backend https://succra-backend.onrender.com; Neon Postgres via `DATABASE_URL`; Render `render.yaml`.
+- **R4 complete:** `demo-video/succra_demo.mp4` (1920×1080, 88.3s), recorded against the live Vercel UI, with ElevenLabs voiceover, royalty-free music, and mainnet Blockscout hashes. Submission text: `SUBMISSION.md`.
+- **Next assigned task: hackathon submission and optional WIF wrapper / EIP-3009-compatible WIF deployment.**
 
 ## Historical HashKey delivery (archived at `hashkey-v1`)
 
@@ -173,21 +176,20 @@ User wallet → Next.js web → Supabase / Succra runtime → SuccraMission cont
 - support for Solana
 
 ## Current phase
-**R1 complete locally; R2/R3 mainnet deployment blocked on missing signer.**
+**R4 complete — live mainnet deployment, live UI, and final demo video delivered.**
 
-R0 and R0b are complete at `f98cafe`. R1 implemented the vault, session-key lifecycle, Variant A ERC-1271 path, Variant B fallback, x402 client, WIF/USDG selection, and demo UI. The local Variant A EIP-3009 proof passed and the contract suite is green. R4 produced the local demo video and submission text.
-
-Mainnet deployment is blocked: `contracts/.env.local` contains no `ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY`, and the only configured deployer has zero mainnet balance. Do not fabricate mainnet addresses.
+R0/R0b/R1 are complete. R2/R3 deployed to Robinhood mainnet, passed the real Paxos USDG ERC-1271 probe, and executed the full continuity flow. The UI is live on Vercel against a Render backend with Neon persistence. WIF is deployed as a vault-only mission because the real WIF token is not EIP-3009 compatible.
 
 ## Next phase
-Supply a funded mainnet signer, run `contracts/scripts/deploy-mainnet.ts`, configure the guardian, verify USDG/WIF, and run the real ERC-1271 probe against USDG. Then execute the R3 live flow and publish the final addresses.
+Submit the hackathon package, publish the live URLs/addresses, and optionally evaluate an EIP-3009-compatible WIF wrapper before claiming WIF x402 settlement.
 
 ## Known design assumptions
 - Succra Cloud can go offline; on-chain authority remains intact, but new x402 payments cannot be authorized until the runtime can act. The owner can still withdraw mission USDG directly from SuccraMission.
 - The x402 facilitator is the settlement authority; SuccraMission is the authority, policy, and custody layer. The facilitator does not read SuccraMission state.
 - EIP-3009 authorizations must have short `validBefore` windows; cancellation cannot revoke an already-signed authorization.
 - The runtime-held session key signs EIP-3009 authorizations; the owner never signs per payment, and agents never hold funds, the session key, or token signing keys.
-- Variant A depends on USDG code-routing through ERC-1271; if the R1-spike fails, Variant B is used. Variant B's `releaseForPayment` signature does not carry the merchant, so the runtime enforces the merchant allowlist before release and re-checks the signed recipient before submission.
+- Variant A depends on the settlement token code-routing through ERC-1271. Paxos USDG passes on mainnet. The real WIF token is a plain ERC-20 and cannot settle through x402 without a wrapper or replacement.
+- Variant B's `releaseForPayment` signature does not carry the merchant, so the runtime enforces the merchant allowlist before release and re-checks the signed recipient before submission.
 - `approvePayment`/`releaseForPayment` as specified do not carry `agentNonce` or the agent signature; R1 must keep the off-chain single-use request nonce as the replay guard and decide whether to extend the ABI to advance the on-chain counter.
 - Guardian is constrained and cannot spend; quarantine revokes the session key. Production should eventually move toward a stronger decentralized guardian/keeper design.
 - Mission checkpoint stores deterministic facts, not agent private reasoning.

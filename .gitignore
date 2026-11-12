@@ -40,7 +40,9 @@ tests/e2e/screenshots/*.png
 
 # Demo video working files (final MP4 and metadata are tracked)
 demo-video/playwright/
+demo-video/playwright-mainnet/
 demo-video/audio/
 demo-video/music.mp3
 demo-video/voiceover.wav
+demo-video/voiceover-mainnet.wav
 .vercel
