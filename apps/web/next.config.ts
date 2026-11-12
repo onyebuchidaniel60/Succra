@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   // `.js` relative imports). Next skips TS resolution for symlinked
   // node_modules by default, so the package is transpiled as source and
   // `.js` specifiers alias to TypeScript files.
-  transpilePackages: ['@succra/shared'],
+  transpilePackages: ['@succra/shared', '@succra/x402-client'],
   webpack: (config) => {
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,

@@ -37,3 +37,9 @@ test-results/
 apps/web/test-results/
 tests/e2e/.logs/
 tests/e2e/screenshots/*.png
+
+# Demo video working files (final MP4 and metadata are tracked)
+demo-video/playwright/
+demo-video/audio/
+demo-video/music.mp3
+demo-video/voiceover.wav

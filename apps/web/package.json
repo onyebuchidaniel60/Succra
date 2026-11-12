@@ -15,6 +15,7 @@
     "@solana/kit": "^8.3.0",
     "@succra/hsp-client": "workspace:*",
     "@succra/shared": "workspace:*",
+    "@succra/x402-client": "workspace:*",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.0.0",
     "@tanstack/react-query": "^5.105.0",
