@@ -32,12 +32,12 @@ Autonomous agents can fail, go rogue, or be compromised. Most agent systems bind
 
 ### WIF integration
 
-The factory accepts an allowlisted settlement-token set. The demo deploys both:
+The factory accepts an allowlisted settlement-token set. Mainnet configuration uses:
 
-- **USDG** — 6 decimals, `Global Dollar`
-- **WIF** — 18 decimals, `World is Flat`
+- **Paxos USDG** — 6 decimals, `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`
+- **WIF** — 18 decimals, `0x5173b8eA6923c2d40267890D45C46a3480954773`
 
-The UI mission cards, vault accounting, EIP-712 domain, and EIP-3009 signing are token-aware. A mission selects one settlement token at creation; the vault holds that token and the owner can withdraw it.
+The local deterministic demo deploys interface-compatible mock tokens (`Global Dollar` / `World is Flat`) so the full EIP-3009 flow can run without mainnet funds. The UI mission cards, vault accounting, EIP-712 domain, and EIP-3009 signing are token-aware. A mission selects one settlement token at creation; the vault holds that token and the owner can withdraw it.
 
 ### x402 client
 
@@ -123,7 +123,8 @@ The repository-wide legacy Vitest suite still has unrelated HashKey/Solana-era f
 
 ## WIF integration details
 
-- WIF is a first-class settlement token, not a mock label.
+- WIF is a first-class settlement-token option in the contract, factory allowlist, x402 typed data, and UI.
+- Mainnet deployment config uses the real WIF address; the local demo uses an interface-compatible mock WIF token.
 - The factory allowlist is configured with USDG and WIF before mission creation.
 - Each mission commits one `paymentToken`; the vault accounting, `deposit`, `withdraw`, `approvePayment`, and `releaseForPayment` operate on that token.
 - The EIP-712 domain uses the selected token name, version `1`, chain ID, and verifying contract.
