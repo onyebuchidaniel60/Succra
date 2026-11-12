@@ -6,6 +6,17 @@ Succra — autonomous mission continuity and authority succession on Robinhood C
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
+## Current privacy / navigation checkpoint (2026-11-12, `d7ddc0e`)
+
+- **Private dashboard is owner-scoped.** `/api/demo` returns an empty state when no owner is supplied or the owner is not the deployer. A bare `?owner=0x...` is not authorization.
+- **Owner access requires a signed challenge.** `GET/POST /api/demo/auth` issues a five-minute message challenge and returns a 12-hour opaque bearer token after `personal_sign` verification. Private state and owner actions require that token.
+- **Public simulation is explicit.** `/api/demo?demo=true` and `POST /api/demo?demo=true` remain public for the live demo; `/missions/demo` renders that view.
+- **Dashboard flow:** `/dashboard` uses wagmi `useAccount`, shows the exact empty state for disconnected/zero-mission wallets, offers **New Mission** and **View Live Demo Mission**, and contains no simulator controls.
+- **Mission detail flow:** `/missions/demo` is the only place with simulator controls. `/missions/[id]` adds **Back to Dashboard** and a **Connect Agent** snippet. Owner detail is scoped to the verified wallet.
+- **Create flow:** `/missions/new` requires the owner wallet, unlocks with a signature, deposits 0.10 USDG, then redirects to `/missions/<vault>`. Non-owner wallets get a clean owner-operated notice and a link to the public demo; multi-tenant factory creation is not enabled.
+- **Verified on production (2026-11-12):** `/api/demo` → empty state; `?owner=<deployer>` → `401 OWNER_AUTH_REQUIRED`; `?demo=true` → two live missions and 18 events; incognito `/dashboard` → empty state. Vercel production build passed; Render service `srv-dbqv8cvf3r2c73cufumg` deployed commit `d7ddc0e`.
+- **Tests:** `pnpm -r typecheck` pass, `pnpm --filter @succra/web build` pass, contracts **107 passing**, new `apps/web/tests/demo-auth.test.ts` **4 passing**. The legacy HashKey wallet-connect/mission-detail tests and PGlite creation tests remain stale/failing on this branch and are not part of the active Robinhood path.
+
 ## Current status
 **Pivot notice (2026-11-03): Succra is pivoting from HashKey Chain (HSP) to Robinhood Chain (x402) for the World is Flat hackathon (submissions close 2026-11-12 17:30 UTC). The product thesis is unchanged: Succra is the continuity layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail. Missions don't have to.**
 
