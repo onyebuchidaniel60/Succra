@@ -63,4 +63,26 @@ describe('demo owner privacy', () => {
     );
     expect(response.status).toBe(403);
   });
+
+  it('rejects invalid or zero deposit amounts before touching the orchestrator', async () => {
+    const owner = privateKeyToAccount(OWNER_KEY);
+    const challenge = createOwnerChallenge(owner.address);
+    const signature = await owner.signMessage({ message: challenge.message });
+    const session = await verifyOwnerChallenge(owner.address, signature);
+    const headers = {
+      'content-type': 'application/json',
+      authorization: `Bearer ${session.token}`,
+    };
+
+    for (const amount of ['0', '-1', '1.1234567', 'abc']) {
+      const response = await POST(
+        new Request(`http://localhost/api/demo?owner=${owner.address}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'deposit-usdg', amount }),
+        })
+      );
+      expect(response.status).toBe(400);
+    }
+  });
 });

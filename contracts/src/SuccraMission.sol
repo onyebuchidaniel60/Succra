@@ -48,6 +48,16 @@ contract SuccraMission is IERC1271 {
         HALTED // reserved; DB mirror only
     }
 
+    /// @notice Reason a treasury transfer was blocked by mission policy.
+    enum TreasuryBlockReason {
+        ZERO_AMOUNT,
+        TOKEN_NOT_ALLOWED,
+        MERCHANT_NOT_ALLOWED,
+        CAP_EXCEEDED,
+        BUDGET_EXCEEDED,
+        INSUFFICIENT_BALANCE
+    }
+
     struct AuthorityState {
         address currentAgent;
         MissionStatus status;
@@ -132,6 +142,21 @@ contract SuccraMission is IERC1271 {
         address merchant
     );
     event PaymentReleased(address indexed sessionKey, uint256 amount);
+    event TreasuryTransfer(
+        address indexed token,
+        address indexed to,
+        uint256 amountAtomic,
+        uint64 stateVersion
+    );
+    event TreasuryTransferBlocked(
+        address indexed token,
+        address indexed to,
+        uint256 amountAtomic,
+        TreasuryBlockReason reason,
+        bytes32 indexed requestId,
+        uint16 violationCount,
+        uint64 stateVersion
+    );
     event PaymentAuthorized(
         bytes32 indexed requestId,
         address indexed merchant,
@@ -315,6 +340,104 @@ contract SuccraMission is IERC1271 {
             revert InsufficientBalance();
         }
         emit FundsWithdrawn(msg.sender, amountAtomic);
+    }
+
+    /// @notice Executes a policy-bounded ERC-20 treasury transfer.
+    /// @dev Used for assets such as WIF that do not implement EIP-3009. The
+    ///      runtime (guardian) submits the transfer after off-chain policy
+    ///      evaluation; this contract independently enforces the token,
+    ///      merchant, per-payment ceiling, cumulative budget, and available
+    ///      balance. Policy failures increment the violation streak instead of
+    ///      reverting so the blocked attempt remains observable on-chain.
+    function executeERC20Transfer(
+        address token,
+        address to,
+        uint256 amountAtomic
+    ) external onlyGuardian returns (bool) {
+        if (
+            authority.status != MissionStatus.ACTIVE &&
+            authority.status != MissionStatus.ACTIVE_RECOVERY
+        ) {
+            revert InvalidStatus();
+        }
+        if (amountAtomic == 0) {
+            return
+                _blockTreasuryTransfer(
+                    token,
+                    to,
+                    amountAtomic,
+                    TreasuryBlockReason.ZERO_AMOUNT
+                );
+        }
+        if (token != config.paymentToken) {
+            return
+                _blockTreasuryTransfer(
+                    token,
+                    to,
+                    amountAtomic,
+                    TreasuryBlockReason.TOKEN_NOT_ALLOWED
+                );
+        }
+        if (!allowedMerchants[to]) {
+            return
+                _blockTreasuryTransfer(
+                    token,
+                    to,
+                    amountAtomic,
+                    TreasuryBlockReason.MERCHANT_NOT_ALLOWED
+                );
+        }
+
+        uint256 ceiling = authority.status == MissionStatus.ACTIVE
+            ? config.maxPaymentAtomic
+            : config.recoveryMaxPaymentAtomic;
+        if (amountAtomic > ceiling) {
+            return
+                _blockTreasuryTransfer(
+                    token,
+                    to,
+                    amountAtomic,
+                    TreasuryBlockReason.CAP_EXCEEDED
+                );
+        }
+        if (
+            authority.confirmedSpentAtomic +
+                authority.reservedAtomic +
+                authority.releasedAtomic +
+                amountAtomic >
+            config.budgetAtomic
+        ) {
+            return
+                _blockTreasuryTransfer(
+                    token,
+                    to,
+                    amountAtomic,
+                    TreasuryBlockReason.BUDGET_EXCEEDED
+                );
+        }
+        if (amountAtomic > availableBalance()) {
+            return
+                _blockTreasuryTransfer(
+                    token,
+                    to,
+                    amountAtomic,
+                    TreasuryBlockReason.INSUFFICIENT_BALANCE
+                );
+        }
+
+        // Checks-effects-interactions: update mission accounting before the
+        // external token call. A false/reverting token result rolls this back.
+        authority.confirmedSpentAtomic += amountAtomic;
+        authority.violationCount = 0;
+        authority.lastViolationAt = 0;
+        authority.stateVersion += 1;
+
+        if (!IERC20(token).transfer(to, amountAtomic)) {
+            revert InsufficientBalance();
+        }
+
+        emit TreasuryTransfer(token, to, amountAtomic, authority.stateVersion);
+        return true;
     }
 
     /// @notice Registers or replaces the runtime-held session key.
@@ -733,6 +856,42 @@ contract SuccraMission is IERC1271 {
 
     function getSuccessors() external view returns (Successor[] memory) {
         return config.successors;
+    }
+
+    /// @dev Records a blocked treasury transfer as a policy violation. The
+    ///      state version changes so the runtime must refresh before retrying.
+    function _blockTreasuryTransfer(
+        address token,
+        address to,
+        uint256 amountAtomic,
+        TreasuryBlockReason reason
+    ) internal returns (bool) {
+        if (
+            authority.lastViolationAt > 0 &&
+            block.timestamp - uint256(authority.lastViolationAt) >
+            uint256(config.violationWindowSeconds)
+        ) {
+            authority.violationCount = 0;
+        }
+
+        authority.violationCount += 1;
+        authority.lastViolationAt = uint64(block.timestamp);
+        authority.stateVersion += 1;
+
+        bytes32 requestId = keccak256(
+            abi.encode(token, to, amountAtomic, authority.stateVersion, block.timestamp)
+        );
+        emit ViolationRecorded(requestId, authority.violationCount, authority.stateVersion);
+        emit TreasuryTransferBlocked(
+            token,
+            to,
+            amountAtomic,
+            reason,
+            requestId,
+            authority.violationCount,
+            authority.stateVersion
+        );
+        return false;
     }
 
     function _revokeSessionKey(uint64 expectedVersion) internal {

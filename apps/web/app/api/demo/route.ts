@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { parseUnits } from 'viem';
 import { hasOwnerSession } from '@/lib/demo/auth';
 import {
   emptyDemoState,
@@ -94,11 +95,39 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
     }
 
-    const body = (await request.json()) as { action?: unknown };
+    const body = (await request.json()) as { action?: unknown; amount?: unknown };
     if (typeof body.action !== 'string') {
       return json({ ok: false, error: 'action is required.' }, 400);
     }
-    const state = await runDemoAction(body.action);
+
+    let amountAtomic: bigint | undefined;
+    if (body.amount !== undefined) {
+      if (body.action !== 'deposit-usdg') {
+        return json(
+          { ok: false, error: 'amount is only supported for deposit-usdg.' },
+          400
+        );
+      }
+      if (typeof body.amount !== 'string' || !/^\d+(\.\d{1,6})?$/.test(body.amount)) {
+        return json(
+          { ok: false, error: 'amount must be a positive USDG value with at most 6 decimals.' },
+          400
+        );
+      }
+      try {
+        amountAtomic = parseUnits(body.amount, 6);
+      } catch {
+        return json({ ok: false, error: 'amount is not a valid USDG value.' }, 400);
+      }
+      if (amountAtomic <= 0n) {
+        return json({ ok: false, error: 'amount must be greater than zero.' }, 400);
+      }
+    }
+
+    const state = await runDemoAction(
+      body.action,
+      amountAtomic === undefined ? undefined : { amountAtomic }
+    );
     await saveDemoSnapshot(state).catch(() => undefined);
     return json({ ok: true, state });
   } catch (error) {

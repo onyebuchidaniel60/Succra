@@ -93,11 +93,11 @@ Read the full design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | GuardianRegistry | [`0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B`](https://robinhoodchain.blockscout.com/address/0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B) |
 | MissionFactory | [`0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917`](https://robinhoodchain.blockscout.com/address/0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917) |
 | USDG mission | [`0x37522496E38f7859C96bCAC058d23f7296BB646b`](https://robinhoodchain.blockscout.com/address/0x37522496E38f7859C96bCAC058d23f7296BB646b) |
-| WIF mission | [`0x84Dab564B5d553686A2980Ddb42E0ac7Fe3Feed1`](https://robinhoodchain.blockscout.com/address/0x84Dab564B5d553686A2980Ddb42E0ac7Fe3Feed1) |
+| WIF treasury mission | [`0x5bdC628D1b0c7DE78579E076398f4c5216e10e08`](https://robinhoodchain.blockscout.com/address/0x5bdC628D1b0c7DE78579E076398f4c5216e10e08) |
 | Paxos USDG | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
 | WIF | [`0x5173b8eA6923c2d40267890D45C46a3480954773`](https://robinhoodchain.blockscout.com/address/0x5173b8eA6923c2d40267890D45C46a3480954773) |
 
-> **WIF note:** the deployed WIF token is a plain ERC-20 without EIP-3009 or ERC-1271. It can be held in the vault, but it cannot settle through x402 on this deployment. USDG is the live x402 settlement asset.
+> **WIF note:** WIF is a standard ERC-20 without EIP-3009. It cannot settle through x402, so Succra uses a policy-bounded `executeERC20Transfer` treasury path: allowlisted merchant, per-payment ceiling, cumulative budget, and on-chain violation recording. USDG remains the live x402 settlement asset.
 
 ---
 
@@ -213,6 +213,6 @@ The legacy HashKey/Solana test suites are retained for historical reference and 
 - Succra never holds owner private keys. The runtime holds only a scoped, revocable session key.
 - Settlement is verified against the on-chain EIP-3009 Transfer log; a facilitator receipt alone is never confirmation.
 - The live demo settles directly on-chain; the x402 client includes a mock facilitator, but no public facilitator is wired into the live path.
-- WIF is vault-only on this deployment because the token lacks EIP-3009/ERC-1271.
+- WIF uses the policy-bounded ERC-20 treasury adapter, not x402; the live WIF mission is separately deployed with `executeERC20Transfer`.
 - The Render free instance can cold-start slowly.
 - The mainnet deployer key and Neon credentials are server-side secrets and are never committed.

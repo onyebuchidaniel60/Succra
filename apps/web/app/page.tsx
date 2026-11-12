@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import ConnectWalletButton from '@/components/ConnectWalletButton';
+import Footer from '@/components/Footer';
 
 export default function LandingPage(): React.JSX.Element {
   return (
@@ -8,7 +9,7 @@ export default function LandingPage(): React.JSX.Element {
       <div className="relative mx-auto max-w-7xl px-6 py-8">
         <nav className="flex items-center justify-between border-b border-white/10 pb-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8ff63] font-mono text-lg font-black text-black">S</div>
+            <img src="/logo.svg" alt="Succra" className="h-8 w-8 text-[#e8ff63]" />
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.32em] text-[#e8ff63]">Succra</p>
               <p className="text-sm text-zinc-500">Mission continuity layer</p>
@@ -125,15 +126,13 @@ export default function LandingPage(): React.JSX.Element {
 
           <article className="succra-lift succra-rise lg:col-span-2 rounded-[1.6rem] border border-amber-300/15 bg-amber-300/[0.04] p-6">
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-amber-200/80">05 · WIF</p>
-            <p className="mt-4 text-2xl font-semibold tracking-tight">Vault asset.</p>
-            <p className="mt-3 text-sm leading-6 text-amber-100/60">The live WIF token is a plain ERC-20 without EIP-3009 or ERC-1271. It is held in the vault; USDG settles x402.</p>
+            <p className="mt-4 text-2xl font-semibold tracking-tight">Treasury asset.</p>
+            <p className="mt-3 text-sm leading-6 text-amber-100/60">WIF is a standard ERC-20. Succra enforces strict treasury transfer policies while USDG handles x402 API payments.</p>
           </article>
         </section>
 
-        <footer className="mt-8 border-t border-white/10 py-6 text-xs text-zinc-600">
-          Succra controls authority, not custody. Live USDG mission on Robinhood Chain mainnet.
-        </footer>
       </div>
+      <Footer />
     </main>
   );
 }

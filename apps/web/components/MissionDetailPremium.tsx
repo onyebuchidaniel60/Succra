@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ConnectWalletButton from '@/components/ConnectWalletButton';
 import CopyButton from '@/components/CopyButton';
+import Footer from '@/components/Footer';
 import {
   backendUrl,
   compact,
@@ -18,6 +19,7 @@ import { useOwnerSession } from '@/lib/demo/use-owner-session';
 
 const SIMULATOR_ACTIONS = [
   { action: 'usdg-payment', label: 'Run USDG payment', tone: 'emerald' },
+  { action: 'wif-payment', label: 'Run WIF Treasury Transfer', tone: 'violet' },
   { action: 'violations', label: 'Inject 3 violations', tone: 'amber' },
   { action: 'quarantine', label: 'Quarantine + withdraw', tone: 'red' },
   { action: 'succession', label: 'Activate successor', tone: 'blue' },
@@ -142,15 +144,27 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
     <main className="reference-grid min-h-screen bg-[#07090c] px-6 py-8 text-zinc-100">
       <div className="mx-auto max-w-6xl">
         <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div className="flex items-center gap-5">
+          <div className="flex flex-wrap items-center gap-5">
+            <Link href="/" className="flex items-center gap-3">
+              <img src="/logo.svg" alt="Succra" className="h-8 w-8 text-[#e8ff63]" />
+              <span className="font-mono text-xs uppercase tracking-[0.28em] text-[#e8ff63]">
+                Succra
+              </span>
+            </Link>
             <Link
               href="/dashboard"
-              className="font-mono text-xs uppercase tracking-[0.22em] text-[#e8ff63] transition hover:text-[#f2ff92]"
+              className="font-mono text-xs uppercase tracking-[0.22em] text-zinc-400 transition hover:text-[#e8ff63]"
             >
               ← Back to Dashboard
             </Link>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Link
+              href="/dashboard"
+              className="rounded-full border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/25 hover:text-white"
+            >
+              Dashboard
+            </Link>
             <Link
               href="/missions/new"
               className="rounded-full border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/25 hover:text-white"
@@ -405,9 +419,15 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
                     <span className="min-w-0 truncate font-mono">{state.owner}</span>
                   </div>
                 </div>
-                <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4 text-xs leading-6 text-amber-100/80">
-                  WIF is shown as a vault asset, but the live WIF token is a plain ERC-20 without
-                  EIP-3009 or ERC-1271. Only USDG settles through x402 on this deployment.
+                <p className="mt-6 rounded-2xl border border-white/[0.06] bg-black/20 p-4 text-xs leading-6 text-zinc-400">
+                  WIF is a standard ERC-20 token. Succra acts as a secure treasury vault, allowing
+                  the agent to distribute WIF to approved contributors while protecting against
+                  unauthorized drains.
+                </p>
+                <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4 text-xs leading-6 text-amber-100/80">
+                  WIF is secured as a vault asset. While it doesn&apos;t support x402 API payments
+                  (unlike USDG), Succra enforces strict ERC-20 transfer policies to protect the
+                  treasury from rogue agents.
                 </div>
               </div>
 
@@ -464,6 +484,7 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
           </>
         )}
       </div>
+      <Footer />
     </main>
   );
 }

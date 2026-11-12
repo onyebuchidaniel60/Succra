@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import ConnectWalletButton from '@/components/ConnectWalletButton';
+import Footer from '@/components/Footer';
 import {
   compact,
   DemoAuthError,
@@ -19,9 +20,13 @@ export default function NewMissionPremium() {
   const { address, isConnected, ownerChecked, isOwner, needsUnlock, unlocking } = session;
   const [state, setState] = useState<DemoState | null>(null);
   const [token, setToken] = useState<'usdg' | 'wif'>('usdg');
+  const [depositAmount, setDepositAmount] = useState('0.10');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const expire = session.expire;
+  const amountValid =
+    /^\d+(\.\d{1,6})?$/.test(depositAmount.trim()) &&
+    Number(depositAmount) > 0;
 
   const load = useCallback(async () => {
     if (!address || !ownerChecked || needsUnlock) {
@@ -55,10 +60,18 @@ export default function NewMissionPremium() {
       setError('This live deployment is owner-operated. Open the live demo mission to explore the flow.');
       return;
     }
+    if (!amountValid) {
+      setError('Enter a deposit amount greater than zero with at most 6 decimals.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const next = await postDemoAction('deposit-usdg', { owner: address });
+      const next = await postDemoAction(
+        'deposit-usdg',
+        { owner: address },
+        { amount: depositAmount.trim() }
+      );
       setState(next);
       const created =
         next.missions.find((mission) => mission.key === 'usdg') ?? next.missions[0];
@@ -84,12 +97,20 @@ export default function NewMissionPremium() {
     <main className="reference-grid min-h-screen bg-[#07090c] px-6 py-8 text-zinc-100">
       <div className="mx-auto max-w-5xl">
         <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <Link
-            href="/dashboard"
-            className="font-mono text-xs uppercase tracking-[0.24em] text-[#e8ff63] transition hover:text-[#f2ff92]"
-          >
-            ← Dashboard
-          </Link>
+          <div className="flex flex-wrap items-center gap-5">
+            <Link href="/" className="flex items-center gap-3">
+              <img src="/logo.svg" alt="Succra" className="h-8 w-8 text-[#e8ff63]" />
+              <span className="font-mono text-xs uppercase tracking-[0.28em] text-[#e8ff63]">
+                Succra
+              </span>
+            </Link>
+            <Link
+              href="/dashboard"
+              className="font-mono text-xs uppercase tracking-[0.24em] text-zinc-400 transition hover:text-[#e8ff63]"
+            >
+              ← Dashboard
+            </Link>
+          </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Link
               href="/dashboard"
@@ -111,14 +132,13 @@ export default function NewMissionPremium() {
               Define bounded authority.
             </h1>
             <p className="mt-5 max-w-xl text-zinc-400">
-              Choose the settlement token, fund the vault, and register a runtime-held session key.
-              The owner keeps an unconditional withdrawal right and never signs per payment.
+              Fund the vault to activate the mission. You retain unconditional withdrawal rights.
             </p>
 
             <div className="mt-8 space-y-3">
               {[
                 ['01', 'Mission + policy', 'Budget, merchants, expiry, successor list'],
-                ['02', 'Settlement token', 'USDG for live x402; WIF is vault-only'],
+                ['02', 'Settlement token', 'USDG for x402; WIF for policy-bounded treasury transfers'],
                 ['03', 'Deposit', 'Funds move into SuccraMission'],
                 ['04', 'Session key', 'Runtime-held, revocable, never agent-held'],
               ].map(([n, title, body]) => (
@@ -137,7 +157,7 @@ export default function NewMissionPremium() {
 
             <div className="mt-6 rounded-2xl border border-white/[0.06] bg-black/20 p-4 font-mono text-[11px] leading-6 text-zinc-500">
               <p>after create → /missions/&lt;vault&gt;</p>
-              <p>deposit → 0.10 USDG into the live vault</p>
+              <p>deposit → the USDG amount you enter</p>
               <p>controls → mission detail only</p>
             </div>
           </div>
@@ -171,29 +191,45 @@ export default function NewMissionPremium() {
                     {option === 'usdg' ? 'Paxos USDG' : 'World is Flat'}
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
-                    {option === 'usdg' ? '6 decimals · x402' : 'ERC-20 only'}
+                    {option === 'usdg' ? '6 decimals · x402' : '18 decimals · treasury'}
                   </p>
                 </button>
               ))}
             </div>
 
             <div className="mt-6 rounded-2xl border border-white/10 bg-black/30 p-4">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                  Initial deposit
-                </span>
-                <span className="font-mono text-lg text-zinc-200">0.10 USDG</span>
-              </div>
+              <label
+                htmlFor="deposit-amount"
+                className="text-xs uppercase tracking-[0.18em] text-zinc-500"
+              >
+                Initial deposit (USDG)
+              </label>
+              <input
+                id="deposit-amount"
+                type="number"
+                min="0.000001"
+                step="0.01"
+                inputMode="decimal"
+                value={depositAmount}
+                onChange={(event) => setDepositAmount(event.target.value)}
+                className="mt-3 w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 font-mono text-lg text-zinc-100 outline-none transition focus:border-[#e8ff63]"
+              />
               <p className="mt-2 text-[11px] leading-5 text-zinc-600">
-                The live demo route funds the existing USDG vault. The owner can withdraw at any time.
+                Enter any amount greater than zero. The owner can withdraw unallocated funds at any
+                time.
               </p>
+              {!amountValid ? (
+                <p className="mt-2 text-[11px] text-red-300">
+                  Enter a positive amount with at most 6 decimals.
+                </p>
+              ) : null}
             </div>
 
             {token === 'wif' ? (
               <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-4 text-xs leading-6 text-amber-100/80">
-                The live WIF token is a plain ERC-20. It can be held in the vault, but it does not
-                implement EIP-3009 or ERC-1271, so it cannot settle through x402. Use USDG for live
-                payments.
+                WIF is secured as a vault asset. While it doesn&apos;t support x402 API payments
+                (unlike USDG), Succra enforces strict ERC-20 transfer policies to protect the
+                treasury from rogue agents.
               </div>
             ) : null}
 
@@ -247,7 +283,9 @@ export default function NewMissionPremium() {
             <button
               type="button"
               onClick={() => void create()}
-              disabled={busy || !isConnected || locked || !isOwner || token === 'wif'}
+              disabled={
+                busy || !isConnected || locked || !isOwner || token === 'wif' || !amountValid
+              }
               className="mt-6 w-full rounded-full bg-[#e8ff63] px-5 py-3 text-sm font-semibold text-black transition hover:bg-[#f2ff92] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy
@@ -260,7 +298,7 @@ export default function NewMissionPremium() {
                       ? 'Verify wallet to continue'
                       : !isOwner
                         ? 'Owner wallet required'
-                        : 'Create mission · deposit 0.10 USDG'}
+                        : `Create mission · deposit ${depositAmount || '0'} USDG`}
             </button>
             <p className="mt-3 text-center text-[11px] text-zinc-600">
               {usdgMission
@@ -270,6 +308,7 @@ export default function NewMissionPremium() {
           </div>
         </section>
       </div>
+      <Footer />
     </main>
   );
 }

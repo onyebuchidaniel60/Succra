@@ -13,7 +13,7 @@ Succra allows an economic mission to survive primary-agent failure by maintainin
 - **Public simulation is explicit.** `/api/demo?demo=true` and `POST /api/demo?demo=true` remain public for the live demo; `/missions/demo` renders that view.
 - **Dashboard flow:** `/dashboard` uses wagmi `useAccount`, shows the exact empty state for disconnected/zero-mission wallets, offers **New Mission** and **View Live Demo Mission**, and contains no simulator controls.
 - **Mission detail flow:** `/missions/demo` is the only place with simulator controls. `/missions/[id]` adds **Back to Dashboard** and a **Connect Agent** snippet. Owner detail is scoped to the verified wallet.
-- **Create flow:** `/missions/new` requires the owner wallet, unlocks with a signature, deposits 0.10 USDG, then redirects to `/missions/<vault>`. Non-owner wallets get a clean owner-operated notice and a link to the public demo; multi-tenant factory creation is not enabled.
+- **Create flow:** `/missions/new` requires the owner wallet, unlocks with a signature, accepts a user-entered USDG deposit amount, verifies it through the backend, then redirects to `/missions/<vault>`. Non-owner wallets get a clean owner-operated notice and a link to the public demo; multi-tenant factory creation is not enabled.
 - **Verified on production (2026-11-12):** `/api/demo` → empty state; `?owner=<deployer>` → `401 OWNER_AUTH_REQUIRED`; `?demo=true` → two live missions and 18 events; incognito `/dashboard` → empty state. Vercel production build passed; Render service `srv-dbqv8cvf3r2c73cufumg` deployed commit `d7ddc0e`.
 - **Tests:** `pnpm -r typecheck` pass, `pnpm --filter @succra/web build` pass, contracts **107 passing**, new `apps/web/tests/demo-auth.test.ts` **4 passing**. The legacy HashKey wallet-connect/mission-detail tests and PGlite creation tests remain stale/failing on this branch and are not part of the active Robinhood path.
 
@@ -30,10 +30,10 @@ Succra allows an economic mission to survive primary-agent failure by maintainin
   - The owner is never in the per-payment loop.
 - Phase sequence: **R0** (archive + docs pivot; complete), **R0b** (Model A docs amendment; complete), **R1** (implementation; complete), **R2/R3** (mainnet deployment + live flow; complete), **R4** (live Vercel/Render video; complete).
 - **R1 implementation complete:** vault, session-key lifecycle, Variant A `approvePayment` + ERC-1271 `isValidSignature`, Variant B `releaseForPayment`, USDG/WIF factory allowlist, x402 client, premium UI, and mainnet orchestrator. Contract suite: **107 passing**.
-- **Mainnet deployment complete:** GuardianRegistry `0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B`; MissionFactory `0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917`; USDG mission `0x37522496E38f7859C96bCAC058d23f7296BB646b`; WIF mission `0x84Dab564B5d553686A2980Ddb42E0ac7Fe3Feed1`.
+- **Mainnet deployment complete:** GuardianRegistry `0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B`; MissionFactory `0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917`; USDG mission `0x37522496E38f7859C96bCAC058d23f7296BB646b`; WIF treasury mission `0x5bdC628D1b0c7DE78579E076398f4c5216e10e08` (new `executeERC20Transfer` bytecode).
 - **Real Paxos USDG ERC-1271 probe: PASS.** `transferWithAuthorization` with `from=mission` succeeded, `authorizationState=true`, tx `0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8`. Variant A is live.
 - **Live mainnet continuity flow complete:** x402 payment, three violations, quarantine, owner withdrawal, successor activation, recovery payment. Evidence is in `demo-video/mainnet-state.json` and linked from the live UI.
-- **WIF finding:** the real WIF token is a plain ERC-20 with no `transferWithAuthorization` or `isValidSignature` selectors. WIF cannot settle through x402; the live WIF mission is a vault-only position. No WIF payment is claimed.
+- **WIF finding:** the real WIF token is a plain ERC-20 with no `transferWithAuthorization` or `isValidSignature` selectors, so WIF cannot settle through x402. The new WIF treasury mission `0x5bdC628D1b0c7DE78579E076398f4c5216e10e08` implements `executeERC20Transfer` with token/merchant allowlists, per-payment ceilings, budget checks, and on-chain violation recording. The old vault-only mission `0x84Dab…` remains historical evidence.
 - **Deployment:** frontend https://succra.vercel.app; backend https://succra-backend.onrender.com; Neon Postgres via `DATABASE_URL`; Render `render.yaml`.
 - **R4 complete:** `demo-video/succra_demo.mp4` (1920×1080, 88.3s), recorded against the live Vercel UI, with ElevenLabs voiceover, royalty-free music, and mainnet Blockscout hashes. Submission text: `SUBMISSION.md`.
 - **Next assigned task: hackathon submission and optional WIF wrapper / EIP-3009-compatible WIF deployment.**
@@ -189,7 +189,7 @@ User wallet → Next.js web → Supabase / Succra runtime → SuccraMission cont
 ## Current phase
 **R4 complete — live mainnet deployment, live UI, and final demo video delivered.**
 
-R0/R0b/R1 are complete. R2/R3 deployed to Robinhood mainnet, passed the real Paxos USDG ERC-1271 probe, and executed the full continuity flow. The UI is live on Vercel against a Render backend with Neon persistence. WIF is deployed as a vault-only mission because the real WIF token is not EIP-3009 compatible.
+R0/R0b/R1 are complete. R2/R3 deployed to Robinhood mainnet, passed the real Paxos USDG ERC-1271 probe, and executed the full continuity flow. The UI is live on Vercel against a Render backend with Neon persistence. WIF uses the separately deployed policy-bounded treasury mission because the real WIF token is not EIP-3009 compatible.
 
 ## Next phase
 Submit the hackathon package, publish the live URLs/addresses, and optionally evaluate an EIP-3009-compatible WIF wrapper before claiming WIF x402 settlement.

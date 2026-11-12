@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ConnectWalletButton from '@/components/ConnectWalletButton';
+import Footer from '@/components/Footer';
 import {
   compact,
   DemoAuthError,
@@ -93,9 +94,7 @@ export default function DemoConsole(): React.JSX.Element {
       <div className="relative mx-auto max-w-7xl px-6 py-8">
         <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
           <Link href="/" className="flex items-center gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#e8ff63]/40 bg-[#e8ff63] font-mono text-lg font-black text-black">
-              S
-            </div>
+            <img src="/logo.svg" alt="Succra" className="h-8 w-8 text-[#e8ff63]" />
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.32em] text-[#e8ff63]">Succra</p>
               <p className="text-sm text-zinc-500">Mission continuity console</p>
@@ -438,11 +437,8 @@ export default function DemoConsole(): React.JSX.Element {
           </section>
         )}
 
-        <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-5 font-mono text-[10px] text-zinc-600">
-          <span>SUCCRA · Robinhood Chain · chain 4663</span>
-          <span>Dashboard data is filtered to the connected wallet.</span>
-        </footer>
       </div>
+      <Footer />
     </main>
   );
 }

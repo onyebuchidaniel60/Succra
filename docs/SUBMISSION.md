@@ -85,7 +85,7 @@ The video was recorded against the live Vercel UI and the Render backend, which 
 | GuardianRegistry | `0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B` |
 | MissionFactory | `0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917` |
 | USDG mission | `0x37522496E38f7859C96bCAC058d23f7296BB646b` |
-| WIF mission | `0x84Dab564B5d553686A2980Ddb42E0ac7Fe3Feed1` |
+| WIF treasury mission | `0x5bdC628D1b0c7DE78579E076398f4c5216e10e08` |
 
 - USDG: `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`
 - WIF: `0x5173b8eA6923c2d40267890D45C46a3480954773`
@@ -121,7 +121,7 @@ The repository-wide legacy Vitest suite still has unrelated HashKey/Solana-era f
 ## WIF integration details
 
 - WIF is a first-class vault asset and factory-allowlisted token; a live WIF mission holds 1 WIF.
-- **Mainnet finding:** the deployed WIF token is a plain ERC-20. Its bytecode exposes neither `transferWithAuthorization` (`0xe3ee160e`) nor `isValidSignature` (`0x1626ba7e`). A real WIF EIP-3009 attempt reverted before any transfer.
+- **Mainnet finding:** the deployed WIF token is a plain ERC-20. Its bytecode exposes neither `transferWithAuthorization` (`0xe3ee160e`) nor `isValidSignature` (`0x1626ba7e`). A real WIF EIP-3009 attempt reverted before any transfer. WIF now uses the separately deployed policy-bounded treasury mission `0x5bdC628D1b0c7DE78579E076398f4c5216e10e08` and `executeERC20Transfer`.
 - Because x402 EIP-3009 is the only authorized payment rail, WIF cannot settle through x402 on this deployment. USDG remains the live settlement asset.
 - The UI shows the WIF mission as a vault position and explicitly labels the WIF x402 path unavailable instead of faking a payment.
 - The contract/factory support selecting WIF as `paymentToken`; a future WIF wrapper or an EIP-3009-compatible WIF deployment would enable the full flow.

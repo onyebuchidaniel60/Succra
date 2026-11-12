@@ -5,6 +5,7 @@ import {
   createWalletClient,
   defineChain,
   encodeAbiParameters,
+  formatUnits,
   http,
   keccak256,
   parseAbi,
@@ -42,7 +43,7 @@ const MAINNET_USDG_MISSION =
   '0x37522496E38f7859C96bCAC058d23f7296BB646b';
 const MAINNET_WIF_MISSION =
   (process.env.SUCCRA_MAINNET_WIF_MISSION as Address | undefined) ??
-  '0x84Dab564B5d553686A2980Ddb42E0ac7Fe3Feed1';
+  '0x5bdC628D1b0c7DE78579E076398f4c5216e10e08';
 
 const chain = defineChain({
   id: CHAIN_ID,
@@ -139,6 +140,7 @@ const MISSION_ABI = parseAbi([
   'function withdraw(uint256 amountAtomic)',
   'function registerSessionKey(address sessionKey,uint64 expectedVersion)',
   'function approvePayment(bytes32 authorizationHash,uint256 amountAtomic,address merchant,uint64 expectedVersion)',
+  'function executeERC20Transfer(address token,address to,uint256 amountAtomic) returns (bool)',
   'function releaseForPayment(address sessionKey,uint256 amountAtomic,uint64 expectedVersion)',
   'function recordSettlement(bytes32 paymentId,uint256 amountAtomic,bytes32 txHash,uint64 expectedVersion)',
   'function recordViolation(bytes32 requestId,uint64 expectedVersion)',
@@ -152,6 +154,7 @@ const MISSION_ABI = parseAbi([
   'event FundsWithdrawn(address indexed owner,uint256 amount)',
   'event SessionKeyRegistered(address indexed sessionKey,uint64 stateVersion)',
   'event SessionKeyRevoked(address indexed sessionKey,uint64 stateVersion)',
+  'event TreasuryTransfer(address indexed token,address indexed to,uint256 amountAtomic,uint64 stateVersion)',
 ]);
 
 const TOKEN_ABI = parseAbi([
@@ -411,7 +414,7 @@ async function setupMainnet(): Promise<DemoState> {
     merchant: merchant.address,
     missions: [],
     events: [],
-    note: 'Live Robinhood mainnet. USDG uses EIP-3009 Variant A; WIF is a plain ERC-20 and cannot settle through x402.',
+    note: 'Live Robinhood mainnet. USDG settles through x402 EIP-3009; WIF uses policy-bounded ERC-20 treasury transfers.',
   };
 
   const session1 = privateKeyToAccount(generatePrivateKey());
@@ -419,19 +422,11 @@ async function setupMainnet(): Promise<DemoState> {
   const session3 = privateKeyToAccount(generatePrivateKey());
 
   const usdgAuthority = await readAuthority(MAINNET_USDG_MISSION);
-  const wifAuthority = await readAuthority(MAINNET_WIF_MISSION);
   await write(
     'mission',
     MAINNET_USDG_MISSION,
     'registerSessionKey',
     [session1.address, usdgAuthority.stateVersion],
-    owner
-  );
-  await write(
-    'mission',
-    MAINNET_WIF_MISSION,
-    'registerSessionKey',
-    [session2.address, wifAuthority.stateVersion],
     owner
   );
 
@@ -447,17 +442,17 @@ async function setupMainnet(): Promise<DemoState> {
     }),
     await missionView({
       key: 'wif',
-      label: 'WIF Procurement',
+      label: 'WIF Treasury',
       symbol: 'WIF',
       decimals: 18,
       token: MAINNET_WIF,
       mission: MAINNET_WIF_MISSION,
-      recoveryCap: 5n * 10n ** 17n,
+      recoveryCap: 5n * 10n ** 16n,
     }),
   ];
   const evidence: Array<[string, string, DemoEvent['kind']]> = [
     ['Mainnet USDG mission created', '0x159d48af15282f927323e22149dd0a509fb767ab47ad7b298ee80232fb2181fd', 'deploy'],
-    ['Mainnet WIF mission created', '0x8d2c31349060e7df60228cc46993f1c0249ff7c69515519f64676790cb6e381d', 'deploy'],
+    ['Mainnet WIF treasury mission deployed', '0x74645d94a5619c4ff7d22d92834c8377ed757ee52f63ff4ed108ee2443d296ea', 'deploy'],
     ['Mainnet USDG ERC-1271 probe PASS', '0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8', 'payment'],
     ['USDG EIP-3009 payment · 0.01 USDG', '0xbcb910b839c792160325abd00c515455560d0f0e68a356bc9f24d143f9528000', 'payment'],
     ['Variant A approved hash', '0x5018cb2cf8fa53935c3f24f8abcd9657ac74800f0567deba1ad26589b4c09f62', 'payment'],
@@ -466,7 +461,7 @@ async function setupMainnet(): Promise<DemoState> {
     ['Policy violation 2/3', '0xc2950eed41441cef34ca5759a846bbd83e119b3837b0ac951acda36ac44df53d', 'violation'],
     ['Policy violation 3/3', '0x9997d68f984a29c28f3109662f7e937fb725fc2ebf9a26adc40abd59ed20e5df', 'violation'],
     ['USDG mission quarantined', '0xb4177d9487ab6e30412770d547d5838a33f6637d9ac7d52b01d536132b251e4f', 'quarantine'],
-    ['WIF mission quarantined', '0xf8d0ff3283eeb98348e943be46e899fb42575ae6130b105f61b7ef22f5105aeb', 'quarantine'],
+    ['Legacy WIF mission quarantined', '0xf8d0ff3283eeb98348e943be46e899fb42575ae6130b105f61b7ef22f5105aeb', 'quarantine'],
     ['Owner withdrew 0.50 USDG while quarantined', '0xcf0134577703090575699c452a008a23b272fc841a701efa311710326eb4aada', 'withdraw'],
     ['Successor Beta activated', '0x6594d51e6fee11696425780222cb675a4b92514f4248b7eab95f6053adebdf06', 'succession'],
     ['Recovery acknowledged by guardian relay', '0x08dde2cedae2c7fc6f3942ec8fbeaef8177b88647e86fe74f82607e329ea9a0b', 'succession'],
@@ -568,7 +563,7 @@ async function setup(): Promise<DemoState> {
     }),
     await missionView({
       key: 'wif',
-      label: 'WIF Procurement',
+      label: 'WIF Treasury',
       symbol: 'WIF',
       decimals: 18,
       token: wif,
@@ -597,7 +592,7 @@ async function refresh(state: DemoState, runtime: Runtime): Promise<DemoState> {
     }),
     await missionView({
       key: 'wif',
-      label: 'WIF Procurement',
+      label: 'WIF Treasury',
       symbol: 'WIF',
       decimals: 18,
       token: runtime.wif,
@@ -608,25 +603,59 @@ async function refresh(state: DemoState, runtime: Runtime): Promise<DemoState> {
   return state;
 }
 
+async function runWifTreasuryTransfer(
+  state: DemoState,
+  runtime: Runtime
+): Promise<DemoState> {
+  const amount = 10n ** 16n; // 0.01 WIF
+  let allowed = false;
+  try {
+    const simulated = await publicClient.simulateContract({
+      account: guardian,
+      address: runtime.wifMission,
+      abi: MISSION_ABI,
+      functionName: 'executeERC20Transfer',
+      args: [runtime.wif, merchant.address, amount],
+    });
+    allowed = Boolean(simulated.result);
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : 'simulation failed';
+    throw new Error(`WIF treasury transfer is unavailable on this deployment: ${reason}`);
+  }
+  if (!allowed) {
+    throw new Error('WIF treasury transfer was blocked by mission policy.');
+  }
+
+  const transferHash = await write(
+    'mission',
+    runtime.wifMission,
+    'executeERC20Transfer',
+    [runtime.wif, merchant.address, amount],
+    guardian
+  );
+  state.phase = 'WIF treasury transfer settled';
+  event(state, `WIF treasury transfer · ${formatUnits(amount, 18)} WIF`, transferHash, 0, 'payment');
+  event(state, 'ERC-20 policy checks passed · allowlisted merchant', transferHash, 0, 'payment');
+  return refresh(state, runtime);
+}
+
 async function runPayment(
   state: DemoState,
   runtime: Runtime,
   key: 'usdg' | 'wif'
 ): Promise<DemoState> {
-  const isUsdg = key === 'usdg';
-  if (MAINNET_MODE && key === 'wif') {
-    throw new Error('WIF is a plain ERC-20 without EIP-3009 or ERC-1271; it cannot settle through x402.');
-  }
-  const token = isUsdg ? runtime.usdg : runtime.wif;
-  const mission = isUsdg ? runtime.usdgMission : runtime.wifMission;
-  const session = isUsdg ? runtime.session1 : runtime.session2;
-  const amount = isUsdg ? 10_000n : 10n ** 16n;
-  const domainName = isUsdg ? 'Global Dollar' : 'World is Flat';
+  if (key === 'wif') return runWifTreasuryTransfer(state, runtime);
+
+  const token = runtime.usdg;
+  const mission = runtime.usdgMission;
+  const session = runtime.session1;
+  const amount = 10_000n;
+  const domainName = 'Global Dollar';
 
   const authority = await readAuthority(mission);
   const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3_600);
   runtime.nonce += 1;
-  const nonce = keccak256(stringToHex(`${key}-payment-${runtime.nonce}-${Date.now()}`));
+  const nonce = keccak256(stringToHex(`usdg-payment-${runtime.nonce}-${Date.now()}`));
   const typedData = buildEip3009TypedData({
     domain: {
       name: domainName,
@@ -668,20 +697,26 @@ async function runPayment(
     guardian
   );
 
-  state.phase = `${isUsdg ? 'USDG' : 'WIF'} x402 payment settled`;
-  event(state, `${isUsdg ? 'USDG' : 'WIF'} EIP-3009 payment · ${amount} atomic`, transferHash, 0, 'payment');
+  state.phase = 'USDG x402 payment settled';
+  event(state, `USDG EIP-3009 payment · ${formatUnits(amount, 6)} USDG`, transferHash, 0, 'payment');
   event(state, 'Variant A approved hash', approvalHash, 0, 'payment');
   event(state, 'Settlement recorded', settlementHash, 0, 'payment');
   return refresh(state, runtime);
 }
 
-async function depositUsdg(state: DemoState, runtime: Runtime): Promise<DemoState> {
-  const amount = 100_000n; // 0.10 USDG
+async function depositUsdg(
+  state: DemoState,
+  runtime: Runtime,
+  amountAtomic?: bigint
+): Promise<DemoState> {
+  const amount = amountAtomic ?? 100_000n;
+  if (amount <= 0n) throw new Error('Deposit amount must be greater than zero.');
+  const display = formatUnits(amount, 6);
   const approveHash = await write('token', runtime.usdg, 'approve', [runtime.usdgMission, amount], owner);
   const depositHash = await write('mission', runtime.usdgMission, 'deposit', [amount], owner);
-  event(state, 'Owner deposited 0.10 USDG into the vault', depositHash, 0, 'deposit');
-  event(state, 'USDG approval for vault deposit', approveHash, 0, 'deposit');
-  state.phase = 'USDG vault topped up';
+  event(state, `Owner deposited ${display} USDG into the vault`, depositHash, 0, 'deposit');
+  event(state, `USDG approval for vault deposit · ${display} USDG`, approveHash, 0, 'deposit');
+  state.phase = `${display} USDG vault deposit confirmed`;
   return refresh(state, runtime);
 }
 
@@ -855,7 +890,10 @@ export function emptyDemoState(ownerAddress?: string | null): DemoState {
   };
 }
 
-export async function runDemoAction(action: string): Promise<DemoState> {
+export async function runDemoAction(
+  action: string,
+  options?: { amountAtomic?: bigint }
+): Promise<DemoState> {
   if (action === 'reset') {
     store.state = undefined;
     store.runtime = undefined;
@@ -870,7 +908,7 @@ export async function runDemoAction(action: string): Promise<DemoState> {
     case 'init':
       return refresh(state, runtime);
     case 'deposit-usdg':
-      return depositUsdg(state, runtime);
+      return depositUsdg(state, runtime, options?.amountAtomic);
     case 'usdg-payment':
       return runPayment(state, runtime, 'usdg');
     case 'wif-payment':

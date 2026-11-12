@@ -118,12 +118,13 @@ export async function fetchDemoState(params?: DemoParams): Promise<DemoState> {
 
 export async function postDemoAction(
   action: string,
-  params?: DemoParams
+  params?: DemoParams,
+  payload?: { amount?: string }
 ): Promise<DemoState> {
   const response = await fetch(demoUrl(params), {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, ...payload }),
   });
   const body = await readEnvelope(response);
   if (response.status === 401 || body.code === 'OWNER_AUTH_REQUIRED') {
