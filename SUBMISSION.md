@@ -76,6 +76,8 @@ The local deterministic demo deploys interface-compatible mock tokens (`Global D
 
 The video was recorded against the live Vercel UI and the Render backend, which reads the live mainnet mission state. The transaction hashes shown in the UI are real Robinhood mainnet transactions linked to Blockscout.
 
+**Settlement note:** the live demo executes the on-chain EIP-3009 `transferWithAuthorization` settlement directly against Paxos USDG. The x402 client includes a mock facilitator, but no public facilitator is wired into the live settlement path; the on-chain token and contract state are authoritative.
+
 ## Mainnet deployment
 
 | Contract | Address |
