@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { demoUrl } from '@/lib/demo/client';
 
 type DemoEvent = {
   label: string;
@@ -76,7 +77,7 @@ function formatAtomic(value: string, decimals: number): string {
 }
 
 function statusTone(status: string): string {
-  if (status === 'ACTIVE') return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300';
+  if (status === 'ACTIVE') return 'border-[#e8ff63]/40 bg-[#e8ff63]/10 text-[#e8ff63]';
   if (status === 'QUARANTINED') return 'border-red-400/30 bg-red-400/10 text-red-300';
   if (status === 'RECOVERING' || status === 'ACTIVE_RECOVERY')
     return 'border-amber-400/30 bg-amber-400/10 text-amber-300';
@@ -88,7 +89,7 @@ function toneClass(tone: string): string {
   if (tone === 'amber') return 'border-amber-400/30 bg-amber-400/10 text-amber-200 hover:bg-amber-400/15';
   if (tone === 'violet') return 'border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/15';
   if (tone === 'blue') return 'border-sky-400/30 bg-sky-400/10 text-sky-200 hover:bg-sky-400/15';
-  return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/15';
+  return 'border-[#e8ff63]/40 bg-[#e8ff63] text-black hover:bg-[#f2ff92]';
 }
 
 export default function DemoConsole(): React.JSX.Element {
@@ -99,7 +100,7 @@ export default function DemoConsole(): React.JSX.Element {
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch('/api/demo', { cache: 'no-store' });
+      const response = await fetch(demoUrl(), { cache: 'no-store' });
       const body = (await response.json()) as { ok: boolean; state?: DemoState; error?: string };
       if (!body.ok || !body.state) throw new Error(body.error ?? 'Could not initialize demo.');
       setState(body.state);
@@ -130,7 +131,7 @@ export default function DemoConsole(): React.JSX.Element {
     setPending(action);
     setError(null);
     try {
-      const response = await fetch('/api/demo', {
+      const response = await fetch(demoUrl(), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action }),
@@ -161,16 +162,16 @@ export default function DemoConsole(): React.JSX.Element {
   }, [state]);
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#07090c] text-zinc-100">
+    <main className="reference-grid relative min-h-screen overflow-hidden bg-[#07090c] text-zinc-100">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(16,185,129,0.14),transparent_38%),radial-gradient(circle_at_85%_10%,rgba(139,92,246,0.12),transparent_32%)]" />
       <div className="relative mx-auto max-w-7xl px-6 py-8">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-300/30 bg-emerald-300/10 font-mono text-lg text-emerald-300">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#e8ff63]/40 bg-[#e8ff63] font-mono text-lg font-black text-black">
               S
             </div>
             <div>
-              <p className="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300">Succra</p>
+              <p className="font-mono text-xs uppercase tracking-[0.32em] text-[#e8ff63]">Succra</p>
               <p className="text-sm text-zinc-400">Mission continuity console</p>
             </div>
           </div>
@@ -178,7 +179,7 @@ export default function DemoConsole(): React.JSX.Element {
             <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 font-mono text-zinc-300">
               {state?.label ?? 'Robinhood Chain · local deterministic demo'}
             </span>
-            <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 font-mono text-emerald-300">
+            <span className="rounded-full border border-[#e8ff63]/30 bg-[#e8ff63]/10 px-3 py-1 font-mono text-[#e8ff63]">
               x402 · USDG + WIF
             </span>
           </div>
@@ -186,7 +187,7 @@ export default function DemoConsole(): React.JSX.Element {
 
         <section className="grid gap-8 py-9 lg:grid-cols-[1.25fr_0.75fr]">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.24em] text-emerald-300">
+            <p className="font-mono text-xs uppercase tracking-[0.24em] text-[#e8ff63]">
               Program-controlled vault · ERC-1271
             </p>
             <h1 className="mt-3 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
@@ -273,7 +274,7 @@ export default function DemoConsole(): React.JSX.Element {
               <article
                 key={mission.key}
                 data-testid={`mission-${mission.key}`}
-                className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-white/[0.02] p-5"
+                className="reference-glow rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-white/[0.02] p-5"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -299,7 +300,7 @@ export default function DemoConsole(): React.JSX.Element {
                   </div>
                 </div>
                 <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-emerald-400/70" style={{ width: `${progress}%` }} />
+                  <div className="h-full rounded-full bg-[#e8ff63]" style={{ width: `${progress}%` }} />
                 </div>
                 <div className="mt-4 grid gap-1.5 font-mono text-[11px] text-zinc-500">
                   <div className="flex justify-between gap-3"><span>token</span><span className="text-zinc-300">{compact(mission.tokenAddress, 10, 8)}</span></div>

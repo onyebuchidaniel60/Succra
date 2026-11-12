@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Succra — Missions continue',
-  description: 'Continuity and authority layer for autonomous agent payments on HashKey Chain.',
+  description: 'Continuity and authority layer for autonomous economic missions on Robinhood Chain.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {

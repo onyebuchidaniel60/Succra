@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 
+.reference-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 72px 72px;
+}
+
+.reference-glow {
+  box-shadow: 0 0 0 1px rgba(232, 255, 99, 0.16), 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
 /* Succra design system: near-black/graphite base, semantic accents, visible
    keyboard focus everywhere. */
 @layer base {

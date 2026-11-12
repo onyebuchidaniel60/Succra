@@ -4,8 +4,10 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
+  encodeAbiParameters,
   http,
   keccak256,
+  parseAbiParameters,
   stringToHex,
   type Abi,
   type Address,
@@ -18,12 +20,31 @@ import {
   signTransferWithAuthorization,
 } from '@succra/x402-client';
 
-const RPC_URL = process.env.SUCCRA_DEMO_RPC_URL ?? 'http://127.0.0.1:8545';
-const CHAIN_ID = 31337;
+const MAINNET_MODE = process.env.SUCCRA_DEMO_MODE === 'mainnet';
+const RPC_URL =
+  process.env.SUCCRA_DEMO_RPC_URL ??
+  (MAINNET_MODE
+    ? 'https://rpc.mainnet.chain.robinhood.com'
+    : 'http://127.0.0.1:8545');
+const CHAIN_ID = MAINNET_MODE ? 4663 : 31337;
+const MAINNET_USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168' as Address;
+const MAINNET_WIF = '0x5173b8eA6923c2d40267890D45C46a3480954773' as Address;
+const MAINNET_FACTORY =
+  (process.env.SUCCRA_MAINNET_FACTORY as Address | undefined) ??
+  '0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917';
+const MAINNET_REGISTRY =
+  (process.env.SUCCRA_MAINNET_REGISTRY as Address | undefined) ??
+  '0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B';
+const MAINNET_USDG_MISSION =
+  (process.env.SUCCRA_MAINNET_USDG_MISSION as Address | undefined) ??
+  '0x37522496E38f7859C96bCAC058d23f7296BB646b';
+const MAINNET_WIF_MISSION =
+  (process.env.SUCCRA_MAINNET_WIF_MISSION as Address | undefined) ??
+  '0x84Dab564B5d553686A2980Ddb42E0ac7Fe3Feed1';
 
 const chain = defineChain({
   id: CHAIN_ID,
-  name: 'Succra local demo',
+  name: MAINNET_MODE ? 'Robinhood Chain' : 'Succra local demo',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   rpcUrls: { default: { http: [RPC_URL] } },
 });
@@ -38,8 +59,30 @@ const HARDHAT_KEYS = {
   merchant: '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a',
 } as const;
 
-const owner = privateKeyToAccount(HARDHAT_KEYS.owner);
-const guardian = privateKeyToAccount(HARDHAT_KEYS.guardian);
+function envFileValue(name: string): string | undefined {
+  if (process.env[name]) return process.env[name];
+  const candidates = [
+    process.cwd(),
+    path.resolve(process.cwd(), '..'),
+    path.resolve(process.cwd(), '../..'),
+    path.resolve(process.cwd(), '../../..'),
+  ];
+  for (const candidate of candidates) {
+    const file = path.join(candidate, 'contracts', '.env.local');
+    if (!fs.existsSync(file)) continue;
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      if (!line.startsWith(`${name}=`)) continue;
+      return line.slice(name.length + 1).trim();
+    }
+  }
+  return undefined;
+}
+
+const MAINNET_KEY = envFileValue('ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY');
+const owner = MAINNET_MODE
+  ? privateKeyToAccount((MAINNET_KEY ?? (() => { throw new Error('Missing mainnet signer.'); })()) as Hex)
+  : privateKeyToAccount(HARDHAT_KEYS.owner);
+const guardian = MAINNET_MODE ? owner : privateKeyToAccount(HARDHAT_KEYS.guardian);
 const primary = privateKeyToAccount(HARDHAT_KEYS.primary);
 const successor = privateKeyToAccount(HARDHAT_KEYS.successor);
 const merchant = privateKeyToAccount(HARDHAT_KEYS.merchant);
@@ -292,7 +335,103 @@ function missionConfig(args: {
   };
 }
 
+async function setupMainnet(): Promise<DemoState> {
+  const state: DemoState = {
+    initialized: true,
+    phase: 'Mainnet missions live',
+    chainId: CHAIN_ID,
+    label: 'Robinhood Chain · live mainnet',
+    registry: MAINNET_REGISTRY,
+    factory: MAINNET_FACTORY,
+    owner: owner.address,
+    guardian: guardian.address,
+    primary: primary.address,
+    successor: successor.address,
+    merchant: merchant.address,
+    missions: [],
+    events: [],
+    note: 'Live Robinhood mainnet. USDG uses EIP-3009 Variant A; WIF is a plain ERC-20 and cannot settle through x402.',
+  };
+
+  const session1 = privateKeyToAccount(generatePrivateKey());
+  const session2 = privateKeyToAccount(generatePrivateKey());
+  const session3 = privateKeyToAccount(generatePrivateKey());
+
+  const usdgAuthority = await readAuthority(MAINNET_USDG_MISSION);
+  const wifAuthority = await readAuthority(MAINNET_WIF_MISSION);
+  await write(
+    'mission',
+    MAINNET_USDG_MISSION,
+    'registerSessionKey',
+    [session1.address, usdgAuthority.stateVersion],
+    owner
+  );
+  await write(
+    'mission',
+    MAINNET_WIF_MISSION,
+    'registerSessionKey',
+    [session2.address, wifAuthority.stateVersion],
+    owner
+  );
+
+  state.missions = [
+    await missionView({
+      key: 'usdg',
+      label: 'USDG Treasury',
+      symbol: 'USDG',
+      decimals: 6,
+      token: MAINNET_USDG,
+      mission: MAINNET_USDG_MISSION,
+      recoveryCap: 500_000n,
+    }),
+    await missionView({
+      key: 'wif',
+      label: 'WIF Procurement',
+      symbol: 'WIF',
+      decimals: 18,
+      token: MAINNET_WIF,
+      mission: MAINNET_WIF_MISSION,
+      recoveryCap: 5n * 10n ** 17n,
+    }),
+  ];
+  event(
+    state,
+    'Mainnet USDG ERC-1271 probe PASS',
+    '0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8',
+    0,
+    'payment'
+  );
+  event(
+    state,
+    'Mainnet USDG mission created',
+    '0x159d48af15282f927323e22149dd0a509fb767ab47ad7b298ee80232fb2181fd',
+    0,
+    'deploy'
+  );
+  event(
+    state,
+    'Mainnet WIF mission created',
+    '0x8d2c31349060e7df60228cc46993f1c0249ff7c69515519f64676790cb6e381d',
+    0,
+    'deploy'
+  );
+
+  store.state = state;
+  store.runtime = {
+    usdg: MAINNET_USDG,
+    wif: MAINNET_WIF,
+    usdgMission: MAINNET_USDG_MISSION,
+    wifMission: MAINNET_WIF_MISSION,
+    session1,
+    session2,
+    session3,
+    nonce: 0,
+  };
+  return state;
+}
+
 async function setup(): Promise<DemoState> {
+  if (MAINNET_MODE) return setupMainnet();
   const state: DemoState = {
     initialized: true,
     phase: 'Mission created',
@@ -414,6 +553,9 @@ async function runPayment(
   key: 'usdg' | 'wif'
 ): Promise<DemoState> {
   const isUsdg = key === 'usdg';
+  if (MAINNET_MODE && key === 'wif') {
+    throw new Error('WIF is a plain ERC-20 without EIP-3009 or ERC-1271; it cannot settle through x402.');
+  }
   const token = isUsdg ? runtime.usdg : runtime.wif;
   const mission = isUsdg ? runtime.usdgMission : runtime.wifMission;
   const session = isUsdg ? runtime.session1 : runtime.session2;
@@ -472,6 +614,16 @@ async function runPayment(
   return refresh(state, runtime);
 }
 
+async function depositUsdg(state: DemoState, runtime: Runtime): Promise<DemoState> {
+  const amount = 100_000n; // 0.10 USDG
+  const approveHash = await write('token', runtime.usdg, 'approve', [runtime.usdgMission, amount], owner);
+  const depositHash = await write('mission', runtime.usdgMission, 'deposit', [amount], owner);
+  event(state, 'Owner deposited 0.10 USDG into the vault', depositHash, 0, 'deposit');
+  event(state, 'USDG approval for vault deposit', approveHash, 0, 'deposit');
+  state.phase = 'USDG vault topped up';
+  return refresh(state, runtime);
+}
+
 async function runViolations(state: DemoState, runtime: Runtime, key: 'usdg' | 'wif') {
   const mission = key === 'usdg' ? runtime.usdgMission : runtime.wifMission;
   let authority = await readAuthority(mission);
@@ -516,23 +668,33 @@ async function quarantine(state: DemoState, runtime: Runtime) {
 async function succession(state: DemoState, runtime: Runtime) {
   const mission = runtime.usdgMission;
   let authority = await readAuthority(mission);
-  const activateHash = await write(
-    'mission',
-    mission,
-    'activateSuccessor',
-    [successor.address, authority.stateVersion],
-    guardian
+  if (!(authority.status === 4 && authority.currentAgent === successor.address)) {
+    const activateHash = await write(
+      'mission',
+      mission,
+      'activateSuccessor',
+      [successor.address, authority.stateVersion],
+      guardian
+    );
+    event(state, 'Successor Beta activated', activateHash, 0, 'succession');
+    authority = await readAuthority(mission);
+  }
+  const digest = keccak256(
+    encodeAbiParameters(parseAbiParameters('string,address,uint64'), [
+      'succra.recovery.ack.v1',
+      mission,
+      authority.stateVersion,
+    ])
   );
-  event(state, 'Successor Beta activated', activateHash, 0, 'succession');
-  authority = await readAuthority(mission);
+  const signature = await successor.sign({ hash: digest });
   const ackHash = await write(
     'mission',
     mission,
     'acknowledgeRecovery',
-    [authority.stateVersion, '0x'],
-    successor
+    [authority.stateVersion, signature],
+    guardian
   );
-  event(state, 'Recovery acknowledged', ackHash, 0, 'succession');
+  event(state, 'Recovery acknowledged by guardian relay', ackHash, 0, 'succession');
   authority = await readAuthority(mission);
   const keyHash = await write(
     'mission',
@@ -619,6 +781,8 @@ export async function runDemoAction(action: string): Promise<DemoState> {
   switch (action) {
     case 'init':
       return refresh(state, runtime);
+    case 'deposit-usdg':
+      return depositUsdg(state, runtime);
     case 'usdg-payment':
       return runPayment(state, runtime, 'usdg');
     case 'wif-payment':

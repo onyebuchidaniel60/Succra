@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: succra-backend
+    runtime: node
+    plan: free
+    region: oregon
+    branch: robinhood-pivot
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @succra/web build
+    startCommand: pnpm --filter @succra/web start
+    healthCheckPath: /api/demo
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: 24.13.4
+      - key: SUCCRA_ROOT
+        value: /opt/render/project/src
+      - key: SUCCRA_DEMO_MODE
+        value: mainnet
+      - key: SUCCRA_E2E_MODE
+        value: "1"
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: http://localhost:54321
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        value: render-build-placeholder
+      - key: NEXT_PUBLIC_HASHKEY_RPC_URL
+        value: https://rpc.mainnet.chain.robinhood.com
+      - key: DATABASE_URL
+        sync: false
+      - key: ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY
+        sync: false
+      - key: DEMO_ALLOWED_ORIGIN
+        sync: false
