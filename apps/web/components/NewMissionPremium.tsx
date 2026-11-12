@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import ConnectWalletButton from '@/components/ConnectWalletButton';
 import { fetchDemoState, postDemoAction, type DemoState } from '@/lib/demo/client';
 
 export default function NewMissionPremium() {
@@ -33,7 +34,10 @@ export default function NewMissionPremium() {
       <div className="mx-auto max-w-5xl">
         <header className="flex items-center justify-between border-b border-white/10 pb-5">
           <a href="/dashboard" className="font-mono text-xs uppercase tracking-[0.3em] text-[#e8ff63]">← Succra dashboard</a>
-          <span className="rounded-full border border-[#e8ff63]/30 bg-[#e8ff63]/10 px-3 py-1 font-mono text-[11px] text-[#e8ff63]">Live mainnet · {state?.chainId ?? '4663'}</span>
+          <div className="flex items-center gap-3">
+            <span className="rounded-full border border-[#e8ff63]/30 bg-[#e8ff63]/10 px-3 py-1 font-mono text-[11px] text-[#e8ff63]">Live mainnet · {state?.chainId ?? '4663'}</span>
+            <ConnectWalletButton />
+          </div>
         </header>
 
         <section className="mt-12 grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">

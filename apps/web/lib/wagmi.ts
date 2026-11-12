@@ -1,27 +1,39 @@
-// Succra web — wagmi configuration for HashKey mainnet and testnet.
+// Succra web — wagmi configuration for Robinhood mainnet and testnet.
 //
 // Injected wallets cover MetaMask/OKX/TokenPocket browser extensions;
 // WalletConnect covers mobile wallets when a project id is configured.
-// The config is created once at module scope and shared by <Providers>.
-import { createConfig, http, type Config, type CreateConnectorFn } from 'wagmi';
+import { createConfig, type Config, type CreateConnectorFn } from 'wagmi';
+import { defineChain, http, type Chain } from 'viem';
 import { injected } from 'wagmi/connectors/injected';
 import { walletConnect } from 'wagmi/connectors/walletConnect';
-import { hashkey, hashkeyTestnet } from 'viem/chains';
-import type { Chain } from 'viem';
 
-export const hashkeyMainnet: Chain = hashkey;
-export const hashkeyTestnetChain: Chain = hashkeyTestnet;
+export const robinhoodMainnet: Chain = defineChain({
+  id: 4663,
+  name: 'Robinhood Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://rpc.mainnet.chain.robinhood.com'] },
+  },
+  blockExplorers: {
+    default: { name: 'Robinhood Blockscout', url: 'https://robinhoodchain.blockscout.com' },
+  },
+});
+
+const TESTNET_RPC =
+  process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL ?? 'https://rpc.testnet.chain.robinhood.com';
+
+export const robinhoodTestnet: Chain = defineChain({
+  id: 46630,
+  name: 'Robinhood Testnet',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: [TESTNET_RPC] } },
+  blockExplorers: {
+    default: { name: 'Robinhood Blockscout', url: 'https://robinhoodchain.blockscout.com' },
+  },
+});
 
 export function supportedChainIds(): number[] {
-  return [hashkeyMainnet.id, hashkeyTestnetChain.id];
-}
-
-function mainnetRpc(): string {
-  return process.env.NEXT_PUBLIC_HASHKEY_RPC_URL ?? 'https://mainnet.hsk.xyz';
-}
-
-function testnetRpc(): string | undefined {
-  return process.env.NEXT_PUBLIC_HASHKEY_TESTNET_RPC_URL;
+  return [robinhoodMainnet.id, robinhoodTestnet.id];
 }
 
 export function createSuccraWagmiConfig(): Config {
@@ -37,11 +49,11 @@ export function createSuccraWagmiConfig(): Config {
   }
 
   return createConfig({
-    chains: [hashkeyMainnet, hashkeyTestnetChain],
+    chains: [robinhoodMainnet, robinhoodTestnet],
     connectors,
     transports: {
-      [hashkeyMainnet.id]: http(mainnetRpc()),
-      [hashkeyTestnetChain.id]: http(testnetRpc()),
+      [robinhoodMainnet.id]: http(),
+      [robinhoodTestnet.id]: http(TESTNET_RPC),
     },
     ssr: true,
   });

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import ConnectWalletButton from '@/components/ConnectWalletButton';
 
 export default function LandingPage(): React.JSX.Element {
   return (
@@ -15,6 +16,7 @@ export default function LandingPage(): React.JSX.Element {
           </div>
           <div className="flex items-center gap-3 text-sm">
             <Link href="/missions/new" className="hidden rounded-full border border-white/10 px-4 py-2 text-zinc-300 hover:border-white/25 sm:block">New mission</Link>
+            <ConnectWalletButton />
             <Link href="/dashboard" className="rounded-full bg-[#e8ff63] px-5 py-2 font-semibold text-black">Open console</Link>
           </div>
         </nav>

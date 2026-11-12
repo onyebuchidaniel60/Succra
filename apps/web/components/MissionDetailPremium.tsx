@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import ConnectWalletButton from '@/components/ConnectWalletButton';
 import {
   compact,
   fetchDemoState,
@@ -35,9 +36,12 @@ export default function MissionDetailPremium({ missionId }: { missionId: string 
           <a href="/dashboard" className="font-mono text-xs uppercase tracking-[0.3em] text-[#e8ff63]">
             ← Succra dashboard
           </a>
-          <span className="rounded-full border border-[#e8ff63]/30 bg-[#e8ff63]/10 px-3 py-1 font-mono text-[11px] text-[#e8ff63]">
-            {state?.label ?? 'Live mainnet'}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="rounded-full border border-[#e8ff63]/30 bg-[#e8ff63]/10 px-3 py-1 font-mono text-[11px] text-[#e8ff63]">
+              {state?.label ?? 'Live mainnet'}
+            </span>
+            <ConnectWalletButton />
+          </div>
         </header>
 
         {error ? <p className="mt-8 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-red-200">{error}</p> : null}

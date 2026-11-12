@@ -18,8 +18,8 @@ import {
 import type { LoginTypedData } from '@/lib/auth/message';
 import { shortenAddress } from '@/lib/format';
 
-const HASHKEY_MAINNET = 177;
-const HASHKEY_TESTNET = 133;
+const ROBINHOOD_MAINNET = 4663;
+const ROBINHOOD_TESTNET = 46630;
 
 interface NonceResponse {
   nonce: string;
@@ -28,8 +28,8 @@ interface NonceResponse {
 }
 
 function chainLabel(chainId: number): string {
-  if (chainId === HASHKEY_MAINNET) return 'HashKey mainnet';
-  if (chainId === HASHKEY_TESTNET) return 'HashKey testnet';
+  if (chainId === ROBINHOOD_MAINNET) return 'Robinhood mainnet';
+  if (chainId === ROBINHOOD_TESTNET) return 'Robinhood testnet';
   return `Unsupported chain ${chainId}`;
 }
 
@@ -66,7 +66,7 @@ export default function WalletConnect({
     setError('');
   }, [address, authenticated]);
 
-  const supportedChain = chainId === HASHKEY_MAINNET || chainId === HASHKEY_TESTNET;
+  const supportedChain = chainId === ROBINHOOD_MAINNET || chainId === ROBINHOOD_TESTNET;
   const connected = status === 'connected' && Boolean(address);
   const busy = working || isConnecting || isSigning;
 
@@ -98,7 +98,7 @@ export default function WalletConnect({
       return;
     }
     if (!supportedChain) {
-      setError('Switch your wallet to HashKey mainnet (177) or testnet (133).');
+      setError('Switch your wallet to Robinhood mainnet (177) or testnet (133).');
       return;
     }
     setWorking(true);
@@ -170,7 +170,7 @@ export default function WalletConnect({
           </div>
           {!supportedChain ? (
             <p role="alert" className="text-sm text-amber-300">
-              Unsupported network. Switch to HashKey mainnet (177) or testnet (133) before signing
+              Unsupported network. Switch to Robinhood mainnet (177) or testnet (133) before signing
               in.
             </p>
           ) : null}

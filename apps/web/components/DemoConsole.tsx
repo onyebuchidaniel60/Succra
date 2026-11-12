@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import ConnectWalletButton from '@/components/ConnectWalletButton';
 import { demoUrl } from '@/lib/demo/client';
 
 type DemoEvent = {
@@ -177,11 +178,12 @@ export default function DemoConsole(): React.JSX.Element {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 font-mono text-zinc-300">
-              {state?.label ?? 'Robinhood Chain · local deterministic demo'}
+              {state?.label ?? 'Robinhood Chain · live mainnet'}
             </span>
             <span className="rounded-full border border-[#e8ff63]/30 bg-[#e8ff63]/10 px-3 py-1 font-mono text-[#e8ff63]">
               x402 · USDG + WIF
             </span>
+            <ConnectWalletButton />
           </div>
         </header>
 
