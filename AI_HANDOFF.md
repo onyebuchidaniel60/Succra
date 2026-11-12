@@ -11,20 +11,18 @@ Succra allows an economic mission to survive primary-agent failure by maintainin
 
 - HashKey implementation archived at annotated tag `hashkey-v1` → `phase-7-ux` @ `cc0f90b` (Phase 7a/7b/7c complete; not merged to main). `main` is @ `549629d` (Phase 6 merge).
 - **R0 complete (chain swap):** docs authorize Robinhood Chain / x402, mainnet 4663 and testnet 46630, USDG, and the x402 facilitator.
-- **R0b complete (this task):** docs authorize the program-controlled vault model (Model A), session-key lifecycle, deposit/withdrawal, the R1-spike gate, and the mission-continuity reframe.
+- **R0b complete @ `f98cafe`:** docs authorize the program-controlled vault model (Model A), session-key lifecycle, deposit/withdrawal, the R1-spike gate, and the mission-continuity reframe.
 - Docs now specify:
   - `SuccraMission` holds mission USDG; the owner deposits at creation and can withdraw unilaterally at any status.
   - A session key is registered at mission creation, held server-side by the runtime, revoked on quarantine, and replaced on succession with the reduced recovery cap.
   - Two EIP-3009 variants: **A** (contract signer via ERC-1271) and **B** (session key funded on-demand); R1-spike decides.
   - The owner is never in the per-payment loop.
-- Phase sequence: **R0** (archive + docs pivot; complete), **R0b** (Model A docs amendment; complete), **R1-spike** (ERC-1271 probe; not authorized), **R1** (x402 client + vault integration; not authorized), **R2** (testnet 46630), **R3** (mainnet 4663), **R4** (Playwright smoke + video/submission).
-- Phase 7c UI work is rail-agnostic and complete at `cc0f90b`; it can be merged or carried into `robinhood-pivot` after R0. No further 7c work is authorized.
-- **Next assigned task: R1-spike, not yet authorized.**
-- Prerequisites for R1-spike:
-  - funded Robinhood testnet deployer wallet (not configured yet);
-  - Robinhood testnet network in Hardhat config (not configured yet);
-  - testnet ETH and USDG from the faucet.
-- After R1-spike: R1 implementation, not yet authorized.
+- Phase sequence: **R0** (archive + docs pivot; complete), **R0b** (Model A docs amendment; complete), **R1** (implementation; complete locally), **R2/R3** (mainnet deploy; blocked on signer), **R4** (local demo video; complete).
+- **R1 implementation complete locally:** `SuccraMission` now has the vault (`deposit`/`withdraw`), session-key lifecycle, Variant A `approvePayment` + ERC-1271 `isValidSignature`, Variant B `releaseForPayment`, USDG/WIF token allowlist support, and the existing policy/quarantine/succession/checkpoint model. `packages/x402-client`, the `/demo` console, and the demo orchestrator are implemented.
+- **Variant A local proof: PASS.** The mock EIP-3009 token code-routed to `SuccraMission.isValidSignature`, returned MAGIC, transferred value with `from=mission`, and set `authorizationState`. Contract suite: **107 passing**.
+- **Mainnet deploy: BLOCKED.** `contracts/.env.local` still has no `ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY`; the only configured deployer `0x28F4410836a0EEF1251726D733c555975fA4b2f4` has 0 mainnet ETH/USDG/WIF. No mainnet contract addresses or transactions exist. Deployment scripts are ready in `contracts/scripts/deploy-mainnet.ts`.
+- **R4 local demo complete:** `demo-video/succra_demo.mp4` (1920×1080, 68.3s), scene-synced ElevenLabs voiceover, royalty-free music, Playwright choreography, and real local state transitions. Submission text: `SUBMISSION.md`.
+- **Next assigned task: supply a funded mainnet signer, deploy `GuardianRegistry` + `MissionFactory`, configure USDG/WIF, and run the real ERC-1271 check.** R3 remains blocked until then.
 
 ## Historical HashKey delivery (archived at `hashkey-v1`)
 
@@ -175,12 +173,14 @@ User wallet → Next.js web → Supabase / Succra runtime → SuccraMission cont
 - support for Solana
 
 ## Current phase
-**Phase R0b — Program-controlled vault model docs amendment.**
+**R1 complete locally; R2/R3 mainnet deployment blocked on missing signer.**
 
-R0 is complete (chain swap docs). R0b is complete: the six source-of-truth docs now authorize Model A (SuccraMission holds mission USDG), the session-key lifecycle, deposit/withdrawal, the R1-spike ERC-1271 gate, and the mission-continuity reframe. No code, contracts, env files, or Hardhat config changed. R1-spike and R1 are not authorized.
+R0 and R0b are complete at `f98cafe`. R1 implemented the vault, session-key lifecycle, Variant A ERC-1271 path, Variant B fallback, x402 client, WIF/USDG selection, and demo UI. The local Variant A EIP-3009 proof passed and the contract suite is green. R4 produced the local demo video and submission text.
 
-## Next phase (not begun)
-Phase R1-spike — ERC-1271 capability probe against testnet USDG `0x7E955252E15c84f5768B83c41a71F9eba181802F`. Determines Variant A (contract signer via ERC-1271) or Variant B (session key funded on-demand) for R1. Prerequisites: funded testnet deployer, Robinhood testnet network in Hardhat config, testnet ETH and USDG. Do not begin without explicit authorization.
+Mainnet deployment is blocked: `contracts/.env.local` contains no `ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY`, and the only configured deployer has zero mainnet balance. Do not fabricate mainnet addresses.
+
+## Next phase
+Supply a funded mainnet signer, run `contracts/scripts/deploy-mainnet.ts`, configure the guardian, verify USDG/WIF, and run the real ERC-1271 probe against USDG. Then execute the R3 live flow and publish the final addresses.
 
 ## Known design assumptions
 - Succra Cloud can go offline; on-chain authority remains intact, but new x402 payments cannot be authorized until the runtime can act. The owner can still withdraw mission USDG directly from SuccraMission.
