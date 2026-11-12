@@ -7,7 +7,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   // Playwright E2E runs without a Supabase stack; auth is provided by the
   // test-only PGlite client. This branch is inert without SUCCRA_E2E_MODE=1.
-  if (process.env.SUCCRA_E2E_MODE === '1' && process.env.NODE_ENV !== 'production') {
+  if (
+    process.env.SUCCRA_E2E_MODE === '1' ||
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  ) {
     return NextResponse.next({ request });
   }
   let response = NextResponse.next({ request });

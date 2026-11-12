@@ -1,0 +1,5 @@
+{
+  "framework": "nextjs",
+  "installCommand": "cd ../.. && npm install -g pnpm@12.3.4 && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @succra/web build"
+}

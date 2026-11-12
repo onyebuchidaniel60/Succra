@@ -7,6 +7,7 @@ import {
   encodeAbiParameters,
   http,
   keccak256,
+  parseAbi,
   parseAbiParameters,
   stringToHex,
   type Abi,
@@ -117,12 +118,67 @@ function artifact(relative: string): Artifact {
   return { abi: json.abi, bytecode: json.bytecode };
 }
 
-const artifacts = {
-  registry: artifact('GuardianRegistry.sol/GuardianRegistry.json'),
-  factory: artifact('MissionFactory.sol/MissionFactory.json'),
-  mission: artifact('SuccraMission.sol/SuccraMission.json'),
-  token: artifact('mocks/MockERC3009Token.sol/MockERC3009Token.json'),
-};
+const REGISTRY_ABI = parseAbi([
+  'function guardian() view returns (address)',
+]);
+
+const FACTORY_ABI = parseAbi([
+  'function createMission((address paymentToken,uint256 budgetAtomic,uint256 initialDepositAtomic,uint256 maxPaymentAtomic,uint256 recoveryMaxPaymentAtomic,address[] merchantAllowlist,uint64 expiresAt,bytes32 policyHash,address primaryAgent,(address agent,uint16 priority,bool active)[] successors,uint16 violationThreshold,uint64 violationWindowSeconds,bytes32 cartMandateHash) config) returns (address)',
+  'function totalMissions() view returns (uint256)',
+  'function getMissionAt(uint256 index) view returns (address)',
+  'function setAllowedTokens(address[] tokens)',
+  'event MissionFactoryMissionDeployed(address indexed owner, address indexed mission)',
+]);
+
+const MISSION_ABI = parseAbi([
+  'function authority() view returns (address currentAgent,uint8 status,uint64 agentNonce,uint64 stateVersion,uint16 violationCount,uint64 lastViolationAt,uint256 confirmedSpentAtomic,address sessionKey,uint256 depositedAtomic,uint256 withdrawnAtomic,uint256 reservedAtomic,uint256 releasedAtomic,bytes32 lastCheckpointHash,uint64 lastCheckpointSequence,uint64 checkpointCount)',
+  'function config() view returns (address paymentToken,uint256 budgetAtomic,uint256 initialDepositAtomic,uint256 maxPaymentAtomic,uint256 recoveryMaxPaymentAtomic,address[] merchantAllowlist,uint64 expiresAt,bytes32 policyHash,address primaryAgent,(address agent,uint16 priority,bool active)[] successors,uint16 violationThreshold,uint64 violationWindowSeconds,bytes32 cartMandateHash)',
+  'function availableBalance() view returns (uint256)',
+  'function deposit(uint256 amountAtomic)',
+  'function withdraw(uint256 amountAtomic)',
+  'function registerSessionKey(address sessionKey,uint64 expectedVersion)',
+  'function approvePayment(bytes32 authorizationHash,uint256 amountAtomic,address merchant,uint64 expectedVersion)',
+  'function releaseForPayment(address sessionKey,uint256 amountAtomic,uint64 expectedVersion)',
+  'function recordSettlement(bytes32 paymentId,uint256 amountAtomic,bytes32 txHash,uint64 expectedVersion)',
+  'function recordViolation(bytes32 requestId,uint64 expectedVersion)',
+  'function quarantine(uint64 expectedVersion)',
+  'function activateSuccessor(address successor,uint64 expectedVersion)',
+  'function acknowledgeRecovery(uint64 expectedVersion,bytes signature)',
+  'function isValidSignature(bytes32 hash,bytes signature) view returns (bytes4)',
+  'event PaymentApproved(bytes32 indexed authorizationHash,uint256 amount,address merchant)',
+  'event PaymentReleased(address indexed sessionKey,uint256 amount)',
+  'event FundsDeposited(address indexed owner,uint256 amount)',
+  'event FundsWithdrawn(address indexed owner,uint256 amount)',
+  'event SessionKeyRegistered(address indexed sessionKey,uint64 stateVersion)',
+  'event SessionKeyRevoked(address indexed sessionKey,uint64 stateVersion)',
+]);
+
+const TOKEN_ABI = parseAbi([
+  'function approve(address spender,uint256 amount) returns (bool)',
+  'function balanceOf(address account) view returns (uint256)',
+  'function mint(address to,uint256 amount)',
+  'function transferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce,bytes signature)',
+]);
+
+function abiFor(kind: keyof typeof ABI_KINDS): Abi {
+  switch (kind) {
+    case 'registry':
+      return REGISTRY_ABI;
+    case 'factory':
+      return FACTORY_ABI;
+    case 'mission':
+      return MISSION_ABI;
+    case 'token':
+      return TOKEN_ABI;
+  }
+}
+
+const ABI_KINDS = {
+  registry: true,
+  factory: true,
+  mission: true,
+  token: true,
+} as const;
 
 export type DemoEvent = {
   label: string;
@@ -206,11 +262,20 @@ async function wait(hash: Hex): Promise<{ block: number }> {
   return { block: Number(receipt.blockNumber) };
 }
 
-async function deploy(kind: keyof typeof artifacts, args: unknown[], account = owner): Promise<Address> {
+async function deploy(kind: keyof typeof ABI_KINDS, args: unknown[], account = owner): Promise<Address> {
   const wallet = walletFor(account);
+  const compiled = artifact(
+    kind === 'registry'
+      ? 'GuardianRegistry.sol/GuardianRegistry.json'
+      : kind === 'factory'
+        ? 'MissionFactory.sol/MissionFactory.json'
+        : kind === 'mission'
+          ? 'SuccraMission.sol/SuccraMission.json'
+          : 'mocks/MockERC3009Token.sol/MockERC3009Token.json'
+  );
   const hash = await wallet.deployContract({
-    abi: artifacts[kind].abi,
-    bytecode: artifacts[kind].bytecode,
+    abi: compiled.abi,
+    bytecode: compiled.bytecode,
     args,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -221,7 +286,7 @@ async function deploy(kind: keyof typeof artifacts, args: unknown[], account = o
 }
 
 async function write(
-  kind: keyof typeof artifacts,
+  kind: keyof typeof ABI_KINDS,
   address: Address,
   functionName: string,
   args: unknown[],
@@ -229,7 +294,7 @@ async function write(
 ): Promise<Hex> {
   const wallet = walletFor(account);
   const hash = await wallet.writeContract({
-    abi: artifacts[kind].abi,
+    abi: abiFor(kind),
     address,
     functionName,
     args,
@@ -239,13 +304,13 @@ async function write(
 }
 
 async function read<T>(
-  kind: keyof typeof artifacts,
+  kind: keyof typeof ABI_KINDS,
   address: Address,
   functionName: string,
   args: unknown[] = []
 ): Promise<T> {
   return publicClient.readContract({
-    abi: artifacts[kind].abi,
+    abi: abiFor(kind),
     address,
     functionName,
     args,

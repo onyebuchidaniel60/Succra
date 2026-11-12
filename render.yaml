@@ -5,7 +5,7 @@ services:
     plan: free
     region: oregon
     branch: robinhood-pivot
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @succra/web build
+    buildCommand: npm install -g pnpm@12.3.4 && pnpm install --frozen-lockfile && pnpm --filter @succra/web build
     startCommand: pnpm --filter @succra/web start
     healthCheckPath: /api/demo
     autoDeploy: false
