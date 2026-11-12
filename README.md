@@ -202,6 +202,7 @@ succra/
 | `pnpm --filter @succra/web build` | pass |
 | Real Paxos USDG ERC-1271 probe | **PASS** |
 | Mainnet continuity flow | **complete** |
+| Live WIF treasury transfer | **PASS** (`0x4945743c…d3da4032014`) |
 
 The legacy HashKey/Solana test suites are retained for historical reference and are not part of the active x402 path.
 

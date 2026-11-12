@@ -6,6 +6,16 @@ Succra — autonomous mission continuity and authority succession on Robinhood C
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
+## Final UX / WIF treasury checkpoint (2026-11-12, `9c4cc61`)
+
+- **Editable deposits:** `/missions/new` accepts a user-entered USDG amount, validates it in the browser and API, parses it into 6-decimal atomic units, and deposits exactly that amount before redirecting to `/missions/<vault>`. Live verification used `0.02 USDG` and landed on the USDG mission detail.
+- **WIF treasury path:** `SuccraMission.executeERC20Transfer(token,to,amount)` enforces configured token, merchant allowlist, per-payment ceiling, cumulative budget, and available balance. Policy failures increment the violation streak and emit `TreasuryTransferBlocked`; successful transfers emit `TreasuryTransfer` and reset the streak.
+- **New WIF mission:** `0x5bdC628D1b0c7DE78579E076398f4c5216e10e08`, funded with 1 WIF, deployed with tx `0x74645d94a5619c4ff7d22d92834c8377ed757ee52f63ff4ed108ee2443d296ea`. The orchestrator routes `wif-payment` through `executeERC20Transfer`.
+- **Live WIF proof:** `POST /api/demo?demo=true {"action":"wif-payment"}` settled 0.01 WIF to the allowlisted merchant: tx `0x4945743cc237cb65ca2e6ec7a5c120df6e8d3cdfdd6ad4b34ec6d3d9a4032014`.
+- **Branding/footer:** the MIT-licensed Relay SVG is at `apps/web/public/logo.svg` and `apps/web/app/icon.svg`; headers and the shared footer use it. Footer columns cover Product, Resources, and Network with working links.
+- **Branch policy:** only `main` remains. Tags `hashkey-v1` and `solana-v1` are preserved.
+- **Tests:** contracts **115 passing**, `demo-auth` **5 passing**, workspace typecheck/lint/build pass.
+
 ## Current privacy / navigation checkpoint (2026-11-12, `d7ddc0e`)
 
 - **Private dashboard is owner-scoped.** `/api/demo` returns an empty state when no owner is supplied or the owner is not the deployer. A bare `?owner=0x...` is not authorization.
