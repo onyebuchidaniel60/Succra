@@ -206,6 +206,9 @@ importers:
       '@succra/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@succra/x402-client':
+        specifier: workspace:*
+        version: link:../../packages/x402-client
       '@supabase/ssr':
         specifier: ^0.12.7
         version: 0.12.7(@supabase/supabase-js@2.116.0)
@@ -283,8 +286,8 @@ importers:
   contracts:
     dependencies:
       '@openzeppelin/contracts':
-        specifier: ^5.6.1
-        version: 5.6.1
+        specifier: 5.0.2
+        version: 5.0.2
     devDependencies:
       '@nomicfoundation/hardhat-chai-matchers':
         specifier: ^2.1.2
@@ -363,6 +366,16 @@ importers:
       viem:
         specifier: ^2.57.13
         version: 2.57.13(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+    devDependencies:
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/x402-client:
+    dependencies:
+      viem:
+        specifier: ^2.57.13
+        version: 2.57.13
     devDependencies:
       typescript:
         specifier: ^5.9.0
@@ -1172,8 +1185,8 @@ packages:
     resolution: {integrity: sha512-q4n32/FNKIhQ3zQGGw5CvPF6GTvDCpYwIf7bEY/dZTZbgfDsHyjJwURxUJf3VQuuJj+fDIFl4+KkBVbw4Ef6jA==}
     engines: {node: '>= 12'}
 
-  '@openzeppelin/contracts@5.6.1':
-    resolution: {integrity: sha512-Ly6SlsVJ3mj+b18W3R8gNufB7dTICT105fJhodGAGgyC2oqnBAhqSiNDJ8V8DLY05cCz81GLI0CU5vNYA1EC/w==}
+  '@openzeppelin/contracts@5.0.2':
+    resolution: {integrity: sha512-ytPc6eLGcHHnapAZ9S+5qsdomhjo6QBHTDRRBFfTxXIpsicMhVPouPgmUPebZZZGX7vt9USA+Z+0M0dSVtSUEA==}
 
   '@phosphor-icons/webcomponents@2.1.5':
     resolution: {integrity: sha512-JcvQkZxvcX2jK+QCclm8+e8HXqtdFW9xV4/kk2aL9Y3dJA2oQVt+pzbv1orkumz3rfx4K9mn9fDoMr1He1yr7Q==}
@@ -5623,7 +5636,7 @@ snapshots:
       '@nomicfoundation/solidity-analyzer-linux-x64-musl': 0.1.2
       '@nomicfoundation/solidity-analyzer-win32-x64-msvc': 0.1.2
 
-  '@openzeppelin/contracts@5.6.1': {}
+  '@openzeppelin/contracts@5.0.2': {}
 
   '@phosphor-icons/webcomponents@2.1.5':
     dependencies:

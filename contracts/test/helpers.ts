@@ -23,6 +23,7 @@ export type SuccessorInput = {
 export type MissionConfigInput = {
   paymentToken: string;
   budgetAtomic: bigint;
+  initialDepositAtomic: bigint;
   maxPaymentAtomic: bigint;
   recoveryMaxPaymentAtomic: bigint;
   merchantAllowlist: string[];
@@ -66,6 +67,7 @@ export async function baseConfig(
   return {
     paymentToken: token,
     budgetAtomic: 1000n,
+    initialDepositAtomic: 1n,
     maxPaymentAtomic: 400n,
     recoveryMaxPaymentAtomic: 100n,
     merchantAllowlist: [merchant],

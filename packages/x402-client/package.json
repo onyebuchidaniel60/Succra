@@ -1,0 +1,20 @@
+{
+  "name": "@succra/x402-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Succra x402 challenge parsing, EIP-3009 typed data, session-key signing, and mock facilitator.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "viem": "^2.57.13"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

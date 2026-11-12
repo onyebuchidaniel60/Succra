@@ -2,13 +2,17 @@
 pragma solidity ^0.8.24;
 
 import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import {IERC20} from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import {IERC1271} from '@openzeppelin/contracts/interfaces/IERC1271.sol';
 import {GuardianRegistry} from './GuardianRegistry.sol';
 
 /// @title SuccraMission
-/// @notice Authoritative mission authority and policy for one Succra mission.
-/// @dev Funds never enter this contract. HSP executes settlement; this contract
-///      enforces mission authority, policy, and payment authorization.
-contract SuccraMission {
+/// @notice Authoritative mission authority, policy, custody, and session key for one Succra mission.
+/// @dev Mission funds are held by this contract. Variant A exposes ERC-1271 so the
+///      contract can be the EIP-3009 `from`; Variant B releases exact amounts to a
+///      session key that signs EIP-3009 directly. The owner retains an unconditional
+///      withdrawal right.
+contract SuccraMission is IERC1271 {
     struct Successor {
         address agent;
         uint16 priority; // lower wins
@@ -18,6 +22,7 @@ contract SuccraMission {
     struct MissionConfig {
         address paymentToken;
         uint256 budgetAtomic;
+        uint256 initialDepositAtomic;
         uint256 maxPaymentAtomic;
         uint256 recoveryMaxPaymentAtomic;
         address[] merchantAllowlist;
@@ -51,6 +56,11 @@ contract SuccraMission {
         uint16 violationCount;
         uint64 lastViolationAt;
         uint256 confirmedSpentAtomic;
+        address sessionKey;
+        uint256 depositedAtomic;
+        uint256 withdrawnAtomic;
+        uint256 reservedAtomic;
+        uint256 releasedAtomic;
         bytes32 lastCheckpointHash;
         uint64 lastCheckpointSequence;
         uint64 checkpointCount;
@@ -102,11 +112,26 @@ contract SuccraMission {
     error NotInRecovering();
     error InvalidAcknowledgement();
     error ZeroAddress();
+    error InsufficientBalance();
+    error SessionKeyNotSet();
+    error HashAlreadyApproved();
+    error HashNotApproved();
+    error NotFunded();
 
     event MissionCreated(address indexed owner, address indexed mission, bytes32 policyHash);
     event PolicyUpdated(bytes32 indexed policyHash, uint64 stateVersion);
     event AgentAuthorized(address indexed agent, uint8 role, uint64 stateVersion);
     event AgentRevoked(address indexed agent, uint64 stateVersion);
+    event FundsDeposited(address indexed owner, uint256 amount);
+    event FundsWithdrawn(address indexed owner, uint256 amount);
+    event SessionKeyRegistered(address indexed sessionKey, uint64 stateVersion);
+    event SessionKeyRevoked(address indexed sessionKey, uint64 stateVersion);
+    event PaymentApproved(
+        bytes32 indexed authorizationHash,
+        uint256 amount,
+        address merchant
+    );
+    event PaymentReleased(address indexed sessionKey, uint256 amount);
     event PaymentAuthorized(
         bytes32 indexed requestId,
         address indexed merchant,
@@ -149,6 +174,8 @@ contract SuccraMission {
     mapping(address => bool) public allowedMerchants;
     mapping(address => uint16) public successorPriority;
     mapping(address => bool) public successorActive;
+    mapping(bytes32 => bool) public approvedHashes;
+    mapping(bytes32 => uint256) public approvedAmount;
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -186,6 +213,7 @@ contract SuccraMission {
 
         config.paymentToken = config_.paymentToken;
         config.budgetAtomic = config_.budgetAtomic;
+        config.initialDepositAtomic = config_.initialDepositAtomic;
         config.maxPaymentAtomic = config_.maxPaymentAtomic;
         config.recoveryMaxPaymentAtomic = config_.recoveryMaxPaymentAtomic;
         config.expiresAt = config_.expiresAt;
@@ -222,6 +250,11 @@ contract SuccraMission {
             violationCount: 0,
             lastViolationAt: 0,
             confirmedSpentAtomic: 0,
+            sessionKey: address(0),
+            depositedAtomic: 0,
+            withdrawnAtomic: 0,
+            reservedAtomic: 0,
+            releasedAtomic: 0,
             lastCheckpointHash: bytes32(0),
             lastCheckpointSequence: 0,
             checkpointCount: 0
@@ -251,11 +284,158 @@ contract SuccraMission {
         }
         if (block.timestamp >= config.expiresAt) revert InvalidExpiry();
 
+        address previousKey = authority.sessionKey;
+        authority.sessionKey = address(0);
         authority.status = MissionStatus.CANCELLED;
         authority.stateVersion = expectedVersion + 1;
 
+        emit SessionKeyRevoked(previousKey, authority.stateVersion);
         emit MissionStatusChanged(previous, MissionStatus.CANCELLED, authority.stateVersion);
         emit MissionCancelled(owner, authority.stateVersion);
+    }
+
+    /// @notice Deposits the mission settlement token into the vault.
+    /// @dev Owner-only. The owner must approve this contract on the token first.
+    function deposit(uint256 amountAtomic) external onlyOwner {
+        if (amountAtomic == 0) revert InvalidAmount();
+        if (!IERC20(config.paymentToken).transferFrom(msg.sender, address(this), amountAtomic)) {
+            revert InsufficientBalance();
+        }
+        authority.depositedAtomic += amountAtomic;
+        emit FundsDeposited(msg.sender, amountAtomic);
+    }
+
+    /// @notice Withdraws unallocated mission funds. Always available to the owner.
+    /// @dev Approved/released/settled amounts are not withdrawable twice.
+    function withdraw(uint256 amountAtomic) external onlyOwner {
+        if (amountAtomic == 0) revert InvalidAmount();
+        if (amountAtomic > availableBalance()) revert InsufficientBalance();
+        authority.withdrawnAtomic += amountAtomic;
+        if (!IERC20(config.paymentToken).transfer(msg.sender, amountAtomic)) {
+            revert InsufficientBalance();
+        }
+        emit FundsWithdrawn(msg.sender, amountAtomic);
+    }
+
+    /// @notice Registers or replaces the runtime-held session key.
+    function registerSessionKey(address sessionKey_, uint64 expectedVersion) external onlyOwner {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (sessionKey_ == address(0)) revert ZeroAddress();
+        authority.sessionKey = sessionKey_;
+        authority.stateVersion = expectedVersion + 1;
+        emit SessionKeyRegistered(sessionKey_, authority.stateVersion);
+    }
+
+    /// @notice Revokes the session key. Owner at any time; guardian on quarantine.
+    function revokeSessionKey(uint64 expectedVersion) external onlyOwnerOrGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        _revokeSessionKey(expectedVersion);
+    }
+
+    /// @notice Variant A: approves one EIP-3009 authorization hash for ERC-1271.
+    /// @dev Runtime/guardian-submitted after the agent request passes off-chain
+    ///      policy. The contract records the hash, amount, and merchant; the
+    ///      session key's EIP-3009 signature is checked by isValidSignature.
+    function approvePayment(
+        bytes32 authorizationHash,
+        uint256 amountAtomic,
+        address merchant,
+        uint64 expectedVersion
+    ) external onlyGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (
+            authority.status != MissionStatus.ACTIVE &&
+            authority.status != MissionStatus.ACTIVE_RECOVERY
+        ) {
+            revert InvalidStatus();
+        }
+        if (authority.sessionKey == address(0)) revert SessionKeyNotSet();
+        if (authority.depositedAtomic < config.initialDepositAtomic) revert NotFunded();
+        if (!allowedMerchants[merchant]) revert InvalidMerchant();
+        if (approvedHashes[authorizationHash]) revert HashAlreadyApproved();
+
+        uint256 ceiling = authority.status == MissionStatus.ACTIVE
+            ? config.maxPaymentAtomic
+            : config.recoveryMaxPaymentAtomic;
+        if (amountAtomic > ceiling) revert InvalidAmount();
+        if (
+            authority.confirmedSpentAtomic +
+                authority.reservedAtomic +
+                authority.releasedAtomic +
+                amountAtomic >
+            config.budgetAtomic
+        ) {
+            revert InvalidAmount();
+        }
+        if (amountAtomic > availableBalance()) revert InsufficientBalance();
+
+        approvedHashes[authorizationHash] = true;
+        approvedAmount[authorizationHash] = amountAtomic;
+        authority.reservedAtomic += amountAtomic;
+        authority.stateVersion = expectedVersion + 1;
+
+        emit PaymentApproved(authorizationHash, amountAtomic, merchant);
+    }
+
+    /// @notice Variant B: releases the exact approved amount to the session key.
+    /// @dev Intended after approvePayment for the same amount. The session key
+    ///      then signs EIP-3009 with from=sessionKey.
+    function releaseForPayment(
+        address sessionKey_,
+        uint256 amountAtomic,
+        uint64 expectedVersion
+    ) external onlyGuardian {
+        if (expectedVersion != authority.stateVersion) revert InvalidVersion();
+        if (
+            authority.status != MissionStatus.ACTIVE &&
+            authority.status != MissionStatus.ACTIVE_RECOVERY
+        ) {
+            revert InvalidStatus();
+        }
+        if (authority.sessionKey == address(0)) revert SessionKeyNotSet();
+        if (authority.sessionKey != sessionKey_) revert NotAuthorized();
+        if (authority.depositedAtomic < config.initialDepositAtomic) revert NotFunded();
+        if (amountAtomic > IERC20(config.paymentToken).balanceOf(address(this))) {
+            revert InsufficientBalance();
+        }
+
+        if (authority.reservedAtomic >= amountAtomic) {
+            authority.reservedAtomic -= amountAtomic;
+        }
+        authority.releasedAtomic += amountAtomic;
+        authority.stateVersion = expectedVersion + 1;
+        if (!IERC20(config.paymentToken).transfer(sessionKey_, amountAtomic)) {
+            revert InsufficientBalance();
+        }
+
+        emit PaymentReleased(sessionKey_, amountAtomic);
+    }
+
+    /// @notice ERC-1271 entry point used by USDG/WIF when the contract is `from`.
+    function isValidSignature(
+        bytes32 hash,
+        bytes calldata signature
+    ) external view override returns (bytes4) {
+        if (!approvedHashes[hash] || authority.sessionKey == address(0)) {
+            return 0xffffffff;
+        }
+        (address recovered, ECDSA.RecoverError recoverError, ) = ECDSA.tryRecover(
+            hash,
+            signature
+        );
+        if (recoverError != ECDSA.RecoverError.NoError || recovered != authority.sessionKey) {
+            return 0xffffffff;
+        }
+        return 0x1626ba7e;
+    }
+
+    /// @notice Unallocated token balance available to the owner.
+    function availableBalance() public view returns (uint256) {
+        uint256 committed = authority.confirmedSpentAtomic +
+            authority.reservedAtomic +
+            authority.releasedAtomic;
+        if (committed >= authority.depositedAtomic) return 0;
+        return authority.depositedAtomic - committed;
     }
 
     /// @notice Authorizes one HSP Payment Mandate. Callable by anyone holding a
@@ -292,7 +472,7 @@ contract SuccraMission {
             revert InvalidAmount();
         }
 
-        (address recovered, ECDSA.RecoverError recoverError, ) = ECDSA.tryRecoverCalldata(
+        (address recovered, ECDSA.RecoverError recoverError, ) = ECDSA.tryRecover(
             auth.mandateHash,
             auth.agentSignature
         );
@@ -332,11 +512,27 @@ contract SuccraMission {
         ) {
             revert InvalidStatus();
         }
-        if (!authorizedRequests[paymentId]) revert NotAuthorized();
-        if (authorizedAmount[paymentId] != amountAtomic) revert AmountMismatch();
+        bool legacyAuthorized = authorizedRequests[paymentId];
+        bool erc1271Authorized = approvedHashes[paymentId];
+        if (!legacyAuthorized && !erc1271Authorized) revert NotAuthorized();
+        if (legacyAuthorized && authorizedAmount[paymentId] != amountAtomic) {
+            revert AmountMismatch();
+        }
+        if (erc1271Authorized && approvedAmount[paymentId] != amountAtomic) {
+            revert AmountMismatch();
+        }
         if (recordedSettlements[paymentId]) revert AlreadyRecorded();
         if (authority.confirmedSpentAtomic + amountAtomic > config.budgetAtomic) {
             revert InvalidAmount();
+        }
+
+        if (erc1271Authorized) {
+            if (authority.reservedAtomic >= amountAtomic) {
+                authority.reservedAtomic -= amountAtomic;
+            }
+            if (authority.releasedAtomic >= amountAtomic) {
+                authority.releasedAtomic -= amountAtomic;
+            }
         }
 
         recordedSettlements[paymentId] = true;
@@ -400,9 +596,12 @@ contract SuccraMission {
         }
 
         MissionStatus previous = authority.status;
+        address previousKey = authority.sessionKey;
+        authority.sessionKey = address(0);
         authority.status = MissionStatus.QUARANTINED;
         authority.stateVersion = expectedVersion + 1;
 
+        emit SessionKeyRevoked(previousKey, authority.stateVersion);
         emit MissionStatusChanged(previous, MissionStatus.QUARANTINED, authority.stateVersion);
         emit MissionQuarantined(msg.sender, authority.stateVersion);
     }
@@ -455,11 +654,14 @@ contract SuccraMission {
         if (successor == authority.currentAgent) revert CannotReactivatePrimary();
 
         MissionStatus previous = authority.status;
+        address previousKey = authority.sessionKey;
         authority.currentAgent = successor;
         authority.status = MissionStatus.RECOVERING;
+        authority.sessionKey = address(0);
         authority.agentNonce = 0;
         authority.stateVersion = expectedVersion + 1;
 
+        emit SessionKeyRevoked(previousKey, authority.stateVersion);
         emit SuccessorActivated(successor, authority.lastCheckpointHash, authority.stateVersion);
         emit MissionStatusChanged(previous, MissionStatus.RECOVERING, authority.stateVersion);
     }
@@ -479,7 +681,7 @@ contract SuccraMission {
         if (msg.sender != authority.currentAgent) {
             if (msg.sender != guardianRegistry.guardian()) revert NotAuthorized();
             bytes32 digest = recoveryAckDigest(expectedVersion);
-            (address recovered, ECDSA.RecoverError recoverError, ) = ECDSA.tryRecoverCalldata(
+            (address recovered, ECDSA.RecoverError recoverError, ) = ECDSA.tryRecover(
                 digest,
                 signature
             );
@@ -533,9 +735,18 @@ contract SuccraMission {
         return config.successors;
     }
 
+    function _revokeSessionKey(uint64 expectedVersion) internal {
+        address previous = authority.sessionKey;
+        authority.sessionKey = address(0);
+        authority.stateVersion = expectedVersion + 1;
+        emit SessionKeyRevoked(previous, authority.stateVersion);
+    }
+
     function _validateConfig(MissionConfig memory candidate) internal view {
         if (
             candidate.budgetAtomic == 0 ||
+            candidate.initialDepositAtomic == 0 ||
+            candidate.initialDepositAtomic > candidate.budgetAtomic ||
             candidate.maxPaymentAtomic == 0 ||
             candidate.maxPaymentAtomic > candidate.budgetAtomic
         ) {

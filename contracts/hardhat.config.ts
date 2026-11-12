@@ -1,6 +1,15 @@
 import '@nomicfoundation/hardhat-chai-matchers';
 import '@nomicfoundation/hardhat-ethers';
 import type { HardhatUserConfig } from 'hardhat/config';
+import { loadEnvFile } from 'node:process';
+import { resolve } from 'node:path';
+
+// Local-only deployer keys. The file is gitignored; shell env still works.
+try {
+  loadEnvFile(resolve(__dirname, '.env.local'));
+} catch {
+  // .env.local is optional for read-only and local-network commands.
+}
 
 const config: HardhatUserConfig = {
   paths: {
@@ -16,6 +25,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200,
       },
+      viaIR: true,
     },
   },
   networks: {
@@ -29,6 +39,20 @@ const config: HardhatUserConfig = {
     hashkeyTestnet: {
       url: 'https://testnet.hsk.xyz',
       chainId: 133,
+    },
+    robinhoodMainnet: {
+      url: 'https://rpc.mainnet.chain.robinhood.com',
+      chainId: 4663,
+      accounts: process.env.ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY
+        ? [process.env.ROBINHOOD_MAINNET_DEPLOYER_PRIVATE_KEY]
+        : [],
+    },
+    robinhoodTestnet: {
+      url: 'https://rpc.testnet.chain.robinhood.com',
+      chainId: 46630,
+      accounts: process.env.ROBINHOOD_TESTNET_DEPLOYER_PRIVATE_KEY
+        ? [process.env.ROBINHOOD_TESTNET_DEPLOYER_PRIVATE_KEY]
+        : [],
     },
   },
 };
