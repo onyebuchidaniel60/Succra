@@ -363,7 +363,7 @@ async function missionView(args: {
 function event(
   state: DemoState,
   label: string,
-  hash: Hex,
+  hash: string,
   block: number,
   kind: DemoEvent['kind']
 ): void {
