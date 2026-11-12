@@ -340,7 +340,18 @@ export default function DemoConsole(): React.JSX.Element {
                   />
                   <div className="min-w-0">
                     <p className="text-sm text-zinc-200">{item.label}</p>
-                    <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">{item.hash}</p>
+                    {state?.chainId === 4663 ? (
+                      <a
+                        href={`https://robinhoodchain.blockscout.com/tx/${item.hash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-0.5 block truncate font-mono text-[10px] text-[#e8ff63]/70 hover:text-[#e8ff63]"
+                      >
+                        {item.hash}
+                      </a>
+                    ) : (
+                      <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">{item.hash}</p>
+                    )}
                   </div>
                 </li>
               ))}

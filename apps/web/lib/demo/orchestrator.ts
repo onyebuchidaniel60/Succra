@@ -455,27 +455,27 @@ async function setupMainnet(): Promise<DemoState> {
       recoveryCap: 5n * 10n ** 17n,
     }),
   ];
-  event(
-    state,
-    'Mainnet USDG ERC-1271 probe PASS',
-    '0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8',
-    0,
-    'payment'
-  );
-  event(
-    state,
-    'Mainnet USDG mission created',
-    '0x159d48af15282f927323e22149dd0a509fb767ab47ad7b298ee80232fb2181fd',
-    0,
-    'deploy'
-  );
-  event(
-    state,
-    'Mainnet WIF mission created',
-    '0x8d2c31349060e7df60228cc46993f1c0249ff7c69515519f64676790cb6e381d',
-    0,
-    'deploy'
-  );
+  const evidence: Array<[string, string, DemoEvent['kind']]> = [
+    ['Mainnet USDG mission created', '0x159d48af15282f927323e22149dd0a509fb767ab47ad7b298ee80232fb2181fd', 'deploy'],
+    ['Mainnet WIF mission created', '0x8d2c31349060e7df60228cc46993f1c0249ff7c69515519f64676790cb6e381d', 'deploy'],
+    ['Mainnet USDG ERC-1271 probe PASS', '0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8', 'payment'],
+    ['USDG EIP-3009 payment · 0.01 USDG', '0xbcb910b839c792160325abd00c515455560d0f0e68a356bc9f24d143f9528000', 'payment'],
+    ['Variant A approved hash', '0x5018cb2cf8fa53935c3f24f8abcd9657ac74800f0567deba1ad26589b4c09f62', 'payment'],
+    ['Settlement recorded', '0x5f37a4230c91becf065487d515c38e18e671102c2d8184062d81c93b027c30b6', 'payment'],
+    ['Policy violation 1/3', '0x2e0803af28d51d1f071c1cc0f5eed0fc9c55e8512bb056b706022caf343a61dd', 'violation'],
+    ['Policy violation 2/3', '0xc2950eed41441cef34ca5759a846bbd83e119b3837b0ac951acda36ac44df53d', 'violation'],
+    ['Policy violation 3/3', '0x9997d68f984a29c28f3109662f7e937fb725fc2ebf9a26adc40abd59ed20e5df', 'violation'],
+    ['USDG mission quarantined', '0xb4177d9487ab6e30412770d547d5838a33f6637d9ac7d52b01d536132b251e4f', 'quarantine'],
+    ['WIF mission quarantined', '0xf8d0ff3283eeb98348e943be46e899fb42575ae6130b105f61b7ef22f5105aeb', 'quarantine'],
+    ['Owner withdrew 0.50 USDG while quarantined', '0xcf0134577703090575699c452a008a23b272fc841a701efa311710326eb4aada', 'withdraw'],
+    ['Successor Beta activated', '0x6594d51e6fee11696425780222cb675a4b92514f4248b7eab95f6053adebdf06', 'succession'],
+    ['Recovery acknowledged by guardian relay', '0x08dde2cedae2c7fc6f3942ec8fbeaef8177b88647e86fe74f82607e329ea9a0b', 'succession'],
+    ['New session key registered with recovery cap', '0x96db4d40836b68ee3f5d8f4ef5a88bf445a9c6221c97008b11cc18b81b0d07e1', 'succession'],
+    ['Successor recovery payment settled', '0x0049f7fc029b92f093257b6dab49605794dc271bb8f57360251d89a7a655b8fc', 'recovery'],
+    ['Recovery approval recorded', '0xce48a62e4d3e18df25f4c2c91707f6663ec4d35d7da8a17cc26c7f051fed2444', 'recovery'],
+    ['Recovery settlement recorded', '0x1150e6637e2140332bc40bebe8966bc485d8d7bb1c80b06089e958588d9a06aa', 'recovery'],
+  ];
+  for (const [label, hash, kind] of evidence) event(state, label, hash, 0, kind);
 
   store.state = state;
   store.runtime = {
