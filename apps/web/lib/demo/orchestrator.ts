@@ -704,19 +704,25 @@ async function runPayment(
   return refresh(state, runtime);
 }
 
-async function depositUsdg(
+async function depositToken(
   state: DemoState,
   runtime: Runtime,
+  key: 'usdg' | 'wif',
   amountAtomic?: bigint
 ): Promise<DemoState> {
-  const amount = amountAtomic ?? 100_000n;
+  const isUsdg = key === 'usdg';
+  const symbol = isUsdg ? 'USDG' : 'WIF';
+  const decimals = isUsdg ? 6 : 18;
+  const token = isUsdg ? runtime.usdg : runtime.wif;
+  const mission = isUsdg ? runtime.usdgMission : runtime.wifMission;
+  const amount = amountAtomic ?? (isUsdg ? 100_000n : 10n ** 16n);
   if (amount <= 0n) throw new Error('Deposit amount must be greater than zero.');
-  const display = formatUnits(amount, 6);
-  const approveHash = await write('token', runtime.usdg, 'approve', [runtime.usdgMission, amount], owner);
-  const depositHash = await write('mission', runtime.usdgMission, 'deposit', [amount], owner);
-  event(state, `Owner deposited ${display} USDG into the vault`, depositHash, 0, 'deposit');
-  event(state, `USDG approval for vault deposit · ${display} USDG`, approveHash, 0, 'deposit');
-  state.phase = `${display} USDG vault deposit confirmed`;
+  const display = formatUnits(amount, decimals);
+  const approveHash = await write('token', token, 'approve', [mission, amount], owner);
+  const depositHash = await write('mission', mission, 'deposit', [amount], owner);
+  event(state, `Owner deposited ${display} ${symbol} into the vault`, depositHash, 0, 'deposit');
+  event(state, `${symbol} approval for vault deposit · ${display} ${symbol}`, approveHash, 0, 'deposit');
+  state.phase = `${display} ${symbol} vault deposit confirmed`;
   return refresh(state, runtime);
 }
 
@@ -892,7 +898,7 @@ export function emptyDemoState(ownerAddress?: string | null): DemoState {
 
 export async function runDemoAction(
   action: string,
-  options?: { amountAtomic?: bigint }
+  options?: { amountAtomic?: bigint | undefined; token?: 'usdg' | 'wif' | undefined }
 ): Promise<DemoState> {
   if (action === 'reset') {
     store.state = undefined;
@@ -907,8 +913,10 @@ export async function runDemoAction(
   switch (action) {
     case 'init':
       return refresh(state, runtime);
+    case 'deposit':
+      return depositToken(state, runtime, options?.token ?? 'usdg', options?.amountAtomic);
     case 'deposit-usdg':
-      return depositUsdg(state, runtime, options?.amountAtomic);
+      return depositToken(state, runtime, 'usdg', options?.amountAtomic);
     case 'usdg-payment':
       return runPayment(state, runtime, 'usdg');
     case 'wif-payment':

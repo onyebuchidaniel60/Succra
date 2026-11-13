@@ -24,8 +24,9 @@ export default function NewMissionPremium() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const expire = session.expire;
+  const depositDecimals = token === 'usdg' ? 6 : 18;
   const amountValid =
-    /^\d+(\.\d{1,6})?$/.test(depositAmount.trim()) &&
+    new RegExp(`^\\d+(\\.\\d{1,${depositDecimals}})?$`).test(depositAmount.trim()) &&
     Number(depositAmount) > 0;
 
   const load = useCallback(async () => {
@@ -61,20 +62,22 @@ export default function NewMissionPremium() {
       return;
     }
     if (!amountValid) {
-      setError('Enter a deposit amount greater than zero with at most 6 decimals.');
+      setError(
+        `Enter a deposit amount greater than zero with at most ${depositDecimals} decimals.`
+      );
       return;
     }
     setBusy(true);
     setError(null);
     try {
       const next = await postDemoAction(
-        'deposit-usdg',
+        'deposit',
         { owner: address },
-        { amount: depositAmount.trim() }
+        { amount: depositAmount.trim(), token }
       );
       setState(next);
       const created =
-        next.missions.find((mission) => mission.key === 'usdg') ?? next.missions[0];
+        next.missions.find((mission) => mission.key === token) ?? next.missions[0];
       if (!created) throw new Error('The mission was not returned after creation.');
       router.push(`/missions/${created.missionAddress}`);
     } catch (cause) {
@@ -91,7 +94,7 @@ export default function NewMissionPremium() {
 
   const locked = isConnected && ownerChecked && needsUnlock;
   const checking = isConnected && !ownerChecked;
-  const usdgMission = state?.missions.find((mission) => mission.key === 'usdg');
+  const selectedMission = state?.missions.find((mission) => mission.key === token);
 
   return (
     <main className="reference-grid min-h-screen bg-[#07090c] px-6 py-8 text-zinc-100">
@@ -202,7 +205,7 @@ export default function NewMissionPremium() {
                 htmlFor="deposit-amount"
                 className="text-xs uppercase tracking-[0.18em] text-zinc-500"
               >
-                Initial deposit (USDG)
+                Initial deposit ({token.toUpperCase()})
               </label>
               <input
                 id="deposit-amount"
@@ -220,7 +223,7 @@ export default function NewMissionPremium() {
               </p>
               {!amountValid ? (
                 <p className="mt-2 text-[11px] text-red-300">
-                  Enter a positive amount with at most 6 decimals.
+                  Enter a positive amount with at most {depositDecimals} decimals.
                 </p>
               ) : null}
             </div>
@@ -283,26 +286,22 @@ export default function NewMissionPremium() {
             <button
               type="button"
               onClick={() => void create()}
-              disabled={
-                busy || !isConnected || locked || !isOwner || token === 'wif' || !amountValid
-              }
+              disabled={busy || !isConnected || locked || !isOwner || !amountValid}
               className="mt-6 w-full rounded-full bg-[#e8ff63] px-5 py-3 text-sm font-semibold text-black transition hover:bg-[#f2ff92] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy
                 ? 'Creating mission…'
-                : token === 'wif'
-                  ? 'WIF x402 unavailable'
-                  : !isConnected
-                    ? 'Connect wallet to continue'
-                    : locked
-                      ? 'Verify wallet to continue'
-                      : !isOwner
-                        ? 'Owner wallet required'
-                        : `Create mission · deposit ${depositAmount || '0'} USDG`}
+                : !isConnected
+                  ? 'Connect wallet to continue'
+                  : locked
+                    ? 'Verify wallet to continue'
+                    : !isOwner
+                      ? 'Owner wallet required'
+                      : `Create mission · deposit ${depositAmount || '0'} ${token.toUpperCase()}`}
             </button>
             <p className="mt-3 text-center text-[11px] text-zinc-600">
-              {usdgMission
-                ? `Live vault ${compact(usdgMission.missionAddress, 10, 8)} · you will be redirected to the mission detail.`
+              {selectedMission
+                ? `Live ${token.toUpperCase()} vault ${compact(selectedMission.missionAddress, 10, 8)} · you will be redirected to the mission detail.`
                 : 'The mission detail page contains all simulator controls.'}
             </p>
           </div>

@@ -32,7 +32,7 @@ Succra is a Robinhood Chain-native continuity layer for autonomous economic miss
 1. **Connect your wallet.** Click **Connect Wallet** and choose MetaMask, OKX, or another injected EVM wallet. The dashboard is scoped to the connected address.
 2. **Inspect your dashboard.** `/dashboard` shows only missions owned by the connected wallet. A wallet with no missions gets a clean empty state — the deployer’s private missions are never returned.
 3. **Open the demo.** Click **View Live Demo Mission** to enter `/missions/demo`. This is the only public view of the deployer’s live mainnet missions. The owner wallet can additionally sign a short message to unlock private dashboard state.
-4. **Create a mission.** `/missions/new` selects USDG or the WIF vault, deposits into the live USDG vault, and redirects to `/missions/<vault>` after success.
+4. **Create a mission.** `/missions/new` selects USDG or WIF, accepts a user-entered deposit amount, funds the matching live vault, and redirects to `/missions/<vault>` after success.
 5. **Trigger continuity.** Inside the demo mission detail, use **Inject 3 violations** → **Quarantine + withdraw** → **Activate successor** → **Recovery payment** to walk the full lifecycle. Simulator controls live only on the mission detail page.
 
 The live demo orchestrator executes mainnet transactions server-side so judges can reproduce the flow without funding a wallet. The owner-scoped dashboard requires a signed wallet challenge; a bare `?owner=0x...` query is not authorization.

@@ -119,7 +119,7 @@ export async function fetchDemoState(params?: DemoParams): Promise<DemoState> {
 export async function postDemoAction(
   action: string,
   params?: DemoParams,
-  payload?: { amount?: string }
+  payload?: { amount?: string; token?: 'usdg' | 'wif' }
 ): Promise<DemoState> {
   const response = await fetch(demoUrl(params), {
     method: 'POST',
