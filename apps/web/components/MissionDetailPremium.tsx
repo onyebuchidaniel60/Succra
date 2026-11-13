@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { formatUnits, parseAbi, parseUnits } from 'viem';
+import { usePublicClient, useWriteContract } from 'wagmi';
 import ConnectWalletButton from '@/components/ConnectWalletButton';
 import CopyButton from '@/components/CopyButton';
 import Footer from '@/components/Footer';
@@ -16,6 +18,8 @@ import {
   type DemoState,
 } from '@/lib/demo/client';
 import { useOwnerSession } from '@/lib/demo/use-owner-session';
+
+const WITHDRAW_ABI = parseAbi(['function withdraw(uint256 amountAtomic)']);
 
 const SIMULATOR_ACTIONS = [
   { action: 'usdg-payment', label: 'Run USDG payment', tone: 'emerald' },
@@ -49,12 +53,18 @@ export default function MissionDetailPremium({
   demo?: boolean;
 }) {
   const session = useOwnerSession();
-  const { address, isConnected, ownerChecked, needsUnlock, unlocking } = session;
+  const { address, isConnected, isOwner, ownerChecked, needsUnlock, unlocking } = session;
+  const publicClient = usePublicClient();
+  const { writeContractAsync } = useWriteContract();
   const [state, setState] = useState<DemoState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [withdrawNotice, setWithdrawNotice] = useState<string | null>(null);
   const expire = session.expire;
 
   const load = useCallback(async () => {
@@ -111,6 +121,73 @@ export default function MissionDetailPremium({
       (candidate) => candidate.missionAddress.toLowerCase() === missionId.toLowerCase()
     );
   }, [state, demo, missionId]);
+
+  const availableAtomic = mission ? BigInt(mission.available) : 0n;
+  const parsedWithdrawAtomic = useMemo(() => {
+    if (!mission || !withdrawAmount.trim()) return null;
+    try {
+      return parseUnits(withdrawAmount.trim(), mission.decimals);
+    } catch {
+      return null;
+    }
+  }, [mission, withdrawAmount]);
+  const withdrawValid =
+    parsedWithdrawAtomic !== null &&
+    parsedWithdrawAtomic > 0n &&
+    parsedWithdrawAtomic <= availableAtomic;
+
+  const setMaxWithdraw = () => {
+    if (!mission) return;
+    setWithdrawError(null);
+    setWithdrawNotice(null);
+    setWithdrawAmount(formatUnits(BigInt(mission.available), mission.decimals));
+  };
+
+  const withdraw = async () => {
+    if (!mission || !address) return;
+    if (!withdrawValid || parsedWithdrawAtomic === null) {
+      setWithdrawError(
+        `Enter an amount up to ${formatAtomic(mission.available, mission.decimals)} ${mission.symbol}.`
+      );
+      return;
+    }
+    if (!publicClient) {
+      setWithdrawError('Wallet network client is unavailable. Reconnect and try again.');
+      return;
+    }
+
+    const amount = parsedWithdrawAtomic;
+    const symbol = mission.symbol;
+    const decimals = mission.decimals;
+    setWithdrawBusy(true);
+    setWithdrawError(null);
+    setWithdrawNotice(null);
+    try {
+      const hash = await writeContractAsync({
+        address: mission.missionAddress as `0x${string}`,
+        abi: WITHDRAW_ABI,
+        functionName: 'withdraw',
+        args: [amount],
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== 'success') {
+        throw new Error('The withdrawal transaction reverted.');
+      }
+      const next = await postDemoAction('init', { owner: address });
+      setState(next);
+      setWithdrawAmount('');
+      setWithdrawNotice(`Withdrew ${formatUnits(amount, decimals)} ${symbol} to the owner wallet.`);
+    } catch (cause) {
+      if (cause instanceof DemoAuthError) {
+        expire();
+        setWithdrawError('Wallet verification expired. Unlock the dashboard and refresh the mission.');
+      } else {
+        setWithdrawError(cause instanceof Error ? cause.message : 'Withdrawal failed.');
+      }
+    } finally {
+      setWithdrawBusy(false);
+    }
+  };
 
   const run = async (action: string) => {
     setPending(action);
@@ -391,6 +468,89 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
                 </div>
               </div>
             </section>
+
+            {!demo && isOwner ? (
+              <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">
+                      Vault management
+                    </p>
+                    <h2 className="mt-2 text-xl font-semibold tracking-tight">Owner Controls</h2>
+                    <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
+                      Withdraw unallocated {mission.symbol} at any mission status. Funds return
+                      directly to the connected owner wallet.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400">
+                    Owner only
+                  </span>
+                </div>
+
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1">
+                    <label
+                      htmlFor="withdraw-amount"
+                      className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500"
+                    >
+                      Amount ({mission.symbol})
+                    </label>
+                    <div className="mt-2 flex overflow-hidden rounded-xl border border-white/10 bg-black/20 focus-within:border-white/30">
+                      <input
+                        id="withdraw-amount"
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={withdrawAmount}
+                        onChange={(event) => {
+                          setWithdrawAmount(event.target.value);
+                          setWithdrawError(null);
+                          setWithdrawNotice(null);
+                        }}
+                        className="min-w-0 flex-1 bg-transparent px-4 py-3 font-mono text-lg text-zinc-100 outline-none placeholder:text-zinc-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={setMaxWithdraw}
+                        className="shrink-0 border-l border-white/10 px-4 py-3 font-mono text-xs text-zinc-300 transition hover:bg-white/[0.06] hover:text-white"
+                      >
+                        Max
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[11px] text-zinc-600">
+                      Available: {formatAtomic(mission.available, mission.decimals)} {mission.symbol}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void withdraw()}
+                    disabled={!withdrawValid || withdrawBusy}
+                    className="w-full rounded-full bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                  >
+                    {withdrawBusy ? 'Withdrawing…' : 'Withdraw Funds'}
+                  </button>
+                </div>
+
+                {!withdrawValid && withdrawAmount ? (
+                  <p className="mt-3 text-[11px] text-amber-200/80">
+                    Enter an amount up to {formatAtomic(mission.available, mission.decimals)}{' '}
+                    {mission.symbol}.
+                  </p>
+                ) : null}
+                {withdrawError ? (
+                  <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-200">
+                    {withdrawError}
+                  </p>
+                ) : null}
+                {withdrawNotice ? (
+                  <p className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">
+                    {withdrawNotice}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
 
             <section className="mt-8 grid min-w-0 gap-5 lg:grid-cols-[1.1fr_0.9fr]">
               <div className="min-w-0 succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-6">
