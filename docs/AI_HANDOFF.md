@@ -6,7 +6,7 @@ Succra — autonomous mission continuity and authority succession on Robinhood C
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
-## Documentation rewrite checkpoint (2026-11-13)
+## Documentation rewrite checkpoint (2026-11-13, `fb2c446`)
 
 - Root `README.md` rebuilt around the judge/end-user story: hero, evidence, problem, three pillars, user journey, architecture, local development, and documentation index.
 - `docs/README.md` is now a full table of contents with judge/developer/operator reading paths, live deployment links, evidence links, and documentation conventions.
