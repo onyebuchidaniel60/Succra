@@ -332,6 +332,8 @@ async function readAuthority(mission: Address) {
     sessionKey: authority[7] as Address,
     depositedAtomic: authority[8] as bigint,
     withdrawnAtomic: authority[9] as bigint,
+    reservedAtomic: authority[10] as bigint,
+    releasedAtomic: authority[11] as bigint,
   };
 }
 
@@ -345,7 +347,16 @@ async function missionView(args: {
   recoveryCap: bigint;
 }): Promise<DemoMission> {
   const authority = await readAuthority(args.mission);
-  const available = await read<bigint>('mission', args.mission, 'availableBalance');
+  // Historical missions were deployed before availableBalance() included
+  // owner withdrawals. Compute the committed amount here so the live API is
+  // correct for both old and new bytecode.
+  const committed =
+    authority.confirmedSpentAtomic +
+    authority.reservedAtomic +
+    authority.releasedAtomic +
+    authority.withdrawnAtomic;
+  const available =
+    authority.depositedAtomic > committed ? authority.depositedAtomic - committed : 0n;
   return {
     key: args.key,
     label: args.label,

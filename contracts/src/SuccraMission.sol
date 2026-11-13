@@ -556,7 +556,8 @@ contract SuccraMission is IERC1271 {
     function availableBalance() public view returns (uint256) {
         uint256 committed = authority.confirmedSpentAtomic +
             authority.reservedAtomic +
-            authority.releasedAtomic;
+            authority.releasedAtomic +
+            authority.withdrawnAtomic;
         if (committed >= authority.depositedAtomic) return 0;
         return authority.depositedAtomic - committed;
     }

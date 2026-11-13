@@ -116,6 +116,8 @@ describe('SuccraMission vault, session key, and ERC-1271', () => {
     const before = await token.balanceOf(deployer.address);
     await expect(mission.withdraw(100n)).to.emit(mission, 'FundsWithdrawn');
     expect(await token.balanceOf(deployer.address)).to.equal(before + 100n);
+    expect((await mission.authority()).withdrawnAtomic).to.equal(100n);
+    expect(await mission.availableBalance()).to.equal(300n);
   });
 
   it('executes a real EIP-3009 transfer with the contract as from', async () => {
