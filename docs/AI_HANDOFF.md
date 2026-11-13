@@ -6,6 +6,15 @@ Succra — autonomous mission continuity and authority succession on Robinhood C
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
+## Mobile / quickstart checkpoint (2026-11-13, `a99face`)
+
+- README quickstart now sits immediately after Live Demo & Evidence and before The Problem.
+- Landing, dashboard, mission detail, and new-mission pages use mobile-first padding, responsive hero text, stacked actions, full-width cards, stacked mission stats, full-width simulator buttons, and a single-column footer.
+- Long addresses and the Connect Agent snippet wrap instead of forcing horizontal overflow.
+- Automated viewport audits at **320px, 360px, and 390px** report `scrollWidth === viewport` and `scrollX === 0` on all four pages.
+- Vercel deployment `succra-q89qp17d7-uhhh2.vercel.app` is ready; the Render deployment tracks the same commit.
+- Automated access from this sandbox occasionally receives Vercel's bot checkpoint; the deployment was verified through the deployment URL and the equivalent Render-hosted build.
+
 ## Documentation rewrite checkpoint (2026-11-13, `fb2c446`)
 
 - Root `README.md` rebuilt around the judge/end-user story: hero, evidence, problem, three pillars, user journey, architecture, local development, and documentation index.
