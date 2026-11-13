@@ -143,6 +143,7 @@ Every action produces a real Robinhood Chain transaction, shown in the mission t
 - Editable USDG/WIF deposit amounts.
 - Owner-scoped dashboard with empty state.
 - Mission detail with vault balances, timeline, and **Connect Agent** snippet.
+- Owner Controls on private mission detail: amount input, **Max** autofill, direct `withdraw` transaction via wagmi, and balance refresh.
 - Live simulation controls only on the demo mission detail.
 - Professional footer, logo, and favicon.
 

@@ -97,7 +97,7 @@ Succession is not a restart. The successor inherits the mission's identity, vaul
 
 ### 6. Withdraw
 
-The owner can withdraw unallocated funds directly from the vault at any status. No agent, guardian, or runtime cooperation is required.
+The owner can withdraw unallocated funds directly from the vault at any status. Private mission detail includes an **Owner Controls** section with an amount input, **Max** autofill, and a neutral **Withdraw Funds** button. The app signs the withdrawal directly from the owner wallet, waits for the on-chain receipt, and refreshes the vault balance. No agent, guardian, or runtime cooperation is required.
 
 > **Five-minute judge path:** Live app → View Live Demo Mission → Inject 3 violations → Quarantine + withdraw → Activate successor → Recovery payment.
 

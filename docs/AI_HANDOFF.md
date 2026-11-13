@@ -6,6 +6,16 @@ Succra — autonomous mission continuity and authority succession on Robinhood C
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
+## Owner withdrawal checkpoint (2026-11-13, `8aec13d`)
+
+- Private mission detail now has an **Owner Controls** section with a token-aware amount input, **Max** autofill, and a neutral **Withdraw Funds** button.
+- Withdrawal uses wagmi `useWriteContract` to call `SuccraMission.withdraw(uint256)`, waits for the receipt, refreshes the backend mission state, and updates the displayed Available balance.
+- `availableBalance()` in `SuccraMission` now subtracts `withdrawnAtomic`; the contract test asserts the reduced balance after an owner withdrawal.
+- The live API computes available as `deposited - spent - reserved - released - withdrawn` so historical missions deployed with the old getter also display correctly.
+- Live verification: 0.01 USDG withdrawn at tx `0x1e1946c551f2603b5eac5d78ab5082ab9fdf9dd444f870b1637f23b352f92d54`; a second 0.01 USDG withdrawal at tx `0xce3575626c221e5cc56e23c3dbb2a35946bd29c4759fb202239981b9c3fa4cde`. Owner wallet increased by 0.02 USDG total; available moved from the corrected 1.07 to 1.06 USDG.
+- Vercel deployment `succra-eu1sr14gd-uhhh2.vercel.app` contains the Owner Controls; Render is live on the same commit.
+- Tests: contracts **115 passing**, web typecheck/lint/build pass.
+
 ## Mobile / quickstart checkpoint (2026-11-13, `a99face`)
 
 - README quickstart now sits immediately after Live Demo & Evidence and before The Problem.
