@@ -91,9 +91,9 @@ export default function DemoConsole(): React.JSX.Element {
   return (
     <main className="reference-grid relative min-h-screen overflow-hidden bg-[#07090c] text-zinc-100">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(232,255,99,0.1),transparent_38%),radial-gradient(circle_at_85%_10%,rgba(139,92,246,0.1),transparent_32%)]" />
-      <div className="relative mx-auto max-w-7xl px-6 py-8">
-        <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <Link href="/" className="flex items-center gap-4">
+      <div className="relative mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">
+        <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
+          <Link href="/" className="flex min-w-0 items-center gap-3 sm:gap-4">
             <img src="/logo.svg" alt="Succra" className="h-8 w-8 text-[#e8ff63]" />
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.32em] text-[#e8ff63]">Succra</p>
@@ -117,12 +117,12 @@ export default function DemoConsole(): React.JSX.Element {
           </div>
         </nav>
 
-        <header className="grid gap-8 py-9 lg:grid-cols-[1.25fr_0.75fr]">
+        <header className="grid gap-7 py-7 md:py-9 lg:grid-cols-[1.25fr_0.75fr]">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.24em] text-[#e8ff63]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#e8ff63] sm:text-xs sm:tracking-[0.24em]">
               Program-controlled vault · ERC-1271
             </p>
-            <h1 className="mt-3 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
+            <h1 className="mt-3 max-w-3xl text-3xl font-semibold leading-[1.08] tracking-tight sm:text-4xl lg:text-6xl">
               Mission control for
               <br />
               bounded agents.
@@ -131,16 +131,16 @@ export default function DemoConsole(): React.JSX.Element {
               Your dashboard is scoped to the connected wallet. Missions hold their own USDG or WIF,
               delegate revocable authority to an agent, and survive when that agent fails.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link
                 href="/missions/new"
-                className="rounded-full bg-[#e8ff63] px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-[#f2ff92]"
+                className="w-full rounded-full bg-[#e8ff63] px-5 py-2.5 text-center text-sm font-semibold text-black transition hover:bg-[#f2ff92] sm:w-auto"
               >
                 New Mission
               </Link>
               <Link
                 href="/missions/demo"
-                className="rounded-full border border-white/15 bg-white/[0.03] px-5 py-2.5 text-sm text-zinc-200 transition hover:border-[#e8ff63]/40 hover:text-white"
+                className="w-full rounded-full border border-white/15 bg-white/[0.03] px-5 py-2.5 text-center text-sm text-zinc-200 transition hover:border-[#e8ff63]/40 hover:text-white sm:w-auto"
               >
                 View Live Demo Mission →
               </Link>
@@ -199,9 +199,9 @@ export default function DemoConsole(): React.JSX.Element {
         ) : null}
 
         {!isConnected ? (
-          <section className="rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-6 py-16 text-center">
+          <section className="rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-4 py-10 text-center sm:px-6 sm:py-16">
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#e8ff63]">No wallet</p>
-            <h2 className="mt-4 text-2xl font-semibold tracking-tight">
+            <h2 className="mt-4 text-xl font-semibold tracking-tight sm:text-2xl">
               No active missions found for this wallet.
             </h2>
             <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-zinc-500">
@@ -223,11 +223,11 @@ export default function DemoConsole(): React.JSX.Element {
             </div>
           </section>
         ) : needsUnlock ? (
-          <section className="rounded-3xl border border-[#e8ff63]/25 bg-[#e8ff63]/[0.05] px-6 py-12">
+          <section className="rounded-3xl border border-[#e8ff63]/25 bg-[#e8ff63]/[0.05] px-4 py-9 sm:px-6 sm:py-12">
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#e8ff63]">
               Owner verification required
             </p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">Verify this wallet to unlock.</h2>
+            <h2 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">Verify this wallet to unlock.</h2>
             <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400">
               This address owns the live mainnet missions. Sign a short message to prove wallet
               ownership. No transaction is sent and no gas is required.
@@ -285,9 +285,9 @@ export default function DemoConsole(): React.JSX.Element {
                     key={mission.key}
                     href={`/missions/${mission.missionAddress}`}
                     data-testid={`mission-${mission.key}`}
-                    className="reference-glow succra-lift succra-rise group block rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.055] to-white/[0.02] p-6"
+                    className="reference-glow succra-lift succra-rise group block w-full rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.055] to-white/[0.02] p-4 sm:p-6"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-mono text-xs uppercase tracking-[0.2em] text-zinc-500">
                           {mission.symbol} mission
@@ -300,7 +300,7 @@ export default function DemoConsole(): React.JSX.Element {
                         {mission.status}
                       </span>
                     </div>
-                    <div className="mt-6 grid grid-cols-3 gap-3 text-sm">
+                    <div className="mt-5 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
                       <div>
                         <p className="text-xs text-zinc-500">Deposited</p>
                         <p className="mt-1 font-mono text-lg">
@@ -326,7 +326,7 @@ export default function DemoConsole(): React.JSX.Element {
                         style={{ width: `${progress}%` }}
                       />
                     </div>
-                    <div className="mt-4 flex items-center justify-between gap-3 font-mono text-[11px] text-zinc-500">
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-zinc-500 sm:text-[11px]">
                       <span>vault {compact(mission.missionAddress, 10, 8)}</span>
                       <span className="text-[#e8ff63]/80 transition group-hover:text-[#e8ff63]">
                         Open mission →
@@ -337,19 +337,19 @@ export default function DemoConsole(): React.JSX.Element {
               })}
             </section>
 
-            <section className="mt-6 grid gap-5 lg:grid-cols-[1fr_0.85fr]">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
-                <div className="flex items-center justify-between">
+            <section className="mt-6 grid min-w-0 gap-5 lg:grid-cols-[1fr_0.85fr]">
+              <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.02] p-4 sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-zinc-400">
                     Continuity timeline
                   </h2>
                   <span className="text-[11px] text-zinc-600">newest first</span>
                 </div>
-                <ol className="mt-4 space-y-2">
+                <ol className="mt-4 min-w-0 space-y-2">
                   {state?.events.slice(0, 8).map((item, index) => (
                     <li
                       key={`${item.hash}-${index}`}
-                      className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5"
+                      className="flex min-w-0 items-start gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5"
                     >
                       <span
                         className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
@@ -364,8 +364,8 @@ export default function DemoConsole(): React.JSX.Element {
                                   : 'bg-zinc-500'
                         }`}
                       />
-                      <div className="min-w-0">
-                        <p className="text-sm text-zinc-200">{item.label}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm text-zinc-200">{item.label}</p>
                         {state?.chainId === 4663 ? (
                           <a
                             href={`https://robinhoodchain.blockscout.com/tx/${item.hash}`}
@@ -386,7 +386,7 @@ export default function DemoConsole(): React.JSX.Element {
                 </ol>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+              <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.02] p-4 sm:p-6">
                 <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-zinc-400">
                   Mission detail
                 </h2>

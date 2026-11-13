@@ -141,10 +141,10 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
 //          x-succra-nonce, x-succra-signature`;
 
   return (
-    <main className="reference-grid min-h-screen bg-[#07090c] px-6 py-8 text-zinc-100">
+    <main className="reference-grid min-h-screen overflow-x-hidden bg-[#07090c] px-4 py-6 text-zinc-100 md:px-6 md:py-8">
       <div className="mx-auto max-w-6xl">
-        <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div className="flex flex-wrap items-center gap-5">
+        <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-5">
             <Link href="/" className="flex items-center gap-3">
               <img src="/logo.svg" alt="Succra" className="h-8 w-8 text-[#e8ff63]" />
               <span className="font-mono text-xs uppercase tracking-[0.28em] text-[#e8ff63]">
@@ -176,7 +176,7 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
         </nav>
 
         {demo ? (
-          <div className="mt-5 rounded-2xl border border-[#e8ff63]/25 bg-[#e8ff63]/[0.05] px-4 py-3 text-xs leading-6 text-[#e8ff63]/90">
+          <div className="mt-5 rounded-2xl border border-[#e8ff63]/25 bg-[#e8ff63]/[0.05] px-3 py-3 text-[11px] leading-5 text-[#e8ff63]/90 sm:px-4 sm:text-xs sm:leading-6">
             <span className="font-mono uppercase tracking-[0.18em]">Live demo view</span> · This
             mission is owned by the Succra deployer. Simulator controls below execute real{' '}
             {state?.chainId === 4663 ? 'mainnet' : 'local'} transactions so you can inspect the full
@@ -191,7 +191,7 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
         ) : null}
 
         {!demo && !isConnected ? (
-          <section className="mt-10 rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-6 py-16 text-center">
+          <section className="mt-8 rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-4 py-10 text-center sm:px-6 sm:py-16 md:mt-10">
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#e8ff63]">
               Wallet required
             </p>
@@ -218,7 +218,7 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
             </div>
           </section>
         ) : !demo && needsUnlock ? (
-          <section className="mt-10 rounded-3xl border border-[#e8ff63]/25 bg-[#e8ff63]/[0.05] px-6 py-12">
+          <section className="mt-8 rounded-3xl border border-[#e8ff63]/25 bg-[#e8ff63]/[0.05] px-4 py-9 sm:px-6 sm:py-12 md:mt-10">
             <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-[#e8ff63]">
               Owner verification required
             </p>
@@ -257,8 +257,8 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
             <div className="h-72 animate-pulse rounded-3xl border border-white/[0.06] bg-white/[0.025]" />
           </div>
         ) : !state || !mission ? (
-          <section className="mt-10 rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-6 py-16 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight">Mission not found.</h1>
+          <section className="mt-8 rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-4 py-10 text-center sm:px-6 sm:py-16 md:mt-10">
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Mission not found.</h1>
             <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-zinc-500">
               This wallet does not own a mission at that address.
             </p>
@@ -279,12 +279,12 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
           </section>
         ) : (
           <>
-            <section className="mt-10 grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+            <section className="mt-8 grid gap-7 md:mt-10 lg:grid-cols-[1.15fr_0.85fr]">
               <div>
-                <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#e8ff63]">
+                <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#e8ff63] sm:text-xs sm:tracking-[0.28em]">
                   {mission.symbol} mission · {state.chainId}
                 </p>
-                <h1 className="mt-3 text-5xl font-semibold tracking-tight">{mission.label}</h1>
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">{mission.label}</h1>
                 <p className="mt-4 max-w-xl text-zinc-400">
                   Program-controlled vault with a revocable session key. The mission survives the
                   current agent; the successor inherits a lower recovery ceiling, never unrestricted
@@ -324,7 +324,7 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
                         Reset demo
                       </button>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
                       {SIMULATOR_ACTIONS.map((item) => (
                         <button
                           key={item.action}
@@ -332,7 +332,7 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
                           data-testid={`action-${item.action}`}
                           onClick={() => void run(item.action)}
                           disabled={pending !== null}
-                          className={`rounded-lg border px-3 py-2 text-xs font-medium transition disabled:cursor-wait disabled:opacity-50 ${toneClass(item.tone)}`}
+                          className={`w-full rounded-lg border px-3 py-2.5 text-xs font-medium transition disabled:cursor-wait disabled:opacity-50 sm:w-auto ${toneClass(item.tone)}`}
                         >
                           {pending === item.action ? 'Working…' : item.label}
                         </button>
@@ -347,11 +347,11 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
                 ) : null}
               </div>
 
-              <div className="reference-glow succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="reference-glow succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
                 <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">
                   Vault position
                 </p>
-                <p className="mt-3 font-mono text-5xl text-[#e8ff63]">
+                <p className="mt-3 font-mono text-4xl text-[#e8ff63] sm:text-5xl">
                   {formatAtomic(mission.available, mission.decimals)}
                 </p>
                 <p className="mt-1 text-sm text-zinc-500">available {mission.symbol}</p>
@@ -392,31 +392,31 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
               </div>
             </section>
 
-            <section className="mt-8 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+            <section className="mt-8 grid min-w-0 gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="min-w-0 succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-6">
                 <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-zinc-400">
                   Authority boundary
                 </h2>
-                <div className="mt-5 grid gap-4 text-sm">
-                  <div className="flex justify-between gap-4 border-b border-white/[0.06] pb-3">
+                <div className="mt-5 grid min-w-0 gap-4 text-sm">
+                  <div className="flex min-w-0 flex-col gap-1 border-b border-white/[0.06] pb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <span className="shrink-0 text-zinc-500">Vault</span>
-                    <span className="min-w-0 truncate font-mono">{mission.missionAddress}</span>
+                    <span className="min-w-0 break-all font-mono text-xs sm:truncate">{mission.missionAddress}</span>
                   </div>
-                  <div className="flex justify-between gap-4 border-b border-white/[0.06] pb-3">
+                  <div className="flex min-w-0 flex-col gap-1 border-b border-white/[0.06] pb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <span className="shrink-0 text-zinc-500">Token</span>
-                    <span className="min-w-0 truncate font-mono">{mission.tokenAddress}</span>
+                    <span className="min-w-0 break-all font-mono text-xs sm:truncate">{mission.tokenAddress}</span>
                   </div>
-                  <div className="flex justify-between gap-4 border-b border-white/[0.06] pb-3">
+                  <div className="flex min-w-0 flex-col gap-1 border-b border-white/[0.06] pb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <span className="shrink-0 text-zinc-500">Session key</span>
-                    <span className="min-w-0 truncate font-mono">
+                    <span className="min-w-0 break-all font-mono text-xs sm:truncate">
                       {mission.sessionKey === '0x0000000000000000000000000000000000000000'
                         ? 'revoked'
                         : mission.sessionKey}
                     </span>
                   </div>
-                  <div className="flex justify-between gap-4">
+                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <span className="shrink-0 text-zinc-500">Owner</span>
-                    <span className="min-w-0 truncate font-mono">{state.owner}</span>
+                    <span className="min-w-0 break-all font-mono text-xs sm:truncate">{state.owner}</span>
                   </div>
                 </div>
                 <p className="mt-6 rounded-2xl border border-white/[0.06] bg-black/20 p-4 text-xs leading-6 text-zinc-400">
@@ -431,20 +431,20 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
                 </div>
               </div>
 
-              <div className="succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.02] p-6">
-                <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 succra-lift succra-rise rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-zinc-400">
                     Recent proof
                   </h2>
                   <span className="text-[11px] text-zinc-600">{state.events.length} events</span>
                 </div>
-                <ol className="mt-5 space-y-3">
+                <ol className="mt-5 min-w-0 space-y-3">
                   {state.events.slice(0, 6).map((event, index) => (
                     <li
                       key={`${event.hash}-${index}`}
-                      className="rounded-xl border border-white/[0.06] bg-black/20 p-3"
+                      className="min-w-0 rounded-xl border border-white/[0.06] bg-black/20 p-3"
                     >
-                      <p className="text-sm text-zinc-200">{event.label}</p>
+                      <p className="break-words text-sm text-zinc-200">{event.label}</p>
                       <a
                         className="mt-1 block truncate font-mono text-[10px] text-[#e8ff63]/80 hover:text-[#e8ff63]"
                         href={`https://robinhoodchain.blockscout.com/tx/${event.hash}`}
@@ -459,9 +459,9 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
               </div>
             </section>
 
-            <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+            <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
+                <div className="min-w-0">
                   <h2 className="font-mono text-xs uppercase tracking-[0.24em] text-[#e8ff63]">
                     Connect Agent
                   </h2>
@@ -472,7 +472,7 @@ await fetch("${backendUrl()}/api/demo?demo=true", {
                 </div>
                 <CopyButton value={agentSnippet} label="Connect Agent snippet" />
               </div>
-              <pre className="mt-5 overflow-x-auto rounded-2xl border border-white/[0.06] bg-black/40 p-5 font-mono text-[11px] leading-6 text-zinc-300">
+              <pre className="mt-5 overflow-x-auto whitespace-pre-wrap break-words rounded-2xl border border-white/[0.06] bg-black/40 p-3 font-mono text-[10px] leading-5 text-zinc-300 sm:p-5 sm:text-[11px] sm:leading-6">
                 <code>{agentSnippet}</code>
               </pre>
               <div className="mt-4 grid gap-2 font-mono text-[10px] text-zinc-600 sm:grid-cols-3">

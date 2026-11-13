@@ -97,10 +97,10 @@ export default function NewMissionPremium() {
   const selectedMission = state?.missions.find((mission) => mission.key === token);
 
   return (
-    <main className="reference-grid min-h-screen bg-[#07090c] px-6 py-8 text-zinc-100">
+    <main className="reference-grid min-h-screen overflow-x-hidden bg-[#07090c] px-4 py-6 text-zinc-100 md:px-6 md:py-8">
       <div className="mx-auto max-w-5xl">
-        <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div className="flex flex-wrap items-center gap-5">
+        <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-5">
             <Link href="/" className="flex items-center gap-3">
               <img src="/logo.svg" alt="Succra" className="h-8 w-8 text-[#e8ff63]" />
               <span className="font-mono text-xs uppercase tracking-[0.28em] text-[#e8ff63]">
@@ -128,10 +128,10 @@ export default function NewMissionPremium() {
           </div>
         </nav>
 
-        <section className="mt-12 grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="mt-8 grid gap-7 md:mt-12 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#e8ff63]">New mission</p>
-            <h1 className="mt-3 text-5xl font-semibold leading-[1.02] tracking-tight">
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#e8ff63] sm:text-xs sm:tracking-[0.28em]">New mission</p>
+            <h1 className="mt-3 text-3xl font-semibold leading-[1.05] tracking-tight sm:text-4xl lg:text-5xl">
               Define bounded authority.
             </h1>
             <p className="mt-5 max-w-xl text-zinc-400">
@@ -165,7 +165,7 @@ export default function NewMissionPremium() {
             </div>
           </div>
 
-          <div className="reference-glow rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+          <div className="reference-glow rounded-3xl border border-white/10 bg-white/[0.04] p-4 sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-zinc-500">
                 Mission setup
@@ -175,7 +175,7 @@ export default function NewMissionPremium() {
               </span>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(['usdg', 'wif'] as const).map((option) => (
                 <button
                   key={option}
@@ -200,7 +200,7 @@ export default function NewMissionPremium() {
               ))}
             </div>
 
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/30 p-4">
+            <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4 sm:mt-6">
               <label
                 htmlFor="deposit-amount"
                 className="text-xs uppercase tracking-[0.18em] text-zinc-500"

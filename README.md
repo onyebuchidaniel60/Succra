@@ -66,6 +66,43 @@ Every action produces a real Robinhood Chain transaction, visible in the mission
 
 ---
 
+## The User Journey
+
+### 1. Connect your wallet
+
+Connect MetaMask, OKX, or another injected EVM wallet on Robinhood Chain. Your dashboard is scoped to the connected address. Private mission state requires a one-time wallet signature; the deployer address alone is never accepted as a credential.
+
+### 2. Create a mission
+
+Open [`/missions/new`](https://succra.vercel.app/missions/new). Choose **USDG** for x402 payments or **WIF** for treasury transfers. The mission gets a vault, a policy, a primary agent, and a pre-approved successor.
+
+### 3. Deposit funds
+
+Enter any amount greater than zero. USDG uses 6 decimals; WIF uses 18. The deposit is approved and moved into the mission vault. The owner keeps the unconditional withdrawal right.
+
+### 4. Run the simulator
+
+Open the [Live Simulation](https://succra.vercel.app/missions/demo) and use the mission detail controls:
+
+- **Run USDG payment** — a real EIP-3009 settlement through the contract's ERC-1271 signer.
+- **Run WIF Treasury Transfer** — a policy-bounded ERC-20 transfer.
+- **Inject 3 violations** — simulate an agent repeatedly requesting disallowed payments.
+- **Quarantine + withdraw** — revoke the session key and prove the owner can still withdraw.
+- **Activate successor** — hand the mission to the pre-approved backup agent.
+- **Recovery payment** — execute a payment under the lower recovery ceiling.
+
+### 5. Activate the successor
+
+Succession is not a restart. The successor inherits the mission's identity, vault, checkpoints, and policy, but only a reduced recovery budget. The old session key is gone.
+
+### 6. Withdraw
+
+The owner can withdraw unallocated funds directly from the vault at any status. No agent, guardian, or runtime cooperation is required.
+
+> **Five-minute judge path:** Live app → View Live Demo Mission → Inject 3 violations → Quarantine + withdraw → Activate successor → Recovery payment.
+
+---
+
 ## The Problem
 
 Autonomous agents are becoming the operating layer for money, procurement, and online work. But most agent systems have a fatal architectural flaw:
@@ -139,43 +176,6 @@ x402 EIP-3009 authorization ──▶ USDG          WIF treasury transfer
    ▼                                               ▼
 Transfer log / settlement verification      allowlisted merchant
 ```
-
----
-
-## The User Journey
-
-### 1. Connect your wallet
-
-Connect MetaMask, OKX, or another injected EVM wallet on Robinhood Chain. Your dashboard is scoped to the connected address. Private mission state requires a one-time wallet signature; the deployer address alone is never accepted as a credential.
-
-### 2. Create a mission
-
-Open [`/missions/new`](https://succra.vercel.app/missions/new). Choose **USDG** for x402 payments or **WIF** for treasury transfers. The mission gets a vault, a policy, a primary agent, and a pre-approved successor.
-
-### 3. Deposit funds
-
-Enter any amount greater than zero. USDG uses 6 decimals; WIF uses 18. The deposit is approved and moved into the mission vault. The owner keeps the unconditional withdrawal right.
-
-### 4. Run the simulator
-
-Open the [Live Simulation](https://succra.vercel.app/missions/demo) and use the mission detail controls:
-
-- **Run USDG payment** — a real EIP-3009 settlement through the contract's ERC-1271 signer.
-- **Run WIF Treasury Transfer** — a policy-bounded ERC-20 transfer.
-- **Inject 3 violations** — simulate an agent repeatedly requesting disallowed payments.
-- **Quarantine + withdraw** — revoke the session key and prove the owner can still withdraw.
-- **Activate successor** — hand the mission to the pre-approved backup agent.
-- **Recovery payment** — execute a payment under the lower recovery ceiling.
-
-### 5. Activate the successor
-
-Succession is not a restart. The successor inherits the mission's identity, vault, checkpoints, and policy, but only a reduced recovery budget. The old session key is gone.
-
-### 6. Withdraw
-
-The owner can withdraw unallocated funds directly from the vault at any status. No agent, guardian, or runtime cooperation is required.
-
-> **Five-minute judge path:** Live app → View Live Demo Mission → Inject 3 violations → Quarantine + withdraw → Activate successor → Recovery payment.
 
 ---
 
