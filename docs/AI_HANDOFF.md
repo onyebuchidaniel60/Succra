@@ -6,6 +6,15 @@ Succra — autonomous mission continuity and authority succession on Robinhood C
 ## Frozen product statement
 Succra allows an economic mission to survive primary-agent failure by maintaining mission authority outside the agent, quarantining unsafe authority, preserving verified mission state, activating a pre-approved successor, and granting constrained recovery authority.
 
+## Documentation rewrite checkpoint (2026-11-13)
+
+- Root `README.md` rebuilt around the judge/end-user story: hero, evidence, problem, three pillars, user journey, architecture, local development, and documentation index.
+- `docs/README.md` is now a full table of contents with judge/developer/operator reading paths, live deployment links, evidence links, and documentation conventions.
+- `docs/ARCHITECTURE.md` gained a deep ERC-1271 + session-key lifecycle section covering Variant A, Variant B, quarantine/rotation, violation interaction, the WIF treasury path, and state-version replay protection.
+- `docs/PROJECT_SPEC.md` section 6 was rebuilt with the authority/custody model, accurate mission lifecycle, policy rulebook, deposit/withdrawal rules, both payment rails, agent/succession/action state machines, violation rules, idempotency, irreversible actions, and a worked continuity example.
+- `docs/SUBMISSION.md` was rewritten as a judge-facing pitch with live evidence, implementation summary, verification, and honest limitations.
+- All relative documentation links and anchors were validated.
+
 ## Final UX / WIF treasury checkpoint (2026-11-12, `9c4cc61`)
 
 - **Editable deposits:** `/missions/new` accepts a user-entered amount, validates it in the browser and API at the selected token's decimals (6 for USDG, 18 for WIF), and deposits into the matching vault before redirecting to `/missions/<vault>`. Live verification used `0.02 USDG` and `1 WIF`; both landed on the matching mission detail. The live WIF deposit tx is `0xae311e032f500df429ed4c80b9aa0295cb152fbb7d8270e70eda58a4fa12ef92`.
@@ -25,7 +34,7 @@ Succra allows an economic mission to survive primary-agent failure by maintainin
 - **Mission detail flow:** `/missions/demo` is the only place with simulator controls. `/missions/[id]` adds **Back to Dashboard** and a **Connect Agent** snippet. Owner detail is scoped to the verified wallet.
 - **Create flow:** `/missions/new` requires the owner wallet, unlocks with a signature, accepts a user-entered USDG or WIF deposit amount, routes `{ action: 'deposit', token, amount }` through the backend into the matching vault, then redirects to `/missions/<vault>`. WIF is no longer blocked in the UI. Non-owner wallets get a clean owner-operated notice and a link to the public demo; multi-tenant factory creation is not enabled.
 - **Verified on production (2026-11-12):** `/api/demo` → empty state; `?owner=<deployer>` → `401 OWNER_AUTH_REQUIRED`; `?demo=true` → two live missions and 18 events; incognito `/dashboard` → empty state. Vercel production build passed; Render service `srv-dbqv8cvf3r2c73cufumg` deployed commit `d7ddc0e`.
-- **Tests:** `pnpm -r typecheck` pass, `pnpm --filter @succra/web build` pass, contracts **107 passing**, new `apps/web/tests/demo-auth.test.ts` **4 passing**. The legacy HashKey wallet-connect/mission-detail tests and PGlite creation tests remain stale/failing on this branch and are not part of the active Robinhood path.
+- **Tests:** `pnpm -r typecheck` pass, `pnpm --filter @succra/web build` pass, contracts **115 passing**, new `apps/web/tests/demo-auth.test.ts` **5 passing**. The legacy HashKey wallet-connect/mission-detail tests and PGlite creation tests remain stale/failing on this branch and are not part of the active Robinhood path.
 
 ## Current status
 **Pivot notice (2026-11-03): Succra is pivoting from HashKey Chain (HSP) to Robinhood Chain (x402) for the World is Flat hackathon (submissions close 2026-11-12 17:30 UTC). The product thesis is unchanged: Succra is the continuity layer that keeps an economic mission alive when its autonomous agent fails. Agents can fail. Missions don't have to.**
@@ -39,7 +48,7 @@ Succra allows an economic mission to survive primary-agent failure by maintainin
   - Two EIP-3009 variants: **A** (contract signer via ERC-1271) and **B** (session key funded on-demand); R1-spike decides.
   - The owner is never in the per-payment loop.
 - Phase sequence: **R0** (archive + docs pivot; complete), **R0b** (Model A docs amendment; complete), **R1** (implementation; complete), **R2/R3** (mainnet deployment + live flow; complete), **R4** (live Vercel/Render video; complete).
-- **R1 implementation complete:** vault, session-key lifecycle, Variant A `approvePayment` + ERC-1271 `isValidSignature`, Variant B `releaseForPayment`, USDG/WIF factory allowlist, x402 client, premium UI, and mainnet orchestrator. Contract suite: **107 passing**.
+- **R1 implementation complete:** vault, session-key lifecycle, Variant A `approvePayment` + ERC-1271 `isValidSignature`, Variant B `releaseForPayment`, USDG/WIF factory allowlist, x402 client, premium UI, and mainnet orchestrator. Contract suite is now **115 passing** after the WIF treasury adapter tests.
 - **Mainnet deployment complete:** GuardianRegistry `0x11cE6039d45faDa4EfBd72AF496A08FEA077f31B`; MissionFactory `0x37d25d2dE8e52188A37A98EdD2b5622B5E4B2917`; USDG mission `0x37522496E38f7859C96bCAC058d23f7296BB646b`; WIF treasury mission `0x5bdC628D1b0c7DE78579E076398f4c5216e10e08` (new `executeERC20Transfer` bytecode).
 - **Real Paxos USDG ERC-1271 probe: PASS.** `transferWithAuthorization` with `from=mission` succeeded, `authorizationState=true`, tx `0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8`. Variant A is live.
 - **Live mainnet continuity flow complete:** x402 payment, three violations, quarantine, owner withdrawal, successor activation, recovery payment. Evidence is in `demo-video/mainnet-state.json` and linked from the live UI.

@@ -518,6 +518,173 @@ Succra never holds private keys to mission funds in a way the owner cannot overr
 
 This is the core positioning: Succra is the safety and continuity layer around x402, not a replacement for it.
 
+## ERC-1271 and session-key lifecycle (deep dive)
+
+### Roles
+
+| Role | Holds | Can do | Cannot do |
+|---|---|---|---|
+| **Owner** | Owner wallet | Deposit, withdraw at any status, register/revoke session keys, create missions, set successors | Be forced to co-sign a payment |
+| **Agent** | Agent signing key | Submit authenticated action requests to the runtime | Hold the session key, move vault funds, change policy |
+| **Runtime** | Session key + guardian credential | Preflight policy, approve/release payments, submit EIP-3009, record settlement/violations | Withdraw owner funds, bypass contract policy |
+| **Guardian** | Guardian key (deployer in the live demo) | Record violations, quarantine, activate successors | Spend mission funds |
+| **SuccraMission** | Mission funds + authority state | Enforce caps, merchants, budget, expiry, session-key state, state versions | Transfer funds outside policy except owner withdrawal |
+
+### Variant A — contract as the EIP-3009 signer
+
+Variant A is the preferred path when the settlement token code-routes ERC-1271 signatures. Paxos USDG does this on Robinhood Chain mainnet.
+
+```text
+Agent
+  │  1. EIP-712 signed SuccraRequest
+  ▼
+Runtime preflight
+  │  2. policy checks: status, merchant, token, cap, budget, expiry
+  ▼
+Guardian ── 3. approvePayment(authorizationHash, amount, merchant, expectedVersion) ──▶ SuccraMission
+                                                                                 │
+                                                                                 ├─ approvedHashes[hash] = true
+                                                                                 ├─ approvedAmount[hash] = amount
+                                                                                 ├─ reservedAtomic += amount
+                                                                                 └─ stateVersion += 1
+Session key ── 4. signs EIP-3009 TransferWithAuthorization ──▶ runtime
+                                                               │
+                                                               ▼
+USDG.transferWithAuthorization(from = SuccraMission, to = merchant, value, nonce, signature)
+  │  5. token sees from is a contract
+  ▼
+SuccraMission.isValidSignature(hash, signature)
+  │  ├─ reject if hash not approved
+  │  ├─ reject if sessionKey == address(0)
+  │  ├─ recover signer from hash + signature
+  │  ├─ require recovered == authority.sessionKey
+  │  └─ return 0x1626ba7e (ERC-1271 MAGIC)
+  ▼
+USDG transfers mission funds to merchant
+  │
+  ▼
+Runtime verifies the on-chain Transfer log
+  │
+  ▼
+Guardian ── 6. recordSettlement(paymentId, amount, txHash, expectedVersion) ──▶ SuccraMission
+                                                                                 ├─ confirmedSpentAtomic += amount
+                                                                                 ├─ reservation released
+                                                                                 ├─ violation streak reset
+                                                                                 └─ stateVersion += 1
+```
+
+Key details:
+
+- `approvePayment` is guardian-only and checks `expectedVersion`, mission status (`ACTIVE` or `ACTIVE_RECOVERY`), session-key presence, initial funding, merchant allowlist, duplicate hashes, per-payment ceiling, cumulative budget, and available balance.
+- `isValidSignature` is a **view** function. It never moves funds itself; it only proves the session key authorized the exact approved hash.
+- The session key signs the EIP-3009 payload, but the token's `from` is the mission contract. The agent never appears as the token sender.
+- A successful ERC-1271 check returns `0x1626ba7e`; anything else is treated as invalid.
+- The runtime never treats a facilitator receipt as final. It verifies the token Transfer log and records the settlement on-chain.
+
+**Mainnet proof:** transaction [`0x7024fd41…cea3a8`](https://robinhoodchain.blockscout.com/tx/0x7024fd4153b3d378952118002122ea9861ded8998bac032d5eaeae0de0cea3a8) executed a real Paxos USDG `transferWithAuthorization` with `from = SuccraMission`, `authorizationState = true`, and a successful ERC-1271 check.
+
+### Variant B — fund the session key, then sign as an EOA
+
+Variant B is the fallback when a token does not code-route ERC-1271. It preserves the same authority model while changing only the signing location.
+
+```text
+Guardian ── 1. approvePayment(hash, amount, merchant, expectedVersion) ──▶ SuccraMission
+Guardian ── 2. releaseForPayment(sessionKey, amount, expectedVersion) ──▶ SuccraMission
+                                                                          │
+                                                                          ├─ status/cap/budget checks
+                                                                          ├─ reservedAtomic released
+                                                                          ├─ releasedAtomic += amount
+                                                                          └─ exact amount transferred to sessionKey
+Session key ── 3. signs EIP-3009 with from = sessionKey ──▶ token transfer ──▶ merchant
+Guardian ── 4. recordSettlement(...) ──▶ SuccraMission
+```
+
+Key details:
+
+- `releaseForPayment` is guardian-only, requires the caller-supplied session key to equal the registered key, and checks status, initial funding, and the vault balance.
+- The session key holds only the exact approved amount between release and settlement. It is not a general-purpose treasury wallet.
+- If the session key is compromised after release, the owner can still withdraw the remaining vault balance. The release is bounded by the per-payment cap and budget.
+- The runtime should sweep any unsettled session-key balance back to the vault at the owner's direction.
+
+### Session-key lifecycle
+
+| Phase | Trigger | On-chain effect | Runtime effect |
+|---|---|---|---|
+| **Not registered** | Mission deployed | `authority.sessionKey = address(0)` | No x402 payment can be approved |
+| **Registered** | Owner calls `registerSessionKey(key, expectedVersion)` | Session key stored; `stateVersion += 1`; `SessionKeyRegistered` emitted | Runtime stores the key server-side and uses it for EIP-3009 |
+| **Active** | Mission `ACTIVE` or `ACTIVE_RECOVERY` | Key can authorize approved hashes | Runtime preflights and submits payments |
+| **Revoked** | Owner/guardian calls `revokeSessionKey`; quarantine also revokes | `sessionKey = address(0)`; state version advances | Runtime discards the key; no new approvals |
+| **Rotated** | Succession completes; owner registers a new key | New key stored with the reduced recovery ceiling | Runtime switches to the new key for recovery payments |
+| **Terminal** | `cancel` or quarantine without recovery | Key revoked; mission cannot execute | No further payment actions |
+
+Lifecycle invariants:
+
+- A session key is **never** transferred to the agent.
+- Every key mutation advances `stateVersion`, so stale runtime actions revert with `InvalidVersion`.
+- Quarantine always revokes the current key, even if the key was never used.
+- Succession never reuses the old key.
+- The owner can register a new key after recovery; that key operates under the lower `recoveryMaxPaymentAtomic` ceiling.
+- A revoked key cannot be resurrected by replaying an old approval. Duplicate authorization hashes revert at approval time, and the token nonce prevents replay at settlement.
+
+### Violation and quarantine interaction
+
+The runtime counts only authenticated, current-agent policy violations. On the configured threshold (default 3, window 900 seconds), the guardian calls `quarantine(expectedVersion)`.
+
+```text
+ACTIVE / ACTIVE_RECOVERY
+  │ authenticated policy violation
+  ▼
+recordViolation(requestId, expectedVersion)
+  ├─ violationCount += 1
+  ├─ lastViolationAt = block.timestamp
+  └─ stateVersion += 1
+
+threshold reached
+  ▼
+quarantine(expectedVersion)
+  ├─ sessionKey = address(0)
+  ├─ status = QUARANTINED
+  ├─ stateVersion += 1
+  └─ SessionKeyRevoked + MissionQuarantined emitted
+```
+
+After quarantine:
+
+- No `approvePayment`, `releaseForPayment`, or `executeERC20Transfer` can execute.
+- The owner can still withdraw unallocated funds.
+- The owner or guardian can activate a pre-approved successor.
+- There is no `QUARANTINED → ACTIVE` shortcut.
+
+### WIF treasury path (no EIP-3009 required)
+
+WIF is a plain ERC-20 without EIP-3009 or ERC-1271. It uses a separate policy-bounded function:
+
+```text
+Guardian ── executeERC20Transfer(token, to, amount) ──▶ SuccraMission
+                                                        │
+                                                        ├─ status must be ACTIVE / ACTIVE_RECOVERY
+                                                        ├─ token must equal config.paymentToken
+                                                        ├─ to must be in allowedMerchants
+                                                        ├─ amount <= maxPaymentAtomic or recoveryMaxPaymentAtomic
+                                                        ├─ budget and available balance checks
+                                                        ├─ success: confirmedSpentAtomic += amount, streak reset
+                                                        └─ failure: violationCount += 1, TreasuryTransferBlocked
+```
+
+A blocked treasury transfer does **not** revert; it records the violation and returns `false`, so the blocked attempt remains observable on-chain. A successful transfer emits `TreasuryTransfer` and returns `true`.
+
+This path does not use a session key, which is appropriate for a treasury asset. The vault still enforces the mission's authority boundary: the guardian can only transfer to an allowlisted merchant within the configured cap and budget.
+
+### State-version and replay protection
+
+Every material mutation uses `expectedVersion` or an equivalent nonce:
+
+- `approvePayment`, `releaseForPayment`, `recordSettlement`, `recordViolation`, `quarantine`, `activateSuccessor`, `acknowledgeRecovery`, `commitCheckpoint`, `cancel`, and session-key mutations check `expectedVersion`.
+- `recordSettlement` and `recordViolation` are idempotent by payment/request id.
+- `usedRequestIds` prevents replay of agent action requests.
+- `approvedHashes` prevents duplicate approval of the same EIP-3009 authorization.
+- A stale runtime action fails closed instead of overwriting newer authority state.
+
 ## Off-chain failure boundary
 
 Succra Cloud is not a cryptographic root of trust. If the runtime is offline:

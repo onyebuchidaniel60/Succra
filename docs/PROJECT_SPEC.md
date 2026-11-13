@@ -515,125 +515,317 @@ Owner can cancel a mission and stop future x402 payments according to on-chain r
 
 # 6. BUSINESS LOGIC & STATE MACHINES
 
-## Mission state machine
+This section is the authoritative product logic. Contract behavior wins over UI labels and database mirrors.
+
+## 6.1 Authority and custody
+
+- The mission owns the funds. `SuccraMission` holds the selected payment token.
+- The owner has an unconditional, unilateral withdrawal right for unallocated funds at **any** mission status.
+- The agent never holds vault funds, the owner's key, or the session key.
+- The guardian/runtime can execute only policy-bounded actions. It cannot withdraw, change policy, add successors, or move funds arbitrarily.
+- The database and UI are mirrors. The contract is authoritative for authority, policy, and balances.
+
+## 6.2 Mission lifecycle
+
+`MissionFactory.createMission` deploys a `SuccraMission` in **ACTIVE** status. The contract starts with `depositedAtomic = 0`; the mission becomes executable only after the owner deposits at least `initialDepositAtomic`.
+
 ```text
-DRAFT
-  │ create + x402 offer + session key
+MissionFactory.createMission
+  │  owner = msg.sender
+  │  status = ACTIVE
+  │  sessionKey = address(0)
+  │  depositedAtomic = 0
   ▼
-FUNDED (off-chain mirror; contract remains DRAFT)
-  │ initial USDG deposit confirms
+ACTIVE (awaiting deposit)
+  │  owner deposits >= initialDepositAtomic
   ▼
-ACTIVE
-  │ 3 violations / authorized liveness trigger
+ACTIVE (funded, executable)
+  │  authenticated policy violations reach threshold
   ▼
 QUARANTINED
-  │ successor selected
+  │  guardian activates a pre-approved successor
   ▼
 RECOVERING
-  │ successor acknowledges
+  │  successor acknowledges recovery
   ▼
 ACTIVE_RECOVERY
-  │ completion
-  ▼
-COMPLETED
+  │  lower recovery ceiling applies
 
-ACTIVE ── expiry ──> EXPIRED
-ACTIVE ── owner cancel ──> CANCELLED
-QUARANTINED ── no eligible successor ──> HALTED
+ACTIVE / ACTIVE_RECOVERY / QUARANTINED / RECOVERING
+  └── owner cancel (before expiry) ──> CANCELLED
 ```
 
-From QUARANTINED, two transitions exist in MVP:
-  QUARANTINED → CANCELLED   (owner cancel)
-  QUARANTINED → RECOVERING  (succession, Phase 6)
-There is no QUARANTINED → ACTIVE shortcut. A quarantined mission
-cannot resume without either succession or cancellation.
+On-chain enum:
 
-`FUNDED` is an off-chain mirror status shown while the deposit confirms; the contract remains `DRAFT` and cannot execute payments until the initial deposit confirms and the mission reaches `ACTIVE`.
+| Value | Status | MVP behavior |
+|---|---|---|
+| 0 | `DRAFT` | Reserved; not entered by the factory |
+| 1 | `ACTIVE` | Mission is live; payments require initial funding |
+| 2 | `DEGRADED` | Reserved; not entered in MVP |
+| 3 | `QUARANTINED` | Session key revoked; no new payments; owner can withdraw |
+| 4 | `RECOVERING` | Successor activated; awaiting acknowledgement |
+| 5 | `ACTIVE_RECOVERY` | Successor active with lower recovery ceiling |
+| 6 | `COMPLETED` | Reserved; not entered in MVP |
+| 7 | `CANCELLED` | Owner cancelled; session key revoked |
+| 8 | `EXPIRED` | Reserved on-chain; expiry is enforced by `cancel` and `authorizePayment` |
+| 9 | `HALTED` | DB-only mirror for quarantine with no eligible successor |
 
-The on-chain enum reserves `DEGRADED` for future liveness degradation.
-No MVP transition enters or leaves it; the state machine above remains
-the complete MVP behavior.
+Important distinctions:
 
-Phase 6 resolution (spec amendment) — explicit cancel edges: `cancel()` accepts `Draft`, `Active`, `Quarantined`, `Recovering`, `ActiveRecovery`. Terminal states (`Completed`, `Expired`, `Cancelled`, `Halted`) are excluded. `HALTED` is a DB-only mirror state: the chain remains `QUARANTINED`; no fund movement is possible in either representation; owner notification beyond the audit row and dashboard status is out of scope for MVP.
+- There is **no on-chain `FUNDED` status**. A mission can be `ACTIVE` but not executable while `depositedAtomic < initialDepositAtomic`. The UI may label this as “awaiting deposit”.
+- There is no `QUARANTINED → ACTIVE` shortcut. A quarantined mission must be cancelled or recovered through succession.
+- `COMPLETED` and `EXPIRED` are reserved; the current MVP does not transition into them on-chain.
+- `HALTED` is a database/UI mirror; the chain remains `QUARANTINED`, and no funds can move except owner withdrawal.
 
-## Agent assignment state machine
+## 6.3 Policy rulebook
+
+### Mission creation policy
+
+The factory validates the mission config before deployment:
+
+| Rule | Enforcement |
+|---|---|
+| Budget > 0 | `_validateConfig` |
+| Initial deposit > 0 and <= budget | `_validateConfig` |
+| Max payment > 0 and <= budget | `_validateConfig` |
+| Recovery cap > 0 and <= max payment | `_validateConfig` |
+| Expiry is in the future | `_validateConfig` |
+| Primary agent is non-zero | `_validateConfig` |
+| Merchant allowlist is non-empty and duplicate-free | `_validateConfig` |
+| Successor count <= 8, non-zero, unique, not the primary | `_validateConfig` |
+| Violation threshold > 0 | `_validateConfig` |
+| Violation window > 0 | `_validateConfig` |
+| Payment token is factory-allowlisted (when enabled) | `MissionFactory.createMission` |
+
+### USDG x402 policy
+
+`approvePayment` is the guardian-submitted approval step for Variant A. It enforces:
+
+| Rule | Behavior |
+|---|---|
+| Mission status is `ACTIVE` or `ACTIVE_RECOVERY` | Reverts `InvalidStatus` |
+| `expectedVersion` matches current state | Reverts `InvalidVersion` |
+| Session key is registered | Reverts `SessionKeyNotSet` |
+| Initial deposit has confirmed | Reverts `NotFunded` |
+| Merchant is allowlisted | Reverts `InvalidMerchant` |
+| Authorization hash has not been used | Reverts `HashAlreadyApproved` |
+| Amount <= `maxPaymentAtomic` in `ACTIVE` | Reverts `InvalidAmount` |
+| Amount <= `recoveryMaxPaymentAtomic` in `ACTIVE_RECOVERY` | Reverts `InvalidAmount` |
+| Cumulative committed spend + amount <= budget | Reverts `InvalidAmount` |
+| Amount <= available vault balance | Reverts `InsufficientBalance` |
+
+`isValidSignature` also requires:
+
+- the hash is in `approvedHashes`;
+- a session key is registered;
+- the signature recovers to exactly `authority.sessionKey`;
+- otherwise it returns `0xffffffff` instead of the ERC-1271 magic value.
+
+`releaseForPayment` (Variant B) additionally requires the caller-supplied session key to match the registered key and the vault to hold the amount.
+
+### WIF treasury policy
+
+`executeERC20Transfer(token, to, amount)` is guardian-only and enforces:
+
+| Rule | Behavior |
+|---|---|
+| Mission status is `ACTIVE` or `ACTIVE_RECOVERY` | Reverts `InvalidStatus` |
+| Amount > 0 | Blocked; violation recorded |
+| Token equals the configured mission token | Blocked; violation recorded |
+| `to` is on the merchant allowlist | Blocked; violation recorded |
+| Amount <= the active per-payment ceiling | Blocked; violation recorded |
+| Cumulative committed spend + amount <= budget | Blocked; violation recorded |
+| Amount <= available vault balance | Blocked; violation recorded |
+| Token transfer succeeds | Reverts `InsufficientBalance` if the token returns false |
+
+Blocked treasury transfers do not revert. They increment the violation streak and emit `TreasuryTransferBlocked`, so the attempt is observable on-chain.
+
+### Owner controls
+
+| Action | Rule |
+|---|---|
+| Deposit | Owner-only; amount > 0; token transfer must succeed |
+| Withdraw | Owner-only; amount <= `availableBalance()`; allowed at any status |
+| Register session key | Owner-only; non-zero key; `expectedVersion` required |
+| Revoke session key | Owner or guardian; `expectedVersion` required |
+| Cancel | Owner-only; status must be `ACTIVE`, `ACTIVE_RECOVERY`, `QUARANTINED`, or `RECOVERING`; must be before expiry |
+| Quarantine | Owner or guardian; status must be executable; no threshold requirement for manual freeze |
+
+## 6.4 Deposit and withdrawal
+
+- The owner approves the mission token and calls `deposit(amountAtomic)`.
+- `deposit` calls `transferFrom(owner, mission, amount)` and increments `depositedAtomic`.
+- The owner can withdraw up to `availableBalance()` at any status, including `QUARANTINED`.
+- `availableBalance = depositedAtomic - (confirmedSpentAtomic + reservedAtomic + releasedAtomic)`, floored at zero.
+- Funds reserved for an approved but unsettled payment are not withdrawable twice.
+- A successful settlement moves the amount from reserved/released into `confirmedSpentAtomic`.
+
+## 6.5 Payment rails
+
+### USDG x402 (Variant A preferred)
+
+1. Agent submits an EIP-712 signed action request to the runtime.
+2. Runtime validates the agent, nonce, idempotency key, merchant, token, cap, budget, and expiry.
+3. Runtime computes the EIP-3009 `TransferWithAuthorization` digest.
+4. Guardian calls `approvePayment`.
+5. Session key signs the EIP-3009 payload.
+6. The runtime submits `transferWithAuthorization` with `from = SuccraMission`.
+7. The token calls `isValidSignature`; the contract returns `0x1626ba7e` only for the approved hash and registered session key.
+8. The runtime verifies the on-chain Transfer log and calls `recordSettlement`.
+9. A confirmed settlement resets the violation streak.
+
+### USDG x402 (Variant B fallback)
+
+1–4 as above.
+5. Guardian calls `releaseForPayment(sessionKey, amount, expectedVersion)`.
+6. The session key signs EIP-3009 with `from = sessionKey`.
+7. The amount is bounded by the same cap and budget; the session key holds only the exact released amount.
+8. Runtime records settlement after the Transfer log confirms.
+
+### WIF treasury transfer
+
+1. Guardian/runtime evaluates the transfer off-chain against the same token, merchant, cap, and budget rules.
+2. Guardian calls `executeERC20Transfer(token, to, amount)`.
+3. Successful transfer: `confirmedSpentAtomic += amount`, violation streak reset, `TreasuryTransfer` emitted.
+4. Policy failure: violation count incremented, `TreasuryTransferBlocked` emitted, no funds moved.
+
+WIF never claims x402 settlement. It is a policy-bounded ERC-20 treasury rail.
+
+## 6.6 Agent assignment state machine
+
 ```text
 REGISTERED → ACTIVE_PRIMARY
 ACTIVE_PRIMARY → QUARANTINED
 QUARANTINED → REVOKED
+
 REGISTERED → ACTIVE_SUCCESSOR
 ACTIVE_SUCCESSOR → REVOKED
 ```
 
-## Succession state machine
+Only one current agent exists at a time. Successors are pre-approved at creation; they do not inherit the primary agent's key or authority.
+
+## 6.7 Succession state machine
+
 ```text
 NOT_STARTED
-  ↓
+  ↓  quarantine
 TRIGGERED
-  ↓
+  ↓  verified checkpoint / candidate selection
 CHECKPOINT_LOCKED
-  ↓
+  ↓  guardian activates an approved successor
 CANDIDATE_SELECTED
-  ↓
+  ↓  successor acknowledged
 AUTHORIZED
-  ↓
+  ↓  recovery authority active
 ACKNOWLEDGED
   ↓
 COMPLETE
 ```
 
-## Action state machine
+On-chain mapping:
+
+- `activateSuccessor` requires `QUARANTINED` or `RECOVERING`.
+- The successor must be pre-approved and `active = true`.
+- The current agent cannot be reactivated as successor.
+- Activation sets `status = RECOVERING`, revokes the session key, and resets `agentNonce`.
+- `acknowledgeRecovery` moves `RECOVERING → ACTIVE_RECOVERY`.
+- The successor receives a new session key and the lower recovery cap.
+
+## 6.8 Action state machine
+
 ```text
 RECEIVED
-  ├── invalid → REJECTED
-  └── valid
+  ├── invalid/unauthenticated → REJECTED
+  └── authenticated
         ↓
       APPROVED
         ↓
       SUBMITTED
-        ├── x402/chain fail → FAILED
+        ├── x402/chain failure → FAILED
         └── confirmed → CONFIRMED
 ```
 
-## Violation rules
+Only authenticated, current-agent policy failures count toward the violation streak. Malformed, unauthenticated, replayed, or environmental failures do not.
+
+## 6.9 Violation rules
+
 A blocked request counts toward the streak only when:
-- it was authenticated;
-- the current agent signed it;
-- it was rejected by a mission policy rule.
 
-Malformed/unauthenticated requests do not increase the agent's policy violation count because they may be network abuse rather than agent behavior.
+1. It was authenticated.
+2. It was signed by the current agent.
+3. It was rejected by a mission policy rule.
 
-Countable policy violations (streak increments) are:
+Countable policy violations:
+
 - `INVALID_ACTION_TYPE`
 - `MERCHANT_NOT_ALLOWED`
 - `TOKEN_NOT_ALLOWED`
 - `AMOUNT_EXCEEDS_MAX`
 - `BUDGET_EXHAUSTED`
 
-Non-countable rejections (streak does NOT increment):
+Non-countable rejections:
+
 - authentication failures (`AGENT_NOT_CURRENT`, `INVALID_SIGNATURE`)
 - replay protection (`STALE_TIMESTAMP`, `STALE_NONCE`, `DUPLICATE_REQUEST`)
-- environmental (`MISSION_NOT_ACTIVE`, `MISSION_EXPIRED`, `REQUEST_EXPIRED`)
-- any future reason code not explicitly listed above
+- environmental failures (`MISSION_NOT_ACTIVE`, `MISSION_EXPIRED`, `REQUEST_EXPIRED`)
+- unknown reason codes not explicitly listed above
 
-A violation counts only when it is (a) authenticated, (b) signed by the current agent, (c) rejected by one of the countable policy rules.
+On-chain rules:
 
-## Duplicate prevention
-- Every action has client-generated `idempotency_key`.
-- `(mission_id, idempotency_key)` unique.
-- Every payment action includes a mission-specific monotonic nonce.
-- SuccraMission rejects stale/non-sequential action nonces where required.
+- `recordViolation` is guardian-only and idempotent by request id.
+- A violation older than `violationWindowSeconds` resets the streak before incrementing.
+- A confirmed settlement resets `violationCount` and `lastViolationAt`.
+- The guardian may quarantine manually at any time; automatic quarantine occurs when the runtime crosses the configured threshold.
+- Blocked `executeERC20Transfer` attempts also increment the streak.
 
-## Conflict rules
-- Only one current agent at a time.
-- Only one active succession at a time.
-- Only one mission transition may be committed for a given succession nonce.
-- Owner policy update and guardian succession cannot race past each other because contract state version is checked.
+## 6.10 Quarantine
 
-## Irreversible actions
-- Actual x402 settlements are irreversible once confirmed.
-- Quarantine is reversible only through explicit owner/recovery logic defined later; MVP keeps quarantined missions non-executable except succession/cancel.
-- Succession revokes the previous agent and cannot silently restore old authority.
+- Triggered by 3 authenticated violations (default) or a manual owner/guardian freeze.
+- Revokes the session key and sets `QUARANTINED`.
+- Blocks `approvePayment`, `releaseForPayment`, and `executeERC20Transfer`.
+- Does not move funds.
+- The owner can withdraw immediately.
+- No `QUARANTINED → ACTIVE` shortcut.
+
+## 6.11 Duplicate prevention and concurrency
+
+- Agent requests use client-generated `idempotency_key`; `(mission_id, idempotency_key)` is unique.
+- Agent payment requests use a mission-specific monotonic nonce.
+- `usedRequestIds` prevents replay of agent action requests.
+- `approvedHashes` prevents duplicate EIP-3009 approvals.
+- `recordedSettlements` prevents double settlement recording.
+- `recordedViolations` prevents duplicate violation counts.
+- Every material mutation checks `expectedVersion`; stale actions fail closed.
+- State-version checks serialize concurrent policy, succession, and quarantine transitions.
+
+## 6.12 Irreversible actions
+
+- Confirmed x402 settlements are irreversible.
+- Confirmed WIF treasury transfers are irreversible.
+- Succession permanently revokes the previous agent's authority; the old key cannot be restored.
+- Quarantine is reversible only through the explicit succession/recovery path or cancellation.
+- Owner withdrawal is always available for unallocated funds and cannot be blocked by the agent or guardian.
+
+## 6.13 Worked continuity example
+
+```text
+1. Owner creates a USDG mission with 1,000 USDG budget, 400 USDG max payment,
+   and a 100 USDG recovery cap.
+2. Owner deposits 500 USDG. The mission is ACTIVE and funded.
+3. Runtime registers session key K1.
+4. Agent requests a 100 USDG payment to an allowlisted merchant.
+5. approvePayment(hash, 100, merchant, version) reserves 100.
+6. K1 signs EIP-3009; USDG verifies ERC-1271; 100 settles.
+7. recordSettlement confirms spent = 100; available = 400.
+8. Agent attempts payments to a scammer three times.
+9. Each authenticated policy failure increments the streak.
+10. Guardian quarantines; K1 is revoked. Owner withdraws the 400 remaining.
+11. Guardian activates successor Beta; status = RECOVERING; nonce reset.
+12. Beta acknowledges; status = ACTIVE_RECOVERY.
+13. Owner registers K2; recovery cap = 100.
+14. K2 signs a recovery payment within the lower cap.
+15. recordSettlement confirms; the mission continues under Beta.
+```
 
 ---
 
